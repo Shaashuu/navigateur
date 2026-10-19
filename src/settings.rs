@@ -20,6 +20,8 @@ pub struct Settings {
     /// Vide = page d'accueil intégrée (heure et recherche).
     pub home_page: String,
     pub theme: Theme,
+    /// Chercher une nouvelle version à chaque démarrage.
+    pub auto_update_check: bool,
 }
 
 impl Default for Settings {
@@ -29,6 +31,7 @@ impl Default for Settings {
             search_engine: SearchEngine::DuckDuckGo,
             home_page: String::new(),
             theme: Theme::Auto,
+            auto_update_check: true,
         }
     }
 }

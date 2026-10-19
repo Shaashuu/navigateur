@@ -131,6 +131,10 @@ pub enum ChromeMessage {
     SaveSettings {
         settings: Settings,
     },
+    CheckUpdate,
+    InstallUpdate,
+    RestartUpdate,
+    OpenReleasePage,
 }
 
 /// Message envoyé par une page : un raccourci clavier, ou (depuis la page

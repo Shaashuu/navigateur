@@ -195,6 +195,24 @@
   #settings .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
   #settings .actions button { height: 38px; padding: 0 18px; border-radius: 19px; }
   #settings .primary { background: var(--accent); color: #fff; }
+  #settings .update { margin-top: 20px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+  #settings [hidden] { display: none !important; }
+  #settings .update h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+  #settings .update .row { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; }
+  #settings .update .row span:first-child { color: var(--muted); }
+  #settings .update .row b { font-weight: 600; }
+  #settings .update .status { margin: 8px 0 0; font-size: 13px; color: var(--muted); min-height: 18px; }
+  #settings .update .status.err { color: #d64545; }
+  #settings .update .buttons { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  #settings .update button { height: 34px; padding: 0 16px; border-radius: 17px; border: 1px solid var(--line); }
+  #settings .update button.primary { border-color: var(--accent); }
+  #settings .update button:disabled { opacity: .5; cursor: default; }
+  #settings .update .check { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 13px; }
+  #gear { position: relative; }
+  #gear.has-update::after {
+    content: ''; position: absolute; top: 5px; right: 5px; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--accent); border: 1.5px solid var(--bg);
+  }
   #settings .about { margin-top: 18px; color: var(--muted); font-size: 12px; }
 </style>
 </head>
@@ -257,11 +275,24 @@
         <button type="button" data-value="light">Clair</button>
         <button type="button" data-value="dark">Sombre</button>
       </div>
+      <div class="update">
+        <h3>Mise à jour</h3>
+        <div class="row"><span>Version actuelle</span><b id="u-current"></b></div>
+        <div class="row" id="u-new-row" hidden><span>Nouvelle version</span><b id="u-new"></b></div>
+        <p class="status" id="u-status"></p>
+        <div class="buttons">
+          <button type="button" id="u-check">Rechercher une mise à jour</button>
+          <button type="button" id="u-install" class="primary" hidden>Télécharger</button>
+          <button type="button" id="u-restart" class="primary" hidden>Redémarrer pour mettre à jour</button>
+          <button type="button" id="u-page" hidden>Voir la version</button>
+        </div>
+        <label class="check"><input type="checkbox" id="s-autoupdate"> Chercher une mise à jour à chaque démarrage</label>
+      </div>
       <div class="actions">
         <button type="button" id="s-cancel">Annuler</button>
         <button type="submit" class="primary">Enregistrer</button>
       </div>
-      <div class="about">Feather 0.1.4</div>
+      <div class="about">Feather</div>
     </form>
   </div>
 
@@ -280,7 +311,7 @@
     { name: '/parametres', desc: 'Ouvrir les paramètres', run: () => openSettings() },
   ];
 
-  let state = { tabs: [], settings: {}, can_back: false, can_forward: false };
+  let state = { tabs: [], settings: {}, version: '', update: { state: 'idle' }, can_back: false, can_forward: false };
   let drag = null;          // onglet en cours de déplacement
   const badIcons = new Set(); // icônes introuvables : on garde le point gris
   let mode = null;          // null, 'bar' ou 'settings'
@@ -462,7 +493,9 @@
     $('s-engine').value = s.search_engine || 'duckduckgo';
     $('s-home').value = s.home_page || '';
     draftTheme = s.theme || 'auto';
+    $('s-autoupdate').checked = s.auto_update_check !== false;
     renderThemeChoices();
+    renderUpdate();
     if (mode === 'bar') closeBar(false);
     setMode('settings');
     $('s-name').focus();
@@ -531,11 +564,48 @@
         search_engine: $('s-engine').value,
         home_page: $('s-home').value,
         theme: draftTheme,
+        auto_update_check: $('s-autoupdate').checked,
       },
     });
     setMode(null);
     send({ type: 'focus_page' });
   });
+
+  // --- Mise à jour ---
+  function renderUpdate() {
+    const u = state.update || { state: 'idle' };
+    const info = u.info;
+    const mb = (n) => (n / 1048576).toFixed(1).replace('.', ',') + ' Mo';
+    $('u-current').textContent = 'Feather ' + (state.version || '');
+    $('u-new-row').hidden = !info;
+    if (info) $('u-new').textContent = 'Feather ' + info.version;
+    const canInstall = info && info.url;
+    const messages = {
+      idle: '',
+      checking: 'Recherche en cours…',
+      uptodate: 'Feather est à jour.',
+      available: canInstall
+        ? 'Une nouvelle version est disponible' + (info.size ? ' (' + mb(info.size) + ').' : '.')
+        : 'Une nouvelle version est disponible, mais pas de téléchargement automatique sur ce système.',
+      downloading: 'Téléchargement et installation…',
+      ready: 'Mise à jour installée. Redémarrez Feather pour l\'utiliser.',
+      error: u.message || 'Erreur.',
+    };
+    const st = $('u-status');
+    st.textContent = messages[u.state] || '';
+    st.classList.toggle('err', u.state === 'error');
+    const busy = u.state === 'checking' || u.state === 'downloading';
+    $('u-check').hidden = u.state === 'ready';
+    $('u-check').disabled = busy;
+    $('u-install').hidden = !(u.state === 'available' && canInstall);
+    $('u-restart').hidden = u.state !== 'ready';
+    $('u-page').hidden = !(u.state === 'available' && !canInstall);
+    $('gear').classList.toggle('has-update', u.state === 'available' || u.state === 'ready' || u.state === 'downloading');
+  }
+  $('u-check').addEventListener('click', () => send({ type: 'check_update' }));
+  $('u-install').addEventListener('click', () => send({ type: 'install_update' }));
+  $('u-restart').addEventListener('click', () => send({ type: 'restart_update' }));
+  $('u-page').addEventListener('click', () => { send({ type: 'open_release_page' }); closeSettings(); });
 
   // --- Raccourcis quand l'interface a le focus ---
   window.addEventListener('keydown', (e) => {
@@ -569,6 +639,7 @@
       state = next;
       if (mode !== 'settings') applyTheme(state.settings.theme);
       renderSidebar();
+      renderUpdate();
     },
     openBar,
     openSettings,

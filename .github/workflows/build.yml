@@ -23,11 +23,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --release
       - run: cargo build --release
-      - run: Copy-Item target/release/feather.exe Feather-0.1.4-windows.exe
+      - run: Copy-Item target/release/feather.exe Feather-0.1.5-windows.exe
       - uses: actions/upload-artifact@v6
         with:
           name: windows
-          path: Feather-0.1.4-windows.exe
+          path: Feather-0.1.5-windows.exe
 
   macos:
     runs-on: macos-latest
@@ -57,11 +57,11 @@ jobs:
           iconutil -c icns Feather.iconset -o dmg/Feather.app/Contents/Resources/Feather.icns
           codesign --force --deep --sign - dmg/Feather.app
           ln -s /Applications dmg/Applications
-          hdiutil create -volname Feather -srcfolder dmg -ov -format UDZO Feather-0.1.4-macos.dmg
+          hdiutil create -volname Feather -srcfolder dmg -ov -format UDZO Feather-0.1.5-macos.dmg
       - uses: actions/upload-artifact@v6
         with:
           name: macos
-          path: Feather-0.1.4-macos.dmg
+          path: Feather-0.1.5-macos.dmg
 
   publier:
     if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
@@ -74,6 +74,10 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v3
         with:
+          # Avec le secret RELEASES_TOKEN, la release va dans le dépôt public
+          # feather-releases, d'où Feather lit ses mises à jour.
+          repository: ${{ secrets.RELEASES_TOKEN != '' && 'Shaashuu/feather-releases' || github.repository }}
+          token: ${{ secrets.RELEASES_TOKEN != '' && secrets.RELEASES_TOKEN || github.token }}
           tag_name: ${{ inputs.version || github.ref_name }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ secrets.RELEASES_TOKEN != '' && 'main' || github.sha }}
           files: fichiers/*

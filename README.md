@@ -109,3 +109,17 @@ publiées dans l'onglet **Releases**.
 Les programmes ne sont pas signés : Windows peut afficher un avertissement
 SmartScreen (« Informations complémentaires » puis « Exécuter quand même »), et
 sur macOS il faut faire clic droit sur l'application puis « Ouvrir » la première fois.
+
+## Mise à jour intégrée
+
+Dans les paramètres, la section « Mise à jour » montre la version actuelle et,
+s'il y en a une, la nouvelle. Feather cherche au démarrage (désactivable) la
+dernière release du dépôt public `Shaashuu/feather-releases`. Le bouton
+« Télécharger » récupère le fichier de votre système, vérifie son empreinte
+SHA-256, puis remplace le programme ; le bouton devient alors
+« Redémarrer pour mettre à jour ». Rien ne change tant que vous n'avez pas cliqué.
+
+Le workflow `build.yml` publie la release dans ce dépôt si le secret
+`RELEASES_TOKEN` (jeton avec accès en écriture au contenu de `feather-releases`)
+existe dans le dépôt du code. Les fichiers ne sont pas signés : la mise à jour
+automatique n'enlève pas l'avertissement de Windows ou de macOS à la première installation.

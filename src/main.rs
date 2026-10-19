@@ -9,9 +9,11 @@ mod network;
 mod settings;
 mod tab_manager;
 mod ui;
+mod update;
 
 use std::sync::{Arc, RwLock};
 
+use serde::Serialize;
 use serde_json::json;
 use tao::dpi::LogicalSize;
 use tao::event::{Event, WindowEvent};
@@ -34,6 +36,28 @@ pub enum UserEvent {
     /// Début (`true`) ou fin (`false`) de chargement, avec l'adresse.
     PageLoad(TabId, bool, String),
     OpenInNewTab(String),
+    Update(UpdateEvent),
+}
+
+/// Résultat d'un travail de mise à jour fait en arrière-plan.
+#[derive(Debug)]
+pub enum UpdateEvent {
+    Checked { found: Result<Option<update::Available>, String>, manual: bool },
+    Installed(Result<update::Restart, String>),
+}
+
+/// Où en est la mise à jour (affiché dans les paramètres).
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(tag = "state", rename_all = "lowercase")]
+enum UpdateState {
+    #[default]
+    Idle,
+    Checking,
+    UpToDate,
+    Available { info: update::Available },
+    Downloading { info: update::Available },
+    Ready { info: update::Available },
+    Error { message: String },
 }
 
 struct App {
@@ -45,6 +69,9 @@ struct App {
     proxy: EventLoopProxy<UserEvent>,
     /// Un panneau de l'interface (commandes, paramètres) recouvre la page.
     expanded: bool,
+    update: UpdateState,
+    /// Programme à relancer quand la mise à jour est installée.
+    restart: Option<update::Restart>,
 }
 
 fn main() -> wry::Result<()> {
@@ -74,7 +101,9 @@ fn main() -> wry::Result<()> {
         &window,
     )?;
 
+    update::clean_leftovers();
     let settings = Settings::load();
+    let check_update = settings.auto_update_check;
     let start_url = settings.start_url();
 
     let mut app = App {
@@ -85,8 +114,13 @@ fn main() -> wry::Result<()> {
         settings: Arc::new(RwLock::new(settings)),
         proxy,
         expanded: false,
+        update: UpdateState::Idle,
+        restart: None,
     };
     app.open_tab(&start_url);
+    if check_update {
+        app.start_check(false);
+    }
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -155,12 +189,33 @@ impl App {
                 self.push_state();
             }
             UserEvent::OpenInNewTab(url) => self.open_tab(&url),
+            UserEvent::Update(event) => self.handle_update(event),
         }
     }
 
     fn handle_chrome(&mut self, message: ChromeMessage) {
         match message {
             ChromeMessage::Ready => {}
+            ChromeMessage::CheckUpdate => self.start_check(true),
+            ChromeMessage::InstallUpdate => self.start_install(),
+            ChromeMessage::RestartUpdate => {
+                if let Some(restart) = self.restart.take() {
+                    match restart.launch() {
+                        Ok(()) => std::process::exit(0),
+                        Err(err) => {
+                            self.update = UpdateState::Error {
+                                message: format!("redémarrage impossible : {err}"),
+                            }
+                        }
+                    }
+                }
+            }
+            ChromeMessage::OpenReleasePage => {
+                if let UpdateState::Available { info } | UpdateState::Ready { info } = &self.update {
+                    let page = info.page.clone();
+                    self.open_tab(&page);
+                }
+            }
             ChromeMessage::Navigate { input } => {
                 let engine = self.read_settings().search_engine;
                 if let Some(url) = network::resolve_input(&input, engine) {
@@ -349,6 +404,58 @@ impl App {
         self.tabs.set_bounds(ui::page_bounds(&self.window));
     }
 
+    fn start_check(&mut self, manual: bool) {
+        if matches!(self.update, UpdateState::Checking | UpdateState::Downloading { .. } | UpdateState::Ready { .. }) {
+            return;
+        }
+        self.update = UpdateState::Checking;
+        let proxy = self.proxy.clone();
+        std::thread::spawn(move || {
+            let found = update::check();
+            let _ = proxy.send_event(UserEvent::Update(UpdateEvent::Checked { found, manual }));
+        });
+    }
+
+    fn start_install(&mut self) {
+        let UpdateState::Available { info } = &self.update else { return };
+        let info = info.clone();
+        self.update = UpdateState::Downloading { info: info.clone() };
+        let proxy = self.proxy.clone();
+        std::thread::spawn(move || {
+            let result = update::install(&info);
+            let _ = proxy.send_event(UserEvent::Update(UpdateEvent::Installed(result)));
+        });
+    }
+
+    fn handle_update(&mut self, event: UpdateEvent) {
+        match event {
+            UpdateEvent::Checked { found, manual } => {
+                self.update = match found {
+                    Ok(Some(info)) => UpdateState::Available { info },
+                    Ok(None) => UpdateState::UpToDate,
+                    // Une vérification automatique qui échoue (hors ligne) reste silencieuse.
+                    Err(_) if !manual => UpdateState::Idle,
+                    Err(message) => UpdateState::Error { message },
+                };
+            }
+            UpdateEvent::Installed(result) => {
+                let info = match &self.update {
+                    UpdateState::Downloading { info } => Some(info.clone()),
+                    _ => None,
+                };
+                self.update = match (result, info) {
+                    (Ok(restart), Some(info)) => {
+                        self.restart = Some(restart);
+                        UpdateState::Ready { info }
+                    }
+                    (Err(message), _) => UpdateState::Error { message },
+                    _ => UpdateState::Idle,
+                };
+            }
+        }
+        self.push_state();
+    }
+
     /// Envoie à l'interface l'état complet (onglets et paramètres) à redessiner.
     fn push_state(&self) {
         let active = self.tabs.active().map(|t| t.webview());
@@ -357,6 +464,8 @@ impl App {
             "can_back": active.and_then(|w| w.can_go_back().ok()).unwrap_or(false),
             "can_forward": active.and_then(|w| w.can_go_forward().ok()).unwrap_or(false),
             "settings": self.read_settings(),
+            "version": update::CURRENT,
+            "update": self.update,
         });
         let _ = self.chrome.evaluate_script(&format!(
             "window.navigateur && navigateur.setState({state})"
