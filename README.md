@@ -8,7 +8,7 @@ webview du système (WebView2 sur Windows, WebKit sur macOS et Linux) grâce à
 
 ![Accueil](captures/accueil.png)
 
-Autres captures : [commandes](captures/commandes.png), [paramètres](captures/parametres.png), [une page ouverte](captures/page.png), [la croix de fermeture](captures/onglets.png), [le son coupé](captures/son.png).
+Autres captures : [commandes](captures/commandes.png), [paramètres](captures/parametres.png), [une page ouverte](captures/page.png), [la croix de fermeture](captures/onglets.png), [le son coupé](captures/son.png), [les icônes des sites](captures/icones.png).
 
 ## Ce que fait la version 0.1
 
@@ -23,7 +23,9 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
 - **En haut à gauche** : l'engrenage des paramètres, puis page précédente,
   page suivante et le bouton maison (son adresse se règle dans les paramètres).
 - **Onglets en pastilles à gauche** : la longue pastille est l'onglet actif, un
-  point par autre onglet, `+` pour en ouvrir un. Au survol, le titre s'affiche
+  rond par autre onglet, `+` pour en ouvrir un. Chaque pastille montre l'icône
+  du site (un point gris s'il n'en a pas, ou sur l'accueil). Au survol, le nom
+  du site s'affiche
   et une petite croix rouge apparaît en haut de la pastille pour la fermer.
   Maintenez le clic sur un onglet pour le monter ou le descendre.
 - **Son** : la pastille d'un onglet qui joue une vidéo ou une musique porte un
@@ -90,6 +92,9 @@ leur onglet et envoient des messages.
 
 - Pas d'historique, de favoris, de téléchargements gérés ni de navigation privée.
 - Les onglets ne sont pas restaurés au redémarrage.
+- Icônes : Feather télécharge l'icône que le site indique lui-même (ou
+  `/favicon.ico`), jamais via un service tiers, sans envoyer l'adresse de la
+  page d'origine. Elle n'est gardée que pour les onglets ouverts.
 - Sur Linux, seul X11 a été essayé (pas Wayland).
 - L'icône de son repère les balises vidéo et audio de la page, pas les sons
   produits par Web Audio ni ceux des vidéos intégrées dans un cadre (iframe).

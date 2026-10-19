@@ -56,6 +56,33 @@ pub const PAGE_SCRIPT: &str = r#"
       report();
     }, true);
   }
+  // Icône et nom du site, pour la pastille de l'onglet. On passe par l'icône que le
+  // site indique lui-même (ou /favicon.ico), jamais par un service tiers.
+  let lastSite = '';
+  const reportSite = () => {
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+    let icon = null;
+    for (const l of document.querySelectorAll('link[rel~="icon"]')) {
+      if (l.href) { icon = l.href; break; }
+    }
+    if (!icon) icon = location.origin + '/favicon.ico';
+    const meta = (sel) => (document.querySelector(sel) || {}).content;
+    const host = location.hostname.replace(/^www\./, '');
+    const name = (meta('meta[property="og:site_name"]') || meta('meta[name="application-name"]') || host).trim();
+    const key = icon + '|' + name;
+    if (key === lastSite) return;
+    lastSite = key;
+    post({ site: { icon, name } });
+  };
+  document.addEventListener('DOMContentLoaded', () => {
+    reportSite();
+    // Icône ajoutée ou changée après coup.
+    let timer = 0;
+    new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(reportSite, 300); })
+      .observe(document.head || document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['href', 'rel'] });
+  });
+  window.addEventListener('load', reportSite);
+
   window.__featherSetMuted = (on) => {
     muted = on;
     for (const m of media()) {
@@ -117,6 +144,36 @@ pub struct PageMessage {
     pub open_bar: Option<String>,
     /// La page joue du son (ou vient d'arrêter).
     pub audible: Option<bool>,
+    /// Icône et nom du site (voir `clean_site`).
+    pub site: Option<SiteInfo>,
+}
+
+/// Ce que la page dit d'elle-même : l'adresse de son icône et le nom du site.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct SiteInfo {
+    pub icon: Option<String>,
+    pub name: Option<String>,
+}
+
+/// Nettoie ce qu'une page envoie : l'icône doit être une adresse http(s) ou une
+/// petite image intégrée, et le nom un texte court sans caractères de contrôle.
+pub fn clean_site(info: SiteInfo) -> (Option<String>, Option<String>) {
+    let icon = info.icon.filter(|i| {
+        let web = i.starts_with("https://") || i.starts_with("http://");
+        (web && i.len() <= 2048) || (i.starts_with("data:image/") && i.len() <= 32_768)
+    });
+    let name = info
+        .name
+        .map(|n| {
+            n.chars()
+                .filter(|c| !c.is_control())
+                .take(60)
+                .collect::<String>()
+        })
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty());
+    (icon, name)
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
@@ -224,6 +281,33 @@ mod tests {
         let m: ChromeMessage = serde_json::from_str(r#"{"type":"close_tab","id":null}"#).unwrap();
         assert!(matches!(m, ChromeMessage::CloseTab { id: None }));
         assert!(serde_json::from_str::<ChromeMessage>(r#"{"type":"supprimer_tout"}"#).is_err());
+    }
+
+    #[test]
+    fn nettoyage_icone_et_nom() {
+        let site = |icon: &str, name: &str| SiteInfo {
+            icon: Some(icon.into()),
+            name: Some(name.into()),
+        };
+        let (icon, name) = clean_site(site("https://exemple.fr/favicon.ico", "  Mon Blog\n"));
+        assert_eq!(icon.as_deref(), Some("https://exemple.fr/favicon.ico"));
+        assert_eq!(name.as_deref(), Some("Mon Blog"));
+        assert_eq!(clean_site(site("javascript:alert(1)", "x")).0, None);
+        assert_eq!(clean_site(site("file:///etc/passwd", "x")).0, None);
+        assert!(
+            clean_site(site("data:image/png;base64,AAAA", "x"))
+                .0
+                .is_some()
+        );
+        let long = "a".repeat(200);
+        assert_eq!(
+            clean_site(site("https://a.fr/i.png", &long))
+                .1
+                .unwrap()
+                .len(),
+            60
+        );
+        assert_eq!(clean_site(site("https://a.fr/i.png", "  ")).1, None);
     }
 
     #[test]

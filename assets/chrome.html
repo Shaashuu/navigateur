@@ -118,6 +118,29 @@
   }
   .tab:hover .mute { opacity: .9; transform: scale(1); pointer-events: auto; }
   .mute:hover { opacity: 1; color: var(--text); background: var(--accent-soft); border-color: var(--accent); }
+  /* Onglet avec l'icône du site : la pastille est un peu plus grande et porte l'icône */
+  .tab.has-icon { height: 38px; }
+  .tab.has-icon.active { height: 66px; }
+  .tab.has-icon .dot, .tab.has-icon:hover .dot {
+    width: 30px; height: 30px; border-radius: 15px; opacity: 1; background: var(--line);
+    display: grid; place-items: center;
+  }
+  .tab.has-icon.active .dot, .tab.has-icon.active:hover .dot {
+    width: 32px; height: 58px; border-radius: 16px; background: var(--accent);
+  }
+  .tab.has-icon.muted .dot { opacity: .6; }
+  .favicon {
+    width: 20px; height: 20px; border-radius: 6px; background: #fff;
+    display: grid; place-items: center; overflow: hidden; box-shadow: 0 0 0 1px rgba(0, 0, 0, .06);
+  }
+  .favicon img { width: 16px; height: 16px; object-fit: contain; display: block; }
+  /* Petit haut-parleur dans le coin de l'icône quand la page joue du son */
+  .badge {
+    position: absolute; top: -1px; left: 3px; width: 15px; height: 15px; border-radius: 8px;
+    display: grid; place-items: center; background: var(--accent); color: #fff;
+    border: 1.5px solid var(--bg); pointer-events: none;
+  }
+  .tab.muted .badge { background: var(--muted); }
   /* Glisser-déposer */
   .tab.dragging { opacity: .6; transform: scale(1.15); cursor: grabbing; z-index: 2; }
   .tab.dragging .close, .tab.dragging .mute { display: none; }
@@ -238,7 +261,7 @@
         <button type="button" id="s-cancel">Annuler</button>
         <button type="submit" class="primary">Enregistrer</button>
       </div>
-      <div class="about">Feather 0.1.4</div>
+      <div class="about">Feather 0.1.5</div>
     </form>
   </div>
 
@@ -259,6 +282,7 @@
 
   let state = { tabs: [], settings: {}, can_back: false, can_forward: false };
   let drag = null;          // onglet en cours de déplacement
+  const badIcons = new Set(); // icônes introuvables : on garde le point gris
   let mode = null;          // null, 'bar' ou 'settings'
   let matches = [];
   let selected = 0;
@@ -302,17 +326,37 @@
     for (const tab of state.tabs) {
       const el = document.createElement('div');
       const sound = tab.audible || tab.muted;
+      const icon = tab.icon && !badIcons.has(tab.icon) ? tab.icon : null;
       el.className = 'tab' + (tab.active ? ' active' : '') + (tab.loading && !sound ? ' loading' : '') +
-        (sound ? ' sound' : '') + (tab.muted ? ' muted' : '');
+        (sound && !icon ? ' sound' : '') + (icon ? ' has-icon' : '') + (tab.muted ? ' muted' : '');
       el.dataset.id = tab.id;
       el.setAttribute('role', 'button');
       el.setAttribute('aria-label', label(tab));
-      el.title = label(tab); // bulle native : elle peut dépasser sur la page
+      el.title = tab.home ? 'Accueil' : (tab.site_name || label(tab)); // bulle : le nom du site
       el.innerHTML = '<span class="dot"></span>' +
         '<button class="close" aria-label="Fermer l\'onglet">' +
         '<svg width="8" height="8" viewBox="0 0 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg></button>';
-      if (sound) {
+      if (icon) {
+        const box = document.createElement('span');
+        box.className = 'favicon';
+        const img = document.createElement('img');
+        img.referrerPolicy = 'no-referrer'; // on ne dit pas d'où l'on vient
+        img.alt = '';
+        img.draggable = false;
+        img.addEventListener('error', () => { badIcons.add(icon); renderSidebar(); });
+        img.src = icon;
+        box.appendChild(img);
+        el.querySelector('.dot').appendChild(box);
+        if (sound) {
+          const badge = document.createElement('span');
+          badge.className = 'badge';
+          badge.innerHTML = (tab.muted ? SPEAKER_OFF : SPEAKER).replace(/width="12" height="12"/, 'width="9" height="9"');
+          el.appendChild(badge);
+        }
+      } else if (sound) {
         el.querySelector('.dot').innerHTML = tab.muted ? SPEAKER_OFF : SPEAKER;
+      }
+      if (sound) {
         const mute = document.createElement('button');
         mute.className = 'mute';
         mute.title = tab.muted ? 'Remettre le son' : "Couper le son de l'onglet";

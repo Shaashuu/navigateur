@@ -113,6 +113,11 @@ fn window_icon() -> Option<Icon> {
     Icon::from_rgba(RGBA.to_vec(), 64, 64).ok()
 }
 
+/// Le site d'une adresse (pour savoir si on change de site).
+fn host_of(url: &str) -> Option<String> {
+    url::Url::parse(url).ok()?.host_str().map(str::to_string)
+}
+
 impl App {
     fn handle(&mut self, event: UserEvent) {
         match event {
@@ -133,6 +138,11 @@ impl App {
             }
             UserEvent::PageLoad(id, loading, url) => {
                 if let Some(tab) = self.tabs.get_mut(id) {
+                    // Autre site : on efface l'icône de l'ancien en attendant celle du nouveau.
+                    if loading && host_of(&tab.url) != host_of(&url) {
+                        tab.icon = None;
+                        tab.site_name = None;
+                    }
                     tab.loading = loading;
                     tab.url = url;
                     if loading {
@@ -204,6 +214,16 @@ impl App {
     fn handle_page(&mut self, id: TabId, message: PageMessage) {
         if let Some(shortcut) = message.shortcut {
             self.handle_shortcut(id, shortcut);
+        }
+        if let Some(site) = message.site {
+            if let Some(tab) = self.tabs.get_mut(id)
+                && !network::is_home(&tab.url)
+            {
+                let (icon, name) = ui::clean_site(site);
+                tab.icon = icon;
+                tab.site_name = name;
+            }
+            self.push_state();
         }
         if let Some(audible) = message.audible {
             if let Some(tab) = self.tabs.get_mut(id) {

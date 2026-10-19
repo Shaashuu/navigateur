@@ -30,6 +30,9 @@ pub struct Tab {
     pub audible: bool,
     /// L'utilisateur a coupé le son de cet onglet.
     pub muted: bool,
+    /// Adresse de l'icône du site et nom du site, donnés par la page.
+    pub icon: Option<String>,
+    pub site_name: Option<String>,
     webview: WebView,
 }
 
@@ -58,6 +61,8 @@ pub struct TabInfo<'a> {
     pub home: bool,
     pub audible: bool,
     pub muted: bool,
+    pub icon: Option<&'a str>,
+    pub site_name: Option<&'a str>,
 }
 
 /// Tout ce qu'il faut pour créer la webview d'un nouvel onglet.
@@ -89,6 +94,8 @@ impl TabManager {
             loading: true,
             audible: false,
             muted: false,
+            icon: None,
+            site_name: None,
             webview,
         });
         self.activate(id, visible);
@@ -195,6 +202,8 @@ impl TabManager {
                 home: network::is_home(&t.url),
                 audible: t.audible,
                 muted: t.muted,
+                icon: t.icon.as_deref(),
+                site_name: t.site_name.as_deref(),
             })
             .collect()
     }
