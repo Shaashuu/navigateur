@@ -38,6 +38,14 @@ pub struct Bookmark {
 }
 
 /// Les onglets ouverts, pour les rouvrir au prochain démarrage.
+/// Une suggestion de la barre d'adresse.
+#[derive(Debug, Serialize)]
+pub struct Suggestion<'a> {
+    pub url: &'a str,
+    pub title: &'a str,
+    pub bookmark: bool,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     pub urls: Vec<String>,
@@ -185,6 +193,33 @@ impl Library {
             .iter()
             .rev()
             .filter(|b| matches(&query, &b.title, &b.url))
+            .collect()
+    }
+
+    /// Suggestions de la barre d'adresse : favoris d'abord, puis pages de
+    /// l'historique (la plus récente de chaque adresse), sans doublon.
+    pub fn suggest(&self, query: &str, limit: usize) -> Vec<Suggestion<'_>> {
+        let query = query.trim().to_lowercase();
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let mut seen = std::collections::HashSet::new();
+        let bookmarks = self
+            .bookmarks
+            .iter()
+            .rev()
+            .filter(|b| matches(&query, &b.title, &b.url))
+            .map(|b| Suggestion { url: &b.url, title: &b.title, bookmark: true });
+        let visits = self
+            .history
+            .iter()
+            .rev()
+            .filter(|v| matches(&query, &v.title, &v.url))
+            .map(|v| Suggestion { url: &v.url, title: &v.title, bookmark: false });
+        bookmarks
+            .chain(visits)
+            .filter(|s| seen.insert(s.url))
+            .take(limit)
             .collect()
     }
 

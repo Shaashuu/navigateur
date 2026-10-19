@@ -35,6 +35,11 @@ pub fn is_home(url: &str) -> bool {
     }
 }
 
+/// L'hôte d'une adresse (« fr.wikipedia.org »), pour savoir si on change de site.
+pub fn host_of(url: &str) -> Option<String> {
+    Url::parse(url).ok()?.host_str().map(str::to_string)
+}
+
 /// Vrai pour une vraie page web (http ou https), seule admise dans l'historique,
 /// les favoris et les onglets ouverts par une page. L'accueil intégré n'en est
 /// pas une, même sous Windows où son adresse commence par `http://`.

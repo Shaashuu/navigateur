@@ -33,6 +33,12 @@ pub struct Settings {
     pub bookmarks_on_home: bool,
     /// Dossier des téléchargements (vide : le dossier Téléchargements du système).
     pub download_dir: String,
+    /// Bloquer les traqueurs connus (mesure d'audience, régies publicitaires).
+    pub block_trackers: bool,
+    /// Mettre en veille un onglet resté caché ce nombre de minutes (0 : jamais).
+    pub sleep_minutes: u32,
+    /// Garder le texte des pages visitées pour les retrouver par leur contenu.
+    pub index_pages: bool,
 }
 
 impl Default for Settings {
@@ -48,6 +54,9 @@ impl Default for Settings {
             history_days: 90,
             bookmarks_on_home: true,
             download_dir: String::new(),
+            block_trackers: true,
+            sleep_minutes: 30,
+            index_pages: true,
         }
     }
 }
@@ -119,6 +128,7 @@ impl Settings {
         self.name = self.name.trim().chars().take(40).collect();
         self.home_page = network::normalize_home_page(&self.home_page).unwrap_or_default();
         self.download_dir = self.download_dir.trim().to_string();
+        self.sleep_minutes = self.sleep_minutes.min(24 * 60);
         self
     }
 

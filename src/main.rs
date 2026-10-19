@@ -4,20 +4,30 @@
 //! Feather : une fenêtre tao, une webview pour l'interface, et une
 //! webview par onglet. Tout tourne sur le thread principal ; les webviews
 //! communiquent avec le code Rust par des messages (`UserEvent`).
+//!
+//! Ce fichier contient le cœur (onglets, navigation, état de l'interface) ;
+//! `features.rs` ajoute la recherche dans la page, le zoom, les autorisations,
+//! les commandes natives, la mise en veille et le suivi des téléchargements.
 
+mod commands;
 mod downloads;
+mod features;
+mod fulltext;
 mod library;
 #[cfg(target_os = "macos")]
 mod mac_mouse;
 mod network;
 mod settings;
+mod sitedata;
 mod storage;
 mod tab_manager;
+mod trackers;
 mod ui;
 mod update;
+mod weight;
 
 use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -30,11 +40,16 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::window::{Icon, Window, WindowBuilder};
 use wry::{WebView, WebViewBuilder};
 
+use commands::Notes;
 use downloads::Download;
+use features::PendingPermission;
+use fulltext::FullText;
 use library::{Library, Session};
 use settings::{Settings, Startup};
+use sitedata::SiteData;
 use tab_manager::{PageContext, TabId, TabManager};
-use ui::{ChromeMessage, LibraryKind, PageMessage, Shortcut, Surface};
+use ui::{ChromeMessage, LibraryKind, LinkHow, PageMessage, Shortcut, Surface};
+use weight::Sampler;
 
 /// Une page peut ouvrir au plus ce nombre d'onglets (clic de molette)…
 const PAGE_TAB_LIMIT: usize = 10;
@@ -51,15 +66,22 @@ pub enum UserEvent {
     Title(TabId, String),
     /// Début (`true`) ou fin (`false`) de chargement, avec l'adresse.
     PageLoad(TabId, bool, String),
-    OpenInNewTab(String),
+    /// `window.open` ; `private` : la page qui l'a demandé est privée.
+    OpenInNewTab { url: String, private: bool },
     Update(UpdateEvent),
     /// Les onglets fermés peuvent être détruits.
     Reap,
     /// Un téléchargement commence, rangé à cet endroit.
-    DownloadStarted { url: String, path: PathBuf },
+    DownloadStarted { url: String, path: PathBuf, private: bool },
     DownloadDone { url: String, path: Option<PathBuf>, success: bool },
+    /// Taille annoncée par le serveur pour un téléchargement.
+    DownloadSize { id: u32, total: u64 },
     /// Moment d'enregistrer l'historique, les favoris et la session.
     Persist,
+    /// Chaque seconde : progression des téléchargements, poids et veille des onglets.
+    Tick,
+    /// Un minuteur (`/minuteur`) est arrivé à son terme.
+    TimerDone { seconds: u64, label: String },
 }
 
 /// Résultat d'un travail de mise à jour fait en arrière-plan.
@@ -92,10 +114,18 @@ struct App {
     proxy: EventLoopProxy<UserEvent>,
     /// Un panneau de l'interface (commandes, paramètres) recouvre la page.
     expanded: bool,
+    /// Le bandeau du bas (recherche, question, minuteur) est ouvert : la page rétrécit.
+    strip: bool,
     update: UpdateState,
     /// Programme à relancer quand la mise à jour est installée.
     restart: Option<update::Restart>,
     library: Arc<RwLock<Library>>,
+    /// Zoom et autorisations retenus par site.
+    sites: Arc<RwLock<SiteData>>,
+    /// Texte des pages visitées (recherche dans l'historique).
+    fulltext: FullText,
+    /// Notes de la commande `/note`.
+    notes: Notes,
     /// Téléchargements de cette session.
     downloads: Vec<Download>,
     /// Prochain numéro de téléchargement (jamais réutilisé, même après « Vider la liste »).
@@ -106,6 +136,13 @@ struct App {
     saved_session: RefCell<Option<Session>>,
     /// Heures des derniers onglets ouverts à la demande d'une page (voir `PAGE_TAB_LIMIT`).
     page_opens: VecDeque<Instant>,
+    /// Demandes d'autorisation en attente d'une réponse de l'utilisateur.
+    permission_requests: HashMap<u32, PendingPermission>,
+    next_permission_request: u32,
+    /// Mesure du processus de chaque page (macOS).
+    sampler: Sampler,
+    /// Secondes écoulées (pour ne mesurer le poids des onglets que toutes les 5 s).
+    ticks: u64,
 }
 
 fn main() -> wry::Result<()> {
@@ -145,6 +182,16 @@ fn main() -> wry::Result<()> {
     let restore = settings.startup == Startup::Restore;
     let mut library = Library::load();
     library.prune(settings.history_days);
+    let mut fulltext = FullText::load();
+    fulltext.prune(settings.history_days);
+
+    // Une seconde : progression des téléchargements, poids et veille des onglets.
+    let tick_proxy = proxy.clone();
+    std::thread::spawn(move || {
+        while tick_proxy.send_event(UserEvent::Tick).is_ok() {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    });
 
     let mut app = App {
         window,
@@ -154,24 +201,34 @@ fn main() -> wry::Result<()> {
         settings: Arc::new(RwLock::new(settings)),
         proxy,
         expanded: false,
+        strip: false,
         update: UpdateState::Idle,
         restart: None,
         library: Arc::new(RwLock::new(library)),
+        sites: Arc::new(RwLock::new(SiteData::load())),
+        fulltext,
+        notes: Notes::load(),
         downloads: Vec::new(),
         next_download_id: 1,
         persist_pending: Cell::new(false),
         saved_session: RefCell::new(None),
         page_opens: VecDeque::new(),
+        permission_requests: HashMap::new(),
+        next_permission_request: 1,
+        sampler: Sampler::default(),
+        ticks: 0,
     };
     let session = library::load_session();
     if restore && !session.urls.is_empty() {
+        // Les onglets restaurés restent en veille : seul celui affiché est chargé.
         for url in &session.urls {
-            app.open_tab(url);
+            app.tabs.add_asleep(url, "", false);
         }
         app.tabs.activate_index(session.active, true);
+        app.wake_active();
         app.push_state();
     } else {
-        app.open_tab(&start_url);
+        app.open_tab(&start_url, false);
     }
     if check_update {
         app.start_check(false);
@@ -203,11 +260,6 @@ fn window_icon() -> Option<Icon> {
     Icon::from_rgba(RGBA.to_vec(), 64, 64).ok()
 }
 
-/// Le site d'une adresse (pour savoir si on change de site).
-fn host_of(url: &str) -> Option<String> {
-    url::Url::parse(url).ok()?.host_str().map(str::to_string)
-}
-
 impl App {
     fn handle(&mut self, event: UserEvent) {
         match event {
@@ -222,8 +274,11 @@ impl App {
             }
             UserEvent::Title(id, title) => {
                 if let Some(tab) = self.tabs.get_mut(id) {
-                    if let Ok(mut lib) = self.library.write() {
-                        lib.set_title(&tab.url, &title);
+                    if !tab.private {
+                        if let Ok(mut lib) = self.library.write() {
+                            lib.set_title(tab.url(), &title);
+                        }
+                        self.fulltext.set_title(tab.url(), &title);
                     }
                     tab.title = title;
                 }
@@ -232,58 +287,45 @@ impl App {
             UserEvent::PageLoad(id, loading, url) => {
                 if let Some(tab) = self.tabs.get_mut(id) {
                     // Autre site : on efface l'icône de l'ancien en attendant celle du nouveau.
-                    if loading && host_of(&tab.url) != host_of(&url) {
+                    if loading && network::host_of(tab.url()) != network::host_of(&url) {
                         tab.icon = None;
                         tab.site_name = None;
                     }
                     tab.loading = loading;
-                    tab.url = url;
-                    if !loading && let Ok(mut lib) = self.library.write() {
-                        lib.record_visit(&tab.url, &tab.title);
+                    tab.set_url(url);
+                    // Un onglet privé ne laisse aucune trace dans l'historique.
+                    if !loading
+                        && !tab.private
+                        && let Ok(mut lib) = self.library.write()
+                    {
+                        lib.record_visit(tab.url(), &tab.title);
                     }
                     if loading {
                         tab.audible = false;
+                        // La page qui posait une question s'en va : la question aussi.
+                        self.permission_requests.retain(|_, p| p.tab != id);
                     } else if tab.muted {
                         // Nouvelle page : on garde l'onglet en sourdine.
                         tab.apply_mute();
                     }
                 }
+                self.apply_zoom(id);
                 self.push_state();
             }
             // window.open : seules les pages web sont acceptées. Avant, une page
             // pouvait ouvrir ainsi un onglet sur file:// (fichiers de l'ordinateur).
-            UserEvent::OpenInNewTab(url) => {
+            UserEvent::OpenInNewTab { url, private } => {
                 if network::is_web(&url) {
-                    self.open_tab(&url);
+                    self.open_tab(&url, private);
                 }
             }
             UserEvent::Update(event) => self.handle_update(event),
             UserEvent::Reap => self.tabs.reap(),
-            UserEvent::DownloadStarted { url, path } => {
-                let id = self.next_download_id;
-                self.next_download_id += 1;
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| url.clone());
-                self.downloads.push(Download { id, url, name, path, state: downloads::State::Progress });
-                self.push_state();
-            }
-            UserEvent::DownloadDone { url, path, success } => {
-                // Deux téléchargements de la même adresse : on reconnaît d'abord le bon
-                // par son chemin, et seulement à défaut par son adresse.
-                let in_progress = |d: &Download| d.state == downloads::State::Progress;
-                let by_path = path
-                    .as_ref()
-                    .and_then(|p| self.downloads.iter().position(|d| in_progress(d) && &d.path == p));
-                let index = by_path
-                    .or_else(|| self.downloads.iter().rposition(|d| in_progress(d) && d.url == url));
-                let found = index.map(|i| &mut self.downloads[i]);
-                if let Some(d) = found {
-                    d.state = if success { downloads::State::Done } else { downloads::State::Failed };
-                    if let Some(path) = path {
-                        d.path = path;
-                    }
+            UserEvent::DownloadStarted { url, path, private } => self.download_started(url, path, private),
+            UserEvent::DownloadDone { url, path, success } => self.download_done(&url, path, success),
+            UserEvent::DownloadSize { id, total } => {
+                if let Some(d) = self.downloads.iter_mut().find(|d| d.id == id) {
+                    d.total = Some(total);
                 }
                 self.push_state();
             }
@@ -291,6 +333,13 @@ impl App {
                 self.persist_pending.set(false);
                 self.persist();
             }
+            UserEvent::Tick => self.tick(),
+            UserEvent::TimerDone { seconds, label } => self.timer_done(seconds, &label),
+        }
+        // L'onglet affiché a pu changer : s'il était en veille, on recharge sa page.
+        self.wake_active();
+        if !self.permission_requests.is_empty() {
+            self.drop_stale_permissions();
         }
     }
 
@@ -301,8 +350,10 @@ impl App {
             ChromeMessage::InstallUpdate => self.start_install(),
             ChromeMessage::RestartUpdate => {
                 // On garde `restart` en cas d'échec : le bouton reste utilisable.
-                if let Some(restart) = &self.restart {
+                if self.restart.is_some() {
                     self.persist();
+                }
+                if let Some(restart) = &self.restart {
                     match restart.launch() {
                         Ok(()) => std::process::exit(0),
                         Err(err) => eprintln!("redémarrage impossible : {err}"),
@@ -312,7 +363,7 @@ impl App {
             ChromeMessage::OpenReleasePage => {
                 if let UpdateState::Available { info } | UpdateState::Ready { info } = &self.update {
                     let page = info.page.clone();
-                    self.open_tab(&page);
+                    self.open_tab(&page, false);
                 }
             }
             ChromeMessage::Navigate { input } => {
@@ -345,30 +396,18 @@ impl App {
             }
             ChromeMessage::FocusPage => self.focus_page(),
             ChromeMessage::FocusBar => self.focus_bar(),
-            ChromeMessage::SaveSettings { settings } => {
-                let settings = settings.cleaned();
-                if let Err(err) = settings.save() {
-                    eprintln!("paramètres non enregistrés : {err}");
-                }
-                if let Ok(mut lib) = self.library.write() {
-                    lib.prune(settings.history_days);
-                }
-                if let Ok(mut current) = self.settings.write() {
-                    *current = settings;
-                }
-                self.relayout();
-                // Les pages d'accueil ouvertes reprennent le nouveau prénom et thème.
-                self.reload_home_tabs();
-            }
+            ChromeMessage::SaveSettings { settings } => self.save_settings(settings),
             ChromeMessage::ToggleBookmark { id } => {
                 if let Some(id) = id.or(self.tabs.active_id()) {
                     self.toggle_bookmark(id);
                 }
             }
             ChromeMessage::Library { kind, query } => self.send_library(kind, &query),
-            ChromeMessage::OpenUrl { url, new_tab } => {
+            ChromeMessage::OpenUrl { url, new_tab, private } => {
                 if network::is_web(&url) {
-                    if new_tab {
+                    if private {
+                        self.open_tab(&url, true);
+                    } else if new_tab {
                         self.open_tab_in_background(&url);
                     } else {
                         self.load_in_active(&url);
@@ -387,11 +426,13 @@ impl App {
                 if let Ok(mut lib) = self.library.write() {
                     lib.remove_visits(&url);
                 }
+                self.fulltext.remove(&url);
             }
             ChromeMessage::ClearHistory => {
                 if let Ok(mut lib) = self.library.write() {
                     lib.clear_history();
                 }
+                self.fulltext.clear();
                 self.send_library(LibraryKind::History, "");
             }
             ChromeMessage::RevealDownload { id } => {
@@ -407,6 +448,29 @@ impl App {
             ChromeMessage::ClearDownloads => {
                 self.downloads.retain(|d| d.state == downloads::State::Progress);
             }
+            ChromeMessage::CancelDownload { id } => self.cancel_download(id),
+            ChromeMessage::Strip { open } => {
+                self.strip = open;
+                self.relayout();
+            }
+            ChromeMessage::Find { text, backwards } => self.find(&text, backwards),
+            ChromeMessage::FindClose => {
+                self.find("", false);
+                self.focus_page();
+            }
+            ChromeMessage::Suggest { query } => self.send_suggestions(&query),
+            ChromeMessage::Command { input, run } => self.run_command(&input, run),
+            ChromeMessage::PermissionAnswer { request, allow, remember } => {
+                self.answer_permission(request, allow, remember)
+            }
+            ChromeMessage::ForgetPermission { host, permission } => {
+                if let Ok(mut sites) = self.sites.write() {
+                    sites.forget_permission(&host, permission);
+                }
+            }
+            ChromeMessage::SleepTab { id } => {
+                self.tabs.sleep(id);
+            }
         }
         self.push_state();
     }
@@ -418,7 +482,7 @@ impl App {
         }
         if let Some(site) = message.site {
             if let Some(tab) = self.tabs.get_mut(id)
-                && !network::is_home(&tab.url)
+                && !network::is_home(tab.url())
             {
                 let (icon, name) = ui::clean_site(site);
                 tab.icon = icon;
@@ -432,21 +496,47 @@ impl App {
         {
             self.open_tab_in_background(&url);
         }
+        if let Some(link) = message.link
+            && network::is_web(&link.url)
+            && self.allow_page_tab()
+        {
+            match link.how {
+                LinkHow::Tab => self.open_tab(&link.url, false),
+                LinkHow::Background => self.open_tab_in_background(&link.url),
+                LinkHow::Private => self.open_tab(&link.url, true),
+            }
+        }
         if let Some(audible) = message.audible {
             if let Some(tab) = self.tabs.get_mut(id) {
                 tab.audible = audible;
             }
             self.push_state();
         }
+        if let Some(result) = message.find_result
+            && Some(id) == self.tabs.active_id()
+        {
+            self.chrome_call(&format!("navigateur.setFind({})", json!(result)));
+        }
+        if let Some(metrics) = message.metrics {
+            self.page_metrics(id, metrics);
+        }
+        if let Some(text) = message.text {
+            self.index_page(id, &text);
+        }
+        if let Some(request) = message.permission {
+            self.ask_permission(id, request);
+        }
         // Seule la page d'accueil intégrée a le droit d'utiliser sa barre de recherche.
         let Some(tab) = self.tabs.get(id) else { return };
-        if !network::is_home(&tab.url) {
+        if !network::is_home(tab.url()) {
             return;
         }
         if let Some(input) = message.navigate {
             let engine = self.read_settings().search_engine;
-            if let Some(url) = network::resolve_input(&input, engine) {
-                let _ = tab.webview().load_url(&url);
+            if let Some(url) = network::resolve_input(&input, engine)
+                && let Some(w) = tab.webview()
+            {
+                let _ = w.load_url(&url);
             }
         }
         if let Some(text) = message.open_bar {
@@ -483,6 +573,17 @@ impl App {
             }
             Shortcut::NextTab => self.tabs.cycle(1, !self.expanded),
             Shortcut::PreviousTab => self.tabs.cycle(-1, !self.expanded),
+            Shortcut::Find => self.focus_chrome("navigateur.openFind()"),
+            Shortcut::ZoomIn => self.zoom(1),
+            Shortcut::ZoomOut => self.zoom(-1),
+            Shortcut::ZoomReset => self.zoom(0),
+            Shortcut::ReopenTab => {
+                if let Some(url) = self.tabs.pop_closed() {
+                    self.open_tab(&url, false);
+                }
+            }
+            Shortcut::Print => self.with_active(|w| w.print()),
+            Shortcut::NewPrivateTab => self.open_tab(network::HOME_URL, true),
         }
     }
 
@@ -505,29 +606,56 @@ impl App {
 
     /// Un nouvel onglet s'ouvre toujours sur l'accueil Feather (heure et recherche).
     fn open_new_tab(&mut self) {
-        self.open_tab(network::HOME_URL);
+        self.open_tab(network::HOME_URL, false);
     }
 
-    fn open_tab(&mut self, url: &str) {
+    /// Zone des pages selon la position de la barre et le bandeau du bas.
+    fn page_bounds(&self) -> wry::Rect {
+        ui::page_bounds(&self.window, self.read_settings().bar_position, self.strip)
+    }
+
+    fn open_tab(&mut self, url: &str, private: bool) {
         let ctx = PageContext {
             window: &self.window,
             surface: &self.surface,
             proxy: &self.proxy,
             settings: &self.settings,
             library: &self.library,
-            bounds: ui::page_bounds(&self.window, self.read_settings().bar_position),
+            sites: &self.sites,
+            bounds: self.page_bounds(),
         };
-        match self.tabs.open(url, &ctx, !self.expanded) {
+        match self.tabs.open(url, &ctx, !self.expanded, private) {
             Ok(_) => self.focus_page(),
             Err(err) => eprintln!("impossible d'ouvrir l'onglet : {err}"),
         }
         self.push_state();
     }
 
+    /// Recharge la page de l'onglet affiché s'il était en veille.
+    fn wake_active(&mut self) {
+        let Some(id) = self.tabs.active().filter(|t| t.is_asleep()).map(|t| t.id) else {
+            return;
+        };
+        let ctx = PageContext {
+            window: &self.window,
+            surface: &self.surface,
+            proxy: &self.proxy,
+            settings: &self.settings,
+            library: &self.library,
+            sites: &self.sites,
+            bounds: self.page_bounds(),
+        };
+        if let Err(err) = self.tabs.wake(id, &ctx, !self.expanded) {
+            eprintln!("impossible de réveiller l'onglet : {err}");
+        }
+        self.focus_page();
+        self.push_state();
+    }
+
     /// Ouvre un onglet sans le montrer : on reste sur la page en cours (clic de molette).
     fn open_tab_in_background(&mut self, url: &str) {
         let previous = self.tabs.active().map(|t| t.id);
-        self.open_tab(url);
+        self.open_tab(url, false);
         if let Some(id) = previous {
             self.tabs.activate(id, !self.expanded);
             // `open_tab` a donné le focus clavier au nouvel onglet, caché : on le
@@ -540,29 +668,34 @@ impl App {
     /// Ferme un onglet ; on garde toujours au moins un onglet ouvert.
     fn close_tab(&mut self, id: TabId) {
         self.tabs.close(id, !self.expanded);
-        let proxy = self.proxy.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(3100));
-            let _ = proxy.send_event(UserEvent::Reap);
-        });
+        self.schedule_reap();
         if self.tabs.is_empty() {
             self.open_new_tab();
         }
     }
 
+    /// Les pages fermées ou mises en veille sont détruites trois secondes plus tard.
+    fn schedule_reap(&self) {
+        let proxy = self.proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(3100));
+            let _ = proxy.send_event(UserEvent::Reap);
+        });
+    }
+
     fn load_in_active(&mut self, url: &str) {
-        match self.tabs.active() {
-            Some(tab) => {
-                let _ = tab.webview().load_url(url);
+        match self.tabs.active().and_then(|t| t.webview()) {
+            Some(w) => {
+                let _ = w.load_url(url);
                 self.focus_page();
             }
-            None => self.open_tab(url),
+            None => self.open_tab(url, false),
         }
     }
 
     fn with_active(&self, action: impl FnOnce(&WebView) -> wry::Result<()>) {
-        if let Some(tab) = self.tabs.active() {
-            let _ = action(tab.webview());
+        if let Some(w) = self.tabs.active().and_then(|t| t.webview()) {
+            let _ = action(w);
         }
     }
 
@@ -576,11 +709,9 @@ impl App {
     /// s'ouvre par-dessus la page.
     fn focus_bar(&self) {
         match self.tabs.active() {
-            Some(tab) if network::is_home(&tab.url) && !self.expanded => {
-                let _ = tab.webview().focus();
-                let _ = tab
-                    .webview()
-                    .evaluate_script("window.focusSearch && focusSearch()");
+            Some(tab) if network::is_home(tab.url()) && !self.expanded && tab.webview().is_some() => {
+                self.focus_page();
+                tab.eval("window.focusSearch && focusSearch()");
             }
             _ => self.focus_chrome("navigateur.openBar('')"),
         }
@@ -588,6 +719,11 @@ impl App {
 
     fn focus_chrome(&self, script: &str) {
         let _ = self.chrome.focus();
+        self.chrome_call(script);
+    }
+
+    /// Appelle une fonction de l'interface (`navigateur.…`), si elle est prête.
+    fn chrome_call(&self, script: &str) {
         let _ = self
             .chrome
             .evaluate_script(&format!("window.navigateur && {script}"));
@@ -596,7 +732,7 @@ impl App {
     fn toggle_bookmark(&mut self, id: TabId) {
         let Some(tab) = self.tabs.get(id) else { return };
         if let Ok(mut lib) = self.library.write() {
-            lib.toggle_bookmark(&tab.url, &tab.title, tab.icon.as_deref());
+            lib.toggle_bookmark(tab.url(), &tab.title, tab.icon.as_deref());
         }
         self.reload_home_tabs();
         self.push_state();
@@ -604,20 +740,47 @@ impl App {
 
     /// Les pages d'accueil ouvertes se redessinent (nouveaux paramètres ou favoris).
     fn reload_home_tabs(&self) {
-        for tab in self.tabs.home_tabs() {
-            let _ = tab.webview().reload();
+        for w in self.tabs.home_tabs().filter_map(|t| t.webview()) {
+            let _ = w.reload();
         }
+    }
+
+    fn save_settings(&mut self, settings: Settings) {
+        let settings = settings.cleaned();
+        if let Err(err) = settings.save() {
+            eprintln!("paramètres non enregistrés : {err}");
+        }
+        let before = self.read_settings();
+        if let Ok(mut lib) = self.library.write() {
+            lib.prune(settings.history_days);
+        }
+        self.fulltext.prune(settings.history_days);
+        // Désactiver la recherche dans le texte des pages efface ce qui était gardé.
+        if before.index_pages && !settings.index_pages {
+            self.fulltext.clear();
+        }
+        if before.block_trackers != settings.block_trackers {
+            for w in self.tabs.iter().filter_map(|t| t.webview()) {
+                trackers::set_enabled(w, settings.block_trackers);
+            }
+        }
+        if let Ok(mut current) = self.settings.write() {
+            *current = settings;
+        }
+        self.relayout();
+        // Les pages d'accueil ouvertes reprennent le nouveau prénom et thème.
+        self.reload_home_tabs();
     }
 
     /// Envoie au panneau Bibliothèque la liste demandée.
     fn send_library(&self, kind: LibraryKind, query: &str) {
         let items = match kind {
             LibraryKind::Downloads => json!(self.downloads),
-            _ => match self.library.read() {
-                Ok(lib) if kind == LibraryKind::Bookmarks => json!(lib.search_bookmarks(query)),
-                Ok(lib) => json!(lib.search_history(query, 300)),
+            LibraryKind::Bookmarks => match self.library.read() {
+                Ok(lib) => json!(lib.search_bookmarks(query)),
                 Err(_) => json!([]),
             },
+            LibraryKind::History => self.history_items(query),
         };
         let kind = match kind {
             LibraryKind::Bookmarks => "bookmarks",
@@ -625,9 +788,7 @@ impl App {
             LibraryKind::Downloads => "downloads",
         };
         let data = json!({ "kind": kind, "items": items });
-        let _ = self
-            .chrome
-            .evaluate_script(&format!("window.navigateur && navigateur.setLibrary({data})"));
+        self.chrome_call(&format!("navigateur.setLibrary({data})"));
     }
 
     /// Prévoit un enregistrement dans deux secondes, pour regrouper les changements.
@@ -637,17 +798,29 @@ impl App {
         }
         let proxy = self.proxy.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(2));
+            std::thread::sleep(Duration::from_secs(2));
             let _ = proxy.send_event(UserEvent::Persist);
         });
     }
 
-    /// Enregistre tout de suite l'historique, les favoris et les onglets ouverts.
-    fn persist(&self) {
+    /// Enregistre tout de suite l'historique, les favoris, les réglages par site,
+    /// les notes, le texte des pages et les onglets ouverts (seul ce qui a changé).
+    fn persist(&mut self) {
         if let Ok(mut lib) = self.library.write()
             && let Err(err) = lib.save()
         {
             eprintln!("historique ou favoris non enregistrés : {err}");
+        }
+        if let Ok(mut sites) = self.sites.write()
+            && let Err(err) = sites.save()
+        {
+            eprintln!("réglages des sites non enregistrés : {err}");
+        }
+        if let Err(err) = self.notes.save() {
+            eprintln!("notes non enregistrées : {err}");
+        }
+        if let Err(err) = self.fulltext.save() {
+            eprintln!("texte des pages non enregistré : {err}");
         }
         if self.tabs.is_empty() {
             return;
@@ -670,7 +843,7 @@ impl App {
 
     fn relayout(&self) {
         let _ = self.chrome.set_bounds(ui::chrome_bounds(&self.window));
-        self.tabs.set_bounds(ui::page_bounds(&self.window, self.read_settings().bar_position));
+        self.tabs.set_bounds(self.page_bounds());
     }
 
     fn start_check(&mut self, manual: bool) {
@@ -727,8 +900,13 @@ impl App {
 
     /// Envoie à l'interface l'état complet (onglets et paramètres) à redessiner.
     fn push_state(&self) {
-        let active = self.tabs.active().map(|t| t.webview());
+        let active = self.tabs.active().and_then(|t| t.webview());
         let lib = self.library.read().ok();
+        let permissions = self.sites.read().map(|s| s.decisions()).unwrap_or_default();
+        let commands: Vec<_> = commands::liste()
+            .into_iter()
+            .map(|(name, desc)| json!({ "name": format!("/{name}"), "desc": desc }))
+            .collect();
         let state = json!({
             "tabs": self.tabs.snapshot(|url| lib.as_ref().is_some_and(|l| l.is_bookmarked(url))),
             "downloads": self.downloads,
@@ -737,11 +915,12 @@ impl App {
             "settings": self.read_settings(),
             "version": update::CURRENT,
             "update": self.update,
+            "permissions": permissions,
+            "permission_prompt": self.permission_prompt(),
+            "native_commands": commands,
         });
         drop(lib);
-        let _ = self.chrome.evaluate_script(&format!(
-            "window.navigateur && navigateur.setState({state})"
-        ));
+        self.chrome_call(&format!("navigateur.setState({state})"));
         self.schedule_persist();
     }
 }
