@@ -79,19 +79,19 @@
 
   /* Onglets : un point, ou une longue pastille pour l'onglet actif */
   #pills { display: flex; flex-direction: column; align-items: center; gap: 4px; overflow-y: auto; scrollbar-width: none; padding-top: 8px; }
-  .tab { position: relative; width: 34px; height: 26px; display: grid; place-items: center; cursor: pointer; }
-  .tab.active { height: 50px; }
+  .tab { position: relative; width: 46px; height: 30px; display: grid; place-items: center; cursor: pointer; }
+  .tab.active { height: 56px; }
   .dot {
-    width: 10px; height: 10px; border-radius: 5px; background: var(--muted); opacity: .55;
+    width: 16px; height: 16px; border-radius: 8px; background: var(--muted); opacity: .55;
     transition: all .18s ease;
   }
-  .tab:hover .dot { opacity: 1; width: 12px; height: 12px; border-radius: 6px; }
-  .tab.active .dot, .tab.active:hover .dot { width: 11px; height: 40px; border-radius: 6px; background: var(--accent); opacity: 1; }
+  .tab:hover .dot { opacity: 1; width: 18px; height: 18px; border-radius: 9px; }
+  .tab.active .dot, .tab.active:hover .dot { width: 16px; height: 46px; border-radius: 8px; background: var(--accent); opacity: 1; }
   .tab.loading .dot { animation: pulse 1s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
   /* Petite croix rouge qui apparaît en haut de l'onglet survolé */
   .close {
-    position: absolute; top: -5px; right: 1px; width: 16px; height: 16px; border-radius: 8px;
+    position: absolute; top: -4px; right: 4px; width: 16px; height: 16px; border-radius: 8px;
     display: grid; place-items: center; background: var(--danger); color: #fff;
     box-shadow: 0 1px 4px rgba(0, 0, 0, .25);
     opacity: 0; transform: scale(.6); pointer-events: none; transition: all .12s ease;
@@ -99,13 +99,13 @@
   .tab:hover .close { opacity: 1; transform: scale(1); pointer-events: auto; }
   .close:hover { filter: brightness(1.1); }
   /* Onglet qui joue du son : la pastille grandit et porte le haut-parleur ; un clic dessus coupe le son */
-  .tab.sound { height: 30px; }
-  .tab.sound.active { height: 52px; }
+  .tab.sound { height: 32px; }
+  .tab.sound.active { height: 56px; }
   .tab.sound .dot, .tab.sound:hover .dot {
-    width: 22px; height: 22px; border-radius: 11px; opacity: 1; padding: 0;
+    width: 26px; height: 26px; border-radius: 13px; opacity: 1; padding: 0;
     display: grid; place-items: center; color: #fff; background: var(--muted); cursor: pointer;
   }
-  .tab.sound.active .dot, .tab.sound.active:hover .dot { width: 22px; height: 44px; background: var(--accent); }
+  .tab.sound.active .dot, .tab.sound.active:hover .dot { width: 26px; height: 48px; background: var(--accent); }
   .tab.sound.muted .dot { opacity: .7; }
   .tab.sound .dot:hover { filter: brightness(1.12); }
   /* Glisser-déposer */
