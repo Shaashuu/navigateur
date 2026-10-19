@@ -26,12 +26,24 @@ pub struct Tab {
     pub title: String,
     pub url: String,
     pub loading: bool,
+    /// La page joue du son (vidéo ou musique).
+    pub audible: bool,
+    /// L'utilisateur a coupé le son de cet onglet.
+    pub muted: bool,
     webview: WebView,
 }
 
 impl Tab {
     pub fn webview(&self) -> &WebView {
         &self.webview
+    }
+
+    /// Coupe ou remet le son des vidéos et musiques de la page (voir ui::PAGE_SCRIPT).
+    pub fn apply_mute(&self) {
+        let _ = self.webview.evaluate_script(&format!(
+            "window.__featherSetMuted && __featherSetMuted({})",
+            self.muted
+        ));
     }
 }
 
@@ -44,6 +56,8 @@ pub struct TabInfo<'a> {
     pub active: bool,
     pub loading: bool,
     pub home: bool,
+    pub audible: bool,
+    pub muted: bool,
 }
 
 /// Tout ce qu'il faut pour créer la webview d'un nouvel onglet.
@@ -73,6 +87,8 @@ impl TabManager {
             title: String::new(),
             url: url.to_string(),
             loading: true,
+            audible: false,
+            muted: false,
             webview,
         });
         self.activate(id, visible);
@@ -118,6 +134,16 @@ impl TabManager {
         let next = (current as isize + step).rem_euclid(len) as usize;
         let id = self.tabs[next].id;
         self.activate(id, visible);
+    }
+
+    /// Déplace un onglet à une nouvelle position (glisser-déposer dans la colonne).
+    pub fn move_tab(&mut self, id: TabId, index: usize) {
+        let Some(from) = self.tabs.iter().position(|t| t.id == id) else {
+            return;
+        };
+        let tab = self.tabs.remove(from);
+        let index = index.min(self.tabs.len());
+        self.tabs.insert(index, tab);
     }
 
     pub fn active(&self) -> Option<&Tab> {
@@ -167,6 +193,8 @@ impl TabManager {
                 active: Some(t.id) == self.active,
                 loading: t.loading,
                 home: network::is_home(&t.url),
+                audible: t.audible,
+                muted: t.muted,
             })
             .collect()
     }

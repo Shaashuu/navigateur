@@ -16,8 +16,8 @@ pub struct Settings {
     /// Prénom affiché sur la page d'accueil (peut rester vide).
     pub name: String,
     pub search_engine: SearchEngine,
-    /// Page ouverte au démarrage et dans les nouveaux onglets.
-    /// Vide = page d'accueil intégrée (heure et bienvenue).
+    /// Page du bouton maison, ouverte aussi au démarrage.
+    /// Vide = page d'accueil intégrée (heure et recherche).
     pub home_page: String,
     pub theme: Theme,
 }
@@ -96,7 +96,7 @@ impl Settings {
         self
     }
 
-    /// Adresse à ouvrir au démarrage et dans un nouvel onglet.
+    /// Adresse du bouton maison et du démarrage.
     pub fn start_url(&self) -> String {
         if self.home_page.is_empty() {
             network::HOME_URL.to_string()

@@ -64,6 +64,8 @@
     color: var(--muted); font-size: 18px;
   }
   .round:hover { background: var(--accent-soft); color: var(--text); }
+  .round:disabled { opacity: .3; cursor: default; background: none; color: var(--muted); }
+  #nav { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 
   /* La pastille de recherche : un ovale avec une loupe, hors de l'accueil */
   #search-pill {
@@ -96,6 +98,17 @@
   }
   .tab:hover .close { opacity: 1; transform: scale(1); pointer-events: auto; }
   .close:hover { filter: brightness(1.1); }
+  /* Haut-parleur : la page joue du son ; un clic coupe ou remet le son */
+  .sound {
+    position: absolute; bottom: -4px; right: -3px; width: 18px; height: 18px; border-radius: 9px;
+    display: grid; place-items: center; background: var(--surface); color: var(--accent);
+    border: 1px solid var(--line); box-shadow: 0 1px 3px rgba(0, 0, 0, .15);
+  }
+  .sound.muted { color: var(--danger); }
+  .sound:hover { border-color: var(--accent); }
+  /* Glisser-déposer */
+  .tab.dragging { opacity: .6; transform: scale(1.15); cursor: grabbing; z-index: 2; }
+  .tab.dragging .close, .tab.dragging .sound { display: none; }
 
   /* Barre de recherche ouverte par-dessus la page (la page est cachée pendant ce temps) */
   #overlay, #settings {
@@ -156,6 +169,17 @@
       <button class="round" id="gear" title="Paramètres (Ctrl+,)" aria-label="Paramètres">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
       </button>
+      <div id="nav">
+        <button class="round" id="back" title="Page précédente (Alt+←)" aria-label="Page précédente">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>
+        </button>
+        <button class="round" id="forward" title="Page suivante (Alt+→)" aria-label="Page suivante">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+        <button class="round" id="home" title="Accueil" aria-label="Accueil">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z"/></svg>
+        </button>
+      </div>
     </div>
     <div id="middle">
       <button id="search-pill" hidden aria-label="Rechercher ou aller à une adresse (Ctrl+L)">
@@ -171,8 +195,6 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="input" spellcheck="false" autocomplete="off"
              placeholder="Aller à, chercher, ou taper / pour une commande">
-      <button class="icon" id="back" title="Précédent (Alt+←)">&#8592;</button>
-      <button class="icon" id="forward" title="Suivant (Alt+→)">&#8594;</button>
       <button class="icon" id="reload" title="Actualiser (F5)">&#8635;</button>
     </div>
     <ul id="command-list"></ul>
@@ -192,7 +214,7 @@
         <option value="google">Google</option>
         <option value="bing">Bing</option>
       </select>
-      <label for="s-home">Page d'accueil (laisser vide pour l'heure et la recherche)</label>
+      <label for="s-home">Adresse du bouton maison (vide = accueil Feather avec l'heure et la recherche)</label>
       <input type="text" id="s-home" placeholder="exemple.fr" autocomplete="off">
       <label>Thème</label>
       <div class="choices" id="s-theme">
@@ -204,7 +226,7 @@
         <button type="button" id="s-cancel">Annuler</button>
         <button type="submit" class="primary">Enregistrer</button>
       </div>
-      <div class="about">Feather 0.1.1</div>
+      <div class="about">Feather 0.1.2</div>
     </form>
   </div>
 
@@ -216,14 +238,15 @@
   const COMMANDS = [
     { name: '/nouveau', desc: 'Ouvrir un nouvel onglet', run: () => send({ type: 'new_tab' }) },
     { name: '/fermer', desc: "Fermer l'onglet actuel", run: () => send({ type: 'close_tab', id: null }) },
-    { name: '/accueil', desc: "Revenir à la page d'accueil", run: () => send({ type: 'home' }) },
+    { name: '/accueil', desc: 'Aller à la page du bouton maison', run: () => send({ type: 'home' }) },
     { name: '/retour', desc: 'Page précédente', run: () => send({ type: 'back' }) },
     { name: '/suivant', desc: 'Page suivante', run: () => send({ type: 'forward' }) },
     { name: '/actualiser', desc: 'Recharger la page', run: () => send({ type: 'reload' }) },
     { name: '/parametres', desc: 'Ouvrir les paramètres', run: () => openSettings() },
   ];
 
-  let state = { tabs: [], settings: {} };
+  let state = { tabs: [], settings: {}, can_back: false, can_forward: false };
+  let drag = null;          // onglet en cours de déplacement
   let mode = null;          // null, 'bar' ou 'settings'
   let matches = [];
   let selected = 0;
@@ -247,30 +270,84 @@
     document.documentElement.dataset.theme = theme || 'auto';
   }
 
+  const SPEAKER = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/>' +
+    '<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+  const SPEAKER_OFF = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/>' +
+    '<path d="m16 9 6 6m0-6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+
   function renderSidebar() {
-    const box = $('pills');
-    box.textContent = '';
-    for (const tab of state.tabs) {
-      const el = document.createElement('div');
-      el.className = 'tab' + (tab.active ? ' active' : '') + (tab.loading ? ' loading' : '');
-      el.setAttribute('role', 'button');
-      el.setAttribute('aria-label', label(tab));
-      el.title = label(tab); // bulle native : elle peut dépasser sur la page
-      el.innerHTML = '<span class="dot"></span><button class="close" aria-label="Fermer l\'onglet">' +
-        '<svg width="8" height="8" viewBox="0 0 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg></button>';
-      el.addEventListener('click', () => send({ type: 'activate_tab', id: tab.id }));
-      el.querySelector('.close').addEventListener('click', (e) => {
-        e.stopPropagation();
-        send({ type: 'close_tab', id: tab.id });
-      });
-      box.appendChild(el);
-    }
+    $('back').disabled = !state.can_back;
+    $('forward').disabled = !state.can_forward;
     // Hors de l'accueil, la recherche se range dans la pastille au-dessus des onglets.
     const tab = activeTab();
     const pill = $('search-pill');
     pill.hidden = !tab || tab.home;
     pill.classList.toggle('loading', !!(tab && tab.loading));
+    if (drag) return; // on redessine les onglets à la fin du glisser-déposer
+
+    const box = $('pills');
+    box.textContent = '';
+    for (const tab of state.tabs) {
+      const el = document.createElement('div');
+      el.className = 'tab' + (tab.active ? ' active' : '') + (tab.loading ? ' loading' : '');
+      el.dataset.id = tab.id;
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-label', label(tab));
+      el.title = label(tab); // bulle native : elle peut dépasser sur la page
+      el.innerHTML = '<span class="dot"></span><button class="close" aria-label="Fermer l\'onglet">' +
+        '<svg width="8" height="8" viewBox="0 0 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg></button>';
+      if (tab.audible || tab.muted) {
+        const sound = document.createElement('button');
+        sound.className = 'sound' + (tab.muted ? ' muted' : '');
+        sound.title = tab.muted ? 'Remettre le son' : "Couper le son de l'onglet";
+        sound.innerHTML = tab.muted ? SPEAKER_OFF : SPEAKER;
+        sound.addEventListener('pointerdown', (e) => e.stopPropagation());
+        sound.addEventListener('click', (e) => { e.stopPropagation(); send({ type: 'toggle_mute', id: tab.id }); });
+        el.appendChild(sound);
+      }
+      el.querySelector('.close').addEventListener('pointerdown', (e) => e.stopPropagation());
+      el.querySelector('.close').addEventListener('click', (e) => {
+        e.stopPropagation();
+        send({ type: 'close_tab', id: tab.id });
+      });
+      el.addEventListener('pointerdown', (e) => startDrag(e, el, tab));
+      box.appendChild(el);
+    }
   }
+
+  // Glisser-déposer : maintenir le clic sur un onglet et le monter ou le descendre.
+  function startDrag(e, el, tab) {
+    if (e.button !== 0) return;
+    drag = { el, tab, y: e.clientY, moved: false };
+    el.setPointerCapture(e.pointerId);
+  }
+  window.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    if (!drag.moved && Math.abs(e.clientY - drag.y) < 6) return;
+    if (!drag.moved) { drag.moved = true; drag.el.classList.add('dragging'); drag.el.title = ''; }
+    const box = $('pills');
+    const others = [...box.children].filter((c) => c !== drag.el);
+    const before = others.find((c) => {
+      const r = c.getBoundingClientRect();
+      return e.clientY < r.top + r.height / 2;
+    });
+    if (before) { if (drag.el.nextSibling !== before) box.insertBefore(drag.el, before); }
+    else if (box.lastChild !== drag.el) box.appendChild(drag.el);
+  });
+  const endDrag = () => {
+    if (!drag) return;
+    const { el, tab, moved } = drag;
+    drag = null;
+    if (moved) {
+      const index = [...$('pills').children].indexOf(el);
+      send({ type: 'move_tab', id: tab.id, index });
+    } else {
+      send({ type: 'activate_tab', id: tab.id });
+    }
+    renderSidebar();
+  };
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
 
   function renderCommands() {
     const q = input.value.trim().toLowerCase();
@@ -356,9 +433,15 @@
     }
   });
   // Les boutons de la barre ne doivent pas lui faire perdre le focus.
-  for (const id of ['back', 'forward', 'reload']) {
-    $(id).addEventListener('mousedown', (e) => e.preventDefault());
-    $(id).addEventListener('click', () => { closeBar(true); send({ type: id }); });
+  $('reload').addEventListener('mousedown', (e) => e.preventDefault());
+  $('reload').addEventListener('click', () => { closeBar(true); send({ type: 'reload' }); });
+  for (const id of ['back', 'forward', 'home']) {
+    $(id).addEventListener('click', () => {
+      if (mode === 'bar') closeBar(false);
+      if (mode === 'settings') closeSettings();
+      send({ type: id });
+      send({ type: 'focus_page' });
+    });
   }
   $('overlay').addEventListener('mousedown', (e) => {
     if (e.target === $('overlay')) { e.preventDefault(); closeBar(true); }

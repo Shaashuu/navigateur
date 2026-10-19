@@ -21,7 +21,8 @@ const HOME_HTML: &str = include_str!("../assets/home.html");
 /// car une page qui a le focus reçoit les touches avant la fenêtre.
 pub const PAGE_SCRIPT: &str = r#"
 (() => {
-  const send = (shortcut) => window.ipc.postMessage(JSON.stringify({ shortcut }));
+  const post = (msg) => window.ipc.postMessage(JSON.stringify(msg));
+  const send = (shortcut) => post({ shortcut });
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
     const ctrl = (e.ctrlKey || e.metaKey) && !e.altKey;
@@ -36,6 +37,32 @@ pub const PAGE_SCRIPT: &str = r#"
     else if (ctrl && k === ',') a = 'settings';
     if (a) { e.preventDefault(); e.stopPropagation(); send(a); }
   }, true);
+
+  // Son : prévient l'interface quand une vidéo ou une musique joue, et
+  // permet de couper le son de l'onglet.
+  let muted = false;
+  let last = false;
+  const media = () => Array.from(document.querySelectorAll('video, audio'));
+  const audible = (m) => !m.paused && !m.ended && (m.muted ? m.__featherMuted === true : m.volume > 0);
+  const report = () => {
+    const now = media().some(audible);
+    if (now !== last) { last = now; post({ audible: now }); }
+  };
+  const silence = (m) => { if (!m.muted) { m.muted = true; m.__featherMuted = true; } };
+  for (const type of ['play', 'playing', 'pause', 'ended', 'volumechange', 'emptied']) {
+    document.addEventListener(type, (e) => {
+      if (muted && type === 'play' && e.target instanceof HTMLMediaElement) silence(e.target);
+      report();
+    }, true);
+  }
+  window.__featherSetMuted = (on) => {
+    muted = on;
+    for (const m of media()) {
+      if (on) silence(m);
+      else if (m.__featherMuted) { m.muted = false; m.__featherMuted = false; }
+    }
+    report();
+  };
 })();
 "#;
 
@@ -48,6 +75,13 @@ pub enum ChromeMessage {
         input: String,
     },
     NewTab,
+    ToggleMute {
+        id: TabId,
+    },
+    MoveTab {
+        id: TabId,
+        index: usize,
+    },
     CloseTab {
         id: Option<TabId>,
     },
@@ -80,6 +114,8 @@ pub struct PageMessage {
     pub navigate: Option<String>,
     /// Texte commençant par « / » : ouvrir la barre des commandes.
     pub open_bar: Option<String>,
+    /// La page joue du son (ou vient d'arrêter).
+    pub audible: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]

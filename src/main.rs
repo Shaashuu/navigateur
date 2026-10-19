@@ -135,6 +135,12 @@ impl App {
                 if let Some(tab) = self.tabs.get_mut(id) {
                     tab.loading = loading;
                     tab.url = url;
+                    if loading {
+                        tab.audible = false;
+                    } else if tab.muted {
+                        // Nouvelle page : on garde l'onglet en sourdine.
+                        tab.apply_mute();
+                    }
                 }
                 self.push_state();
             }
@@ -151,7 +157,14 @@ impl App {
                     self.load_in_active(&url);
                 }
             }
-            ChromeMessage::NewTab => self.open_start_tab(),
+            ChromeMessage::NewTab => self.open_new_tab(),
+            ChromeMessage::ToggleMute { id } => {
+                if let Some(tab) = self.tabs.get_mut(id) {
+                    tab.muted = !tab.muted;
+                    tab.apply_mute();
+                }
+            }
+            ChromeMessage::MoveTab { id, index } => self.tabs.move_tab(id, index),
             ChromeMessage::CloseTab { id } => {
                 if let Some(id) = id.or(self.tabs.active_id()) {
                     self.close_tab(id);
@@ -192,6 +205,12 @@ impl App {
         if let Some(shortcut) = message.shortcut {
             self.handle_shortcut(id, shortcut);
         }
+        if let Some(audible) = message.audible {
+            if let Some(tab) = self.tabs.get_mut(id) {
+                tab.audible = audible;
+            }
+            self.push_state();
+        }
         // Seule la page d'accueil intégrée a le droit d'utiliser sa barre de recherche.
         let Some(tab) = self.tabs.get(id) else { return };
         if !network::is_home(&tab.url) {
@@ -216,7 +235,7 @@ impl App {
             Shortcut::Forward => self.with_active(|w| w.go_forward()),
             Shortcut::Reload => self.with_active(|w| w.reload()),
             Shortcut::Settings => self.focus_chrome("navigateur.openSettings()"),
-            Shortcut::NewTab => self.open_start_tab(),
+            Shortcut::NewTab => self.open_new_tab(),
             Shortcut::CloseTab => self.close_tab(id),
             Shortcut::NextTab => self.tabs.cycle(1, !self.expanded),
             Shortcut::PreviousTab => self.tabs.cycle(-1, !self.expanded),
@@ -224,9 +243,9 @@ impl App {
         self.push_state();
     }
 
-    fn open_start_tab(&mut self) {
-        let url = self.read_settings().start_url();
-        self.open_tab(&url);
+    /// Un nouvel onglet s'ouvre toujours sur l'accueil Feather (heure et recherche).
+    fn open_new_tab(&mut self) {
+        self.open_tab(network::HOME_URL);
     }
 
     fn open_tab(&mut self, url: &str) {
@@ -248,7 +267,7 @@ impl App {
     fn close_tab(&mut self, id: TabId) {
         self.tabs.close(id, !self.expanded);
         if self.tabs.is_empty() {
-            self.open_start_tab();
+            self.open_new_tab();
         }
     }
 
@@ -306,8 +325,11 @@ impl App {
 
     /// Envoie à l'interface l'état complet (onglets et paramètres) à redessiner.
     fn push_state(&self) {
+        let active = self.tabs.active().map(|t| t.webview());
         let state = json!({
             "tabs": self.tabs.snapshot(),
+            "can_back": active.and_then(|w| w.can_go_back().ok()).unwrap_or(false),
+            "can_forward": active.and_then(|w| w.can_go_forward().ok()).unwrap_or(false),
             "settings": self.read_settings(),
         });
         let _ = self.chrome.evaluate_script(&format!(

@@ -8,7 +8,7 @@ webview du système (WebView2 sur Windows, WebKit sur macOS et Linux) grâce à
 
 ![Accueil](captures/accueil.png)
 
-Autres captures : [commandes](captures/commandes.png), [paramètres](captures/parametres.png), [une page ouverte](captures/page.png), [la croix de fermeture](captures/onglets.png).
+Autres captures : [commandes](captures/commandes.png), [paramètres](captures/parametres.png), [une page ouverte](captures/page.png), [la croix de fermeture](captures/onglets.png), [le son coupé](captures/son.png).
 
 ## Ce que fait la version 0.1
 
@@ -20,11 +20,17 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
 - **Pastille de recherche** : dès qu'on quitte l'accueil, la recherche se range
   dans un ovale avec une loupe, au-dessus des onglets. Un clic (ou `Ctrl+L`)
   ouvre la barre par-dessus la page ; `Échap` y revient.
+- **En haut à gauche** : l'engrenage des paramètres, puis page précédente,
+  page suivante et le bouton maison (son adresse se règle dans les paramètres).
 - **Onglets en pastilles à gauche** : la longue pastille est l'onglet actif, un
   point par autre onglet, `+` pour en ouvrir un. Au survol, le titre s'affiche
   et une petite croix rouge apparaît en haut de la pastille pour la fermer.
+  Maintenez le clic sur un onglet pour le monter ou le descendre.
+- **Son** : un petit haut-parleur apparaît sur l'onglet qui joue une vidéo ou
+  une musique ; un clic dessus coupe ou remet le son de cet onglet.
 - **Paramètres** (engrenage en haut à gauche) : prénom, moteur de recherche
-  (DuckDuckGo, Qwant, Ecosia, Google, Bing), page d'accueil, thème clair, sombre
+  (DuckDuckGo, Qwant, Ecosia, Google, Bing), adresse du bouton maison (ouverte
+  aussi au démarrage ; les nouveaux onglets ouvrent l'accueil Feather), thème clair, sombre
   ou automatique. Ils sont enregistrés dans `parametres.json`, dans le dossier
   de configuration du système (`%APPDATA%\Feather\Feather\config` sur Windows).
 
@@ -81,6 +87,8 @@ leur onglet et envoient des messages.
 - Pas d'historique, de favoris, de téléchargements gérés ni de navigation privée.
 - Les onglets ne sont pas restaurés au redémarrage.
 - Sur Linux, seul X11 a été essayé (pas Wayland).
+- L'icône de son repère les balises vidéo et audio de la page, pas les sons
+  produits par Web Audio ni ceux des vidéos intégrées dans un cadre (iframe).
 
 ## Télécharger sans installer Rust
 
