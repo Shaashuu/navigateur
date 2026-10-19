@@ -52,6 +52,15 @@ pub const PAGE_SCRIPT: &str = r#"
   // intégrés…) : sous Windows, ce script est injecté dans chacun d'eux.
   if (window.top !== window) return;
 
+  // YouTube : l'aperçu vidéo qui couvre la miniature au survol avale le clic dans
+  // le moteur de macOS ; sans lui, la miniature redevient un simple lien.
+  if (/(^|\.)youtube\.com$/.test(location.hostname)) {
+    const css = document.createElement('style');
+    css.textContent = 'ytd-video-preview,#video-preview{display:none!important}';
+    (document.head || document.documentElement).appendChild(css);
+    document.addEventListener('DOMContentLoaded', () => (document.head || document.documentElement).appendChild(css));
+  }
+
   // Son : prévient l'interface quand une vidéo ou une musique joue, et
   // permet de couper le son de l'onglet.
   let muted = false;
