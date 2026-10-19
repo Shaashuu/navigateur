@@ -23,11 +23,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --release
       - run: cargo build --release
-      - run: Copy-Item target/release/feather.exe Feather-0.1.7-windows.exe
+      - run: Copy-Item target/release/feather.exe Feather-0.1.8-windows.exe
       - uses: actions/upload-artifact@v6
         with:
           name: windows
-          path: Feather-0.1.7-windows.exe
+          path: Feather-0.1.8-windows.exe
 
   macos:
     runs-on: macos-latest
@@ -57,11 +57,11 @@ jobs:
           iconutil -c icns Feather.iconset -o dmg/Feather.app/Contents/Resources/Feather.icns
           codesign --force --deep --sign - dmg/Feather.app
           ln -s /Applications dmg/Applications
-          hdiutil create -volname Feather -srcfolder dmg -ov -format UDZO Feather-0.1.7-macos.dmg
+          hdiutil create -volname Feather -srcfolder dmg -ov -format UDZO Feather-0.1.8-macos.dmg
       - uses: actions/upload-artifact@v6
         with:
           name: macos
-          path: Feather-0.1.7-macos.dmg
+          path: Feather-0.1.8-macos.dmg
 
   publier:
     if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
