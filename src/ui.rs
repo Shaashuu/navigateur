@@ -39,6 +39,10 @@ pub const PAGE_SCRIPT: &str = r#"
     if (a) { e.preventDefault(); e.stopPropagation(); send(a); }
   }, true);
 
+  // Le reste ne concerne que la page elle-même, pas ses cadres (publicités, lecteurs
+  // intégrés…) : sous Windows, ce script est injecté dans chacun d'eux.
+  if (window.top !== window) return;
+
   // Son : prévient l'interface quand une vidéo ou une musique joue, et
   // permet de couper le son de l'onglet.
   let muted = false;
