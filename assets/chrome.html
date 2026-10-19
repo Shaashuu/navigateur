@@ -258,6 +258,77 @@
     border-radius: 50%; background: var(--accent); border: 1.5px solid var(--bg);
   }
   #settings .about { margin-top: 18px; color: var(--muted); font-size: 12px; }
+  #settings h3.sec { margin: 22px 0 0; font-size: 14px; font-weight: 600; }
+  #settings .check { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 13px; color: var(--text); }
+  #settings .danger { margin-top: 12px; height: 34px; padding: 0 16px; border-radius: 17px; border: 1px solid var(--line); color: var(--danger); }
+  #settings .danger.confirm { background: var(--danger); color: #fff; border-color: var(--danger); }
+
+  /* Favoris, historique, téléchargements : trois boutons sous la maison */
+  #lib-btns { display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 10px; margin-top: 2px; border-top: 1px solid var(--line); }
+  #lib-btns .round.on { background: var(--accent-soft); color: var(--accent); }
+  #lib-downloads { position: relative; }
+  #lib-downloads.busy { color: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  #lib-downloads.fresh::after {
+    content: ''; position: absolute; top: 5px; right: 5px; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--accent); border: 1.5px solid var(--bg);
+  }
+  body[data-pos="top"] #lib-btns { flex-direction: row; order: 4; padding: 0 0 0 8px; margin: 0; border-top: 0; border-left: 1px solid var(--line); }
+  /* Étoile : dans la barre de recherche, ou dans l'onglet actif quand la barre est en haut */
+  .star.on { color: #e8a317; }
+  .star.on svg { fill: currentColor; }
+  .tab .star { flex: none; width: 26px; height: 26px; border-radius: 13px; display: grid; place-items: center; color: var(--muted); }
+  .tab .star:hover { background: var(--surface); color: var(--text); }
+  .tab .star.on { color: #e8a317; }
+
+  /* Bibliothèque */
+  #library {
+    position: fixed; left: 56px; right: 0; top: 0; bottom: 0; display: none;
+    flex-direction: column; align-items: center; padding: 6vh 24px 24px;
+  }
+  body.library #library { display: flex; }
+  body[data-pos="right"] #library { left: 0; right: 56px; }
+  body[data-pos="top"] #library { left: 0; right: 0; top: 44px; }
+  #library .panel {
+    width: min(720px, 100%); max-height: 100%; display: flex; flex-direction: column;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
+  }
+  #library .head { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px; }
+  #lib-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: var(--bg); }
+  #lib-tabs button { height: 30px; padding: 0 14px; border-radius: 9px; color: var(--muted); font-size: 13px; }
+  #lib-tabs button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
+  #lib-search {
+    flex: 1; min-width: 0; height: 34px; padding: 0 14px; border-radius: 17px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); font: inherit; outline: none; user-select: text;
+  }
+  #lib-search:focus { border-color: var(--accent); }
+  #lib-close { width: 30px; height: 30px; border-radius: 15px; color: var(--muted); font-size: 18px; }
+  #lib-close:hover { background: var(--accent-soft); color: var(--text); }
+  #lib-list { flex: 1; min-height: 120px; overflow-y: auto; padding: 0 8px 8px; }
+  #lib-list .day { margin: 12px 10px 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  #lib-list .empty { padding: 40px 0; text-align: center; color: var(--muted); }
+  .row { display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 10px; cursor: pointer; }
+  .row:hover { background: var(--accent-soft); }
+  .row .ico {
+    flex: none; width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center;
+    background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 600; overflow: hidden;
+  }
+  .row .ico img { width: 16px; height: 16px; object-fit: contain; }
+  .row .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .row .t, .row .u { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .u { font-size: 12px; color: var(--muted); }
+  .row .time { flex: none; font-size: 12px; color: var(--muted); }
+  .row .acts { flex: none; display: none; gap: 2px; }
+  .row:hover .acts { display: flex; }
+  .row:hover .time { display: none; }
+  .row .acts button { height: 26px; min-width: 26px; padding: 0 8px; border-radius: 13px; color: var(--muted); font-size: 12px; }
+  .row .acts button:hover { background: var(--surface); color: var(--text); }
+  .row.dl { cursor: default; }
+  .row.dl .acts { display: flex; }
+  .row.dl .u.failed { color: var(--danger); }
+  #library .foot { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  #library .foot button { height: 30px; padding: 0 14px; border-radius: 15px; border: 1px solid var(--line); color: var(--text); }
+  #library .foot button.confirm { background: var(--danger); border-color: var(--danger); color: #fff; }
+  #library .foot button[hidden] { display: none; }
 </style>
 </head>
 <body data-pos="left">
@@ -277,6 +348,17 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z"/></svg>
         </button>
       </div>
+      <div id="lib-btns">
+        <button class="round" id="lib-bookmarks" title="Favoris" aria-label="Favoris">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>
+        </button>
+        <button class="round" id="lib-history" title="Historique" aria-label="Historique">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 4v4h4"/><path d="M12 7.5V12l3 2"/></svg>
+        </button>
+        <button class="round" id="lib-downloads" title="Téléchargements" aria-label="Téléchargements">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>
+        </button>
+      </div>
     </div>
     <div id="middle">
       <button id="search-pill" hidden aria-label="Rechercher ou aller à une adresse (Ctrl+L)">
@@ -292,6 +374,7 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="input" spellcheck="false" autocomplete="off"
              placeholder="Aller à, chercher, ou taper / pour une commande">
+      <button class="icon star" id="star" title="Ajouter aux favoris (Ctrl+D)"><svg width="17" height="17" style="margin:auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg></button>
       <button class="icon" id="reload" title="Actualiser (F5)">&#8635;</button>
     </div>
     <ul id="command-list"></ul>
@@ -299,6 +382,25 @@
   </div>
 
   <div id="ctx"></div>
+
+  <div id="library">
+    <div class="panel">
+      <div class="head">
+        <div id="lib-tabs">
+          <button type="button" data-kind="bookmarks">Favoris</button>
+          <button type="button" data-kind="history">Historique</button>
+          <button type="button" data-kind="downloads">Téléchargements</button>
+        </div>
+        <input id="lib-search" type="search" spellcheck="false" autocomplete="off" placeholder="Rechercher">
+        <button type="button" id="lib-close" title="Fermer (Échap)" aria-label="Fermer">&times;</button>
+      </div>
+      <div id="lib-list"></div>
+      <div class="foot">
+        <span id="lib-hint"></span>
+        <button type="button" id="lib-clear" hidden></button>
+      </div>
+    </div>
+  </div>
 
   <div id="settings">
     <form id="settings-form">
@@ -327,6 +429,25 @@
         <button type="button" data-value="right">Droite</button>
         <button type="button" data-value="top">Haut</button>
       </div>
+      <h3 class="sec">Au démarrage</h3>
+      <div class="choices" id="s-startup" style="margin-top:8px">
+        <button type="button" data-value="home">Ouvrir l'accueil</button>
+        <button type="button" data-value="restore">Restaurer les onglets</button>
+      </div>
+      <h3 class="sec">Historique et favoris</h3>
+      <label for="s-history">Conserver l'historique</label>
+      <select id="s-history">
+        <option value="7">7 jours</option>
+        <option value="30">30 jours</option>
+        <option value="90">3 mois</option>
+        <option value="365">1 an</option>
+        <option value="0">Toujours</option>
+      </select>
+      <label class="check"><input type="checkbox" id="s-bmhome"> Afficher les favoris sur la page d'accueil</label>
+      <button type="button" class="danger" id="s-clear">Effacer l'historique</button>
+      <h3 class="sec">Téléchargements</h3>
+      <label for="s-dldir">Dossier (vide = dossier Téléchargements de l'ordinateur)</label>
+      <input type="text" id="s-dldir" placeholder="Téléchargements" autocomplete="off" spellcheck="false">
       <div class="update">
         <h3>Mise à jour</h3>
         <div class="row"><span>Version actuelle</span><b id="u-current"></b></div>
@@ -366,11 +487,17 @@
   let state = { tabs: [], settings: {}, version: '', update: { state: 'idle' }, can_back: false, can_forward: false };
   let drag = null;          // onglet en cours de déplacement
   const badIcons = new Set(); // icônes introuvables : on garde le point gris
-  let mode = null;          // null, 'bar' ou 'settings'
+  let mode = null;          // null, 'bar', 'settings' ou 'library'
   let matches = [];
   let selected = 0;
   let draftTheme = 'auto';
   let draftPos = 'left';
+  let draftStartup = 'home';
+  let libKind = 'history';   // onglet ouvert dans la bibliothèque
+  let libItems = [];
+  let seenDownloads = 0;     // téléchargements terminés déjà vus dans la bibliothèque
+  const isMac = /Mac/.test(navigator.platform);
+  const STAR = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>';
   let editing = false;      // adresse de l'onglet actif en cours de modification (barre en haut)
   const isTop = () => (state.settings.bar_position || 'left') === 'top';
   const applyPos = (pos) => { document.body.dataset.pos = pos || 'left'; };
@@ -386,6 +513,8 @@
     mode = next;
     document.body.classList.toggle('bar', mode === 'bar');
     document.body.classList.toggle('settings', mode === 'settings');
+    document.body.classList.toggle('library', mode === 'library');
+    for (const k of ['bookmarks', 'history', 'downloads']) $('lib-' + k).classList.toggle('on', mode === 'library' && libKind === k);
     if (wasOpen !== (mode !== null)) send({ type: 'expand', open: mode !== null });
   }
 
@@ -447,6 +576,10 @@
     const pill = $('search-pill');
     pill.hidden = !tab || tab.home;
     pill.classList.toggle('loading', !!(tab && tab.loading));
+    $('star').hidden = !tab || tab.home;
+    $('star').classList.toggle('on', !!(tab && tab.bookmarked));
+    $('star').title = tab && tab.bookmarked ? 'Retirer des favoris (Ctrl+D)' : 'Ajouter aux favoris (Ctrl+D)';
+    renderDownloadsButton();
     if (drag || (editing && document.querySelector('.urlinput'))) return; // on redessine les onglets à la fin du glisser-déposer
 
     const box = $('pills');
@@ -505,6 +638,16 @@
           ttl.className = 'ttl';
           ttl.textContent = label(tab);
           el.appendChild(ttl);
+          if (tab.active && !tab.home) {
+            const star = document.createElement('button');
+            star.className = 'star' + (tab.bookmarked ? ' on' : '');
+            star.title = tab.bookmarked ? 'Retirer des favoris (Ctrl+D)' : 'Ajouter aux favoris (Ctrl+D)';
+            star.setAttribute('aria-label', star.title);
+            star.innerHTML = STAR;
+            star.addEventListener('pointerdown', (e) => e.stopPropagation());
+            star.addEventListener('click', (e) => { e.stopPropagation(); send({ type: 'toggle_bookmark', id: tab.id }); });
+            el.appendChild(star);
+          }
         }
       }
       if (sound) {
@@ -637,10 +780,18 @@
     draftTheme = s.theme || 'auto';
     draftPos = s.bar_position || 'left';
     $('s-autoupdate').checked = s.auto_update_check !== false;
+    draftStartup = s.startup || 'home';
+    $('s-history').value = String(s.history_days ?? 90);
+    if (!$('s-history').value) $('s-history').value = '90';
+    $('s-bmhome').checked = s.bookmarks_on_home !== false;
+    $('s-dldir').value = s.download_dir || '';
+    disarm($('s-clear'), "Effacer l'historique");
+    renderStartupChoices();
     renderThemeChoices();
     renderPosChoices();
     renderUpdate();
     if (mode === 'bar') closeBar(false);
+    if (mode === 'library') setMode(null);
     setMode('settings');
     $('s-name').focus();
   }
@@ -655,6 +806,21 @@
   function renderThemeChoices() {
     for (const b of $('s-theme').children) b.classList.toggle('on', b.dataset.value === draftTheme);
     applyTheme(draftTheme); // aperçu immédiat
+  }
+
+  function renderStartupChoices() {
+    for (const b of $('s-startup').children) b.classList.toggle('on', b.dataset.value === draftStartup);
+  }
+
+  // Bouton à confirmer d'un second clic (effacer l'historique).
+  function disarm(b, text) { b.classList.remove('confirm'); b.textContent = text; b.dataset.armed = ''; }
+  function armed(b, text) {
+    if (b.dataset.armed) return true;
+    b.dataset.armed = '1';
+    b.classList.add('confirm');
+    b.textContent = text;
+    setTimeout(() => { if (b.dataset.armed) disarm(b, b.dataset.label); }, 4000);
+    return false;
   }
 
   function renderPosChoices() {
@@ -688,6 +854,7 @@
     $(id).addEventListener('click', () => {
       if (mode === 'bar') closeBar(false);
       if (mode === 'settings') closeSettings();
+      if (mode === 'library') setMode(null);
       send({ type: id });
       send({ type: 'focus_page' });
     });
@@ -704,6 +871,16 @@
   for (const b of $('s-theme').children) {
     b.addEventListener('click', () => { draftTheme = b.dataset.value; renderThemeChoices(); });
   }
+  for (const b of $('s-startup').children) {
+    b.addEventListener('click', () => { draftStartup = b.dataset.value; renderStartupChoices(); });
+  }
+  $('s-clear').dataset.label = "Effacer l'historique";
+  $('s-clear').addEventListener('click', () => {
+    const b = $('s-clear');
+    if (!armed(b, 'Cliquer encore pour tout effacer')) return;
+    send({ type: 'clear_history' });
+    disarm(b, 'Historique effacé');
+  });
   for (const b of $('s-pos').children) {
     b.addEventListener('click', () => { draftPos = b.dataset.value; renderPosChoices(); });
   }
@@ -719,11 +896,212 @@
         theme: draftTheme,
         bar_position: draftPos,
         auto_update_check: $('s-autoupdate').checked,
+        startup: draftStartup,
+        history_days: Number($('s-history').value),
+        bookmarks_on_home: $('s-bmhome').checked,
+        download_dir: $('s-dldir').value,
       },
     });
     setMode(null);
     send({ type: 'focus_page' });
   });
+
+  // --- Bibliothèque : favoris, historique, téléchargements ---
+  function openLibrary(kind) {
+    if (mode === 'library' && libKind === kind) { closeLibrary(); return; }
+    if (mode === 'bar') closeBar(false);
+    if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
+    stopEdit();
+    libKind = kind;
+    for (const b of $('lib-tabs').children) b.classList.toggle('on', b.dataset.kind === kind);
+    $('lib-search').value = '';
+    libItems = kind === 'downloads' ? (state.downloads || []) : [];
+    setMode('library');
+    for (const k of ['bookmarks', 'history', 'downloads']) $('lib-' + k).classList.toggle('on', libKind === k);
+    renderLibrary();
+    requestLibrary();
+    $('lib-search').focus();
+  }
+  function closeLibrary() {
+    if (mode !== 'library') return;
+    setMode(null);
+    send({ type: 'focus_page' });
+  }
+  let libTimer = 0;
+  function requestLibrary() {
+    clearTimeout(libTimer);
+    if (libKind === 'downloads') { renderLibrary(); return; }
+    libTimer = setTimeout(() => send({ type: 'library', kind: libKind, query: $('lib-search').value }), 80);
+  }
+  const host = (url) => { try { return new URL(url).host.replace(/^www\./, ''); } catch { return url; } };
+  const clock = (t) => new Date(t * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  function dayLabel(t) {
+    const d = new Date(t * 1000);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const diff = Math.round((today - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+    if (diff === 0) return "Aujourd'hui";
+    if (diff === 1) return 'Hier';
+    const s = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  function icoFor(item) {
+    const ico = document.createElement('span');
+    ico.className = 'ico';
+    const letter = () => { ico.textContent = (item.title || host(item.url) || '?').charAt(0).toUpperCase(); };
+    if (item.icon && !badIcons.has(item.icon)) {
+      const img = document.createElement('img');
+      img.referrerPolicy = 'no-referrer';
+      img.alt = '';
+      img.addEventListener('error', () => { badIcons.add(item.icon); ico.textContent = ''; letter(); });
+      img.src = item.icon;
+      ico.appendChild(img);
+    } else letter();
+    return ico;
+  }
+  function actButton(text, title, run) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.title = title;
+    b.addEventListener('click', (e) => { e.stopPropagation(); run(); });
+    return b;
+  }
+  function pageRow(item, time, remove) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.title = item.url;
+    row.appendChild(icoFor(item));
+    const txt = document.createElement('span');
+    txt.className = 'txt';
+    txt.innerHTML = '<span class="t"></span><span class="u"></span>';
+    txt.firstChild.textContent = item.title || host(item.url);
+    txt.lastChild.textContent = host(item.url);
+    row.appendChild(txt);
+    if (time) {
+      const tm = document.createElement('span');
+      tm.className = 'time';
+      tm.textContent = time;
+      row.appendChild(tm);
+    }
+    const acts = document.createElement('span');
+    acts.className = 'acts';
+    acts.appendChild(actButton('Nouvel onglet', 'Ouvrir dans un nouvel onglet (clic molette)', () => send({ type: 'open_url', url: item.url, new_tab: true })));
+    acts.appendChild(actButton('\u2715', 'Supprimer', () => { remove(); row.remove(); }));
+    row.appendChild(acts);
+    row.addEventListener('click', () => { closeLibrary(); send({ type: 'open_url', url: item.url, new_tab: false }); });
+    row.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
+    row.addEventListener('auxclick', (e) => { if (e.button === 1) { e.preventDefault(); send({ type: 'open_url', url: item.url, new_tab: true }); } });
+    return row;
+  }
+  function downloadRow(d) {
+    const row = document.createElement('div');
+    row.className = 'row dl';
+    const ico = document.createElement('span');
+    ico.className = 'ico';
+    ico.textContent = (d.name.split('.').pop() || '?').slice(0, 3).toUpperCase();
+    ico.style.fontSize = '9px';
+    row.appendChild(ico);
+    const txt = document.createElement('span');
+    txt.className = 'txt';
+    txt.innerHTML = '<span class="t"></span><span class="u"></span>';
+    txt.firstChild.textContent = d.name;
+    const status = { progress: 'Téléchargement en cours…', done: 'Terminé · ' + host(d.url), failed: 'Échec du téléchargement' };
+    txt.lastChild.textContent = status[d.state] || '';
+    txt.lastChild.classList.toggle('failed', d.state === 'failed');
+    row.appendChild(txt);
+    const acts = document.createElement('span');
+    acts.className = 'acts';
+    if (d.state === 'done') acts.appendChild(actButton('Ouvrir', 'Ouvrir le fichier', () => send({ type: 'open_download', id: d.id })));
+    if (d.state !== 'failed') acts.appendChild(actButton(isMac ? 'Afficher dans le Finder' : 'Afficher dans le dossier', 'Montrer le fichier dans son dossier', () => send({ type: 'reveal_download', id: d.id })));
+    row.appendChild(acts);
+    if (d.state === 'done') row.addEventListener('dblclick', () => send({ type: 'open_download', id: d.id }));
+    return row;
+  }
+  function renderLibrary() {
+    const list = $('lib-list');
+    list.textContent = '';
+    const q = $('lib-search').value.trim().toLowerCase();
+    let items = libItems;
+    if (libKind === 'downloads') {
+      items = (state.downloads || []).slice().reverse().filter((d) => !q || d.name.toLowerCase().includes(q) || d.url.toLowerCase().includes(q));
+      seenDownloads = (state.downloads || []).filter((d) => d.state !== 'progress').length;
+      renderDownloadsButton();
+    }
+    const empty = {
+      bookmarks: q ? 'Aucun favori trouvé.' : "Aucun favori pour l'instant. Cliquez sur l'étoile d'une page (ou Ctrl+D) pour l'ajouter.",
+      history: q ? 'Rien trouvé dans l\'historique.' : 'L\'historique est vide.',
+      downloads: q ? 'Aucun téléchargement trouvé.' : 'Aucun téléchargement pendant cette session.',
+    };
+    if (!items.length) {
+      const p = document.createElement('div');
+      p.className = 'empty';
+      p.textContent = empty[libKind];
+      list.appendChild(p);
+    }
+    let day = '';
+    for (const item of items) {
+      if (libKind === 'history') {
+        const d = dayLabel(item.time);
+        if (d !== day) {
+          day = d;
+          const h = document.createElement('div');
+          h.className = 'day';
+          h.textContent = d;
+          list.appendChild(h);
+        }
+        list.appendChild(pageRow(item, clock(item.time), () => send({ type: 'remove_visit', url: item.url })));
+      } else if (libKind === 'bookmarks') {
+        list.appendChild(pageRow(item, '', () => send({ type: 'remove_bookmark', url: item.url })));
+      } else {
+        list.appendChild(downloadRow(item));
+      }
+    }
+    const hints = {
+      bookmarks: 'Clic : ouvrir · clic molette : nouvel onglet',
+      history: 'Clic : ouvrir · clic molette : nouvel onglet',
+      downloads: (state.settings.download_dir ? 'Dossier : ' + state.settings.download_dir : 'Rangés dans le dossier Téléchargements'),
+    };
+    $('lib-hint').textContent = hints[libKind];
+    const clear = $('lib-clear');
+    clear.dataset.label = libKind === 'history' ? "Effacer l'historique" : 'Vider la liste';
+    clear.hidden = libKind === 'bookmarks' || !items.length || !!q;
+    if (!clear.dataset.armed) disarm(clear, clear.dataset.label);
+  }
+  function renderDownloadsButton() {
+    const dls = state.downloads || [];
+    const b = $('lib-downloads');
+    const busy = dls.some((d) => d.state === 'progress');
+    b.classList.toggle('busy', busy);
+    b.classList.toggle('fresh', !busy && dls.filter((d) => d.state !== 'progress').length > seenDownloads);
+    b.title = busy ? 'Téléchargements (en cours)' : 'Téléchargements';
+  }
+  for (const k of ['bookmarks', 'history', 'downloads']) {
+    $('lib-' + k).addEventListener('click', () => openLibrary(k));
+  }
+  for (const b of $('lib-tabs').children) {
+    b.addEventListener('click', () => {
+      libKind = b.dataset.kind;
+      for (const o of $('lib-tabs').children) o.classList.toggle('on', o === b);
+      for (const k of ['bookmarks', 'history', 'downloads']) $('lib-' + k).classList.toggle('on', libKind === k);
+      libItems = [];
+      renderLibrary();
+      requestLibrary();
+      $('lib-search').focus();
+    });
+  }
+  $('lib-search').addEventListener('input', () => { if (libKind === 'downloads') renderLibrary(); else requestLibrary(); });
+  $('lib-search').addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeLibrary(); e.preventDefault(); } });
+  $('lib-close').addEventListener('click', closeLibrary);
+  $('library').addEventListener('mousedown', (e) => { if (e.target === $('library')) closeLibrary(); });
+  $('lib-clear').addEventListener('click', () => {
+    const b = $('lib-clear');
+    if (!armed(b, 'Cliquer encore pour confirmer')) return;
+    disarm(b, b.dataset.label);
+    if (libKind === 'history') send({ type: 'clear_history' });
+    else { send({ type: 'clear_downloads' }); state.downloads = (state.downloads || []).filter((d) => d.state === 'progress'); renderLibrary(); }
+  });
+  $('star').addEventListener('mousedown', (e) => e.preventDefault());
+  $('star').addEventListener('click', () => send({ type: 'toggle_bookmark', id: null }));
 
   // --- Mise à jour ---
   function renderUpdate() {
@@ -765,6 +1143,7 @@
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeTabMenu();
     if (e.key === 'Escape' && mode === 'settings') { closeSettings(); return; }
+    if (e.key === 'Escape' && mode === 'library') { closeLibrary(); return; }
     const k = e.key.toLowerCase();
     if (e.altKey && !e.ctrlKey && !e.metaKey && (k === 'arrowleft' || k === 'arrowright')) {
       if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
@@ -782,6 +1161,7 @@
     if (k === 'm' && e.ctrlKey && !e.metaKey) { const t = activeTab(); if (t) send({ type: 'toggle_mute', id: t.id }); }
     else if (k === 'l' || k === 'k') send({ type: 'focus_bar' });
     else if (k === 'r') send({ type: 'reload' });
+    else if (k === 'd') send({ type: 'toggle_bookmark', id: null });
     else if (k === 't') send({ type: 'new_tab' });
     else if (k === 'w') send({ type: 'close_tab', id: null });
     else if (k === ',') openSettings();
@@ -800,6 +1180,12 @@
       if (mode !== 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
       renderSidebar();
       renderUpdate();
+      if (mode === 'library' && libKind === 'downloads') renderLibrary();
+    },
+    setLibrary(data) {
+      if (mode !== 'library' || data.kind !== libKind) return;
+      libItems = data.items || [];
+      renderLibrary();
     },
     openBar,
     openSettings,

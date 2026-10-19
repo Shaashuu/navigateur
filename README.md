@@ -38,11 +38,22 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   aussi au démarrage ; les nouveaux onglets ouvrent l'accueil Feather), thème clair, sombre
   ou automatique. Ils sont enregistrés dans `parametres.json`, dans le dossier
   de configuration du système (`%APPDATA%\Feather\Feather\config` sur Windows).
+- **Favoris, historique, téléchargements** (nouveau en 0.2) : trois boutons sous
+  la maison (tout à droite quand la barre est en haut) ouvrent la Bibliothèque,
+  avec une recherche. L'étoile (dans la barre de recherche, ou dans l'onglet
+  actif quand la barre est en haut) ou `Ctrl+D` ajoute la page aux favoris, qui
+  s'affichent aussi sur l'accueil. L'historique est rangé par jour et oublié
+  après la durée choisie dans les paramètres. Les fichiers téléchargés vont
+  dans le dossier Téléchargements, ou dans celui indiqué dans les paramètres.
+- **Au démarrage** : ouvrir l'accueil, ou rouvrir les onglets de la dernière fois.
+  Historique, favoris et onglets sont enregistrés dans `historique.json`,
+  `favoris.json` et `session.json`, à côté de `parametres.json`, et restent sur
+  l'ordinateur.
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
 ou suivante, `F5` ou `Ctrl+R` actualiser, `Ctrl+M` couper le son de l'onglet,
-`Ctrl+,` paramètres.
+`Ctrl+D` ajouter aux favoris, `Ctrl+,` paramètres.
 
 ## Lancer le navigateur
 
@@ -74,6 +85,8 @@ Pour lancer les tests : `cargo test`.
 | `src/settings.rs` | Lecture et écriture des paramètres en JSON (serde). |
 | `src/ui.rs` | Messages échangés avec l'interface et les pages, placement des zones, page d'accueil. |
 | `src/network.rs` | Décide si la saisie est une adresse ou une recherche. |
+| `src/library.rs` | Historique, favoris et onglets de la dernière session (fichiers JSON). |
+| `src/downloads.rs` | Où ranger les téléchargements, et les montrer dans le dossier. |
 | `assets/chrome.html` | L'interface (pastilles, barre, commandes, paramètres) en HTML/CSS. |
 | `assets/home.html` | La page d'accueil. |
 
@@ -88,10 +101,12 @@ le retire de la liste, ce qui détruit sa webview et libère sa mémoire. Il n'y
 ni `Rc` ni `RefCell` : les rappels des webviews ne gardent que le numéro de
 leur onglet et envoient des messages.
 
-## Limites connues de la 0.1
+## Limites connues
 
-- Pas d'historique, de favoris, de téléchargements gérés ni de navigation privée.
-- Les onglets ne sont pas restaurés au redémarrage.
+- Pas de navigation privée.
+- Téléchargements : pas de barre de progression (le moteur ne donne pas
+  l'avancement), pas de choix du dossier à chaque fichier, et la liste se vide
+  au redémarrage (les fichiers restent sur le disque).
 - Icônes : Feather télécharge l'icône que le site indique lui-même (ou
   `/favicon.ico`), jamais via un service tiers, sans envoyer l'adresse de la
   page d'origine. Elle n'est gardée que pour les onglets ouverts.

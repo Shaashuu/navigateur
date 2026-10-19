@@ -8,6 +8,7 @@ use tao::dpi::{LogicalPosition, LogicalSize};
 use tao::window::Window;
 use wry::{Rect, WebView, WebViewBuilder};
 
+use crate::library::Bookmark;
 use crate::settings::{BarPosition, Settings, Theme};
 use crate::tab_manager::TabId;
 
@@ -39,6 +40,7 @@ pub const PAGE_SCRIPT: &str = r#"
     else if (e.ctrlKey && !e.metaKey && !e.altKey && k === 'm') a = 'toggle_mute';
     else if (ctrl && k === 'tab') a = e.shiftKey ? 'previous_tab' : 'next_tab';
     else if (ctrl && k === ',') a = 'settings';
+    else if (ctrl && k === 'd') a = 'toggle_bookmark';
     if (a) { e.preventDefault(); e.stopPropagation(); send(a); }
   }, true);
 
@@ -205,6 +207,44 @@ pub enum ChromeMessage {
     InstallUpdate,
     RestartUpdate,
     OpenReleasePage,
+    /// Ajoute aux favoris (ou en retire) un onglet, l'onglet actif par défaut.
+    ToggleBookmark {
+        id: Option<TabId>,
+    },
+    /// Le panneau Bibliothèque demande une liste : favoris, historique ou téléchargements.
+    Library {
+        kind: LibraryKind,
+        #[serde(default)]
+        query: String,
+    },
+    /// Ouvre une adresse de la bibliothèque, dans l'onglet actif ou un nouvel onglet.
+    OpenUrl {
+        url: String,
+        #[serde(default)]
+        new_tab: bool,
+    },
+    RemoveBookmark {
+        url: String,
+    },
+    RemoveVisit {
+        url: String,
+    },
+    ClearHistory,
+    RevealDownload {
+        id: u32,
+    },
+    OpenDownload {
+        id: u32,
+    },
+    ClearDownloads,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LibraryKind {
+    Bookmarks,
+    History,
+    Downloads,
 }
 
 /// Message envoyé par une page : un raccourci clavier, ou (depuis la page
@@ -265,6 +305,7 @@ pub enum Shortcut {
     NextTab,
     PreviousTab,
     Settings,
+    ToggleBookmark,
 }
 
 /// Zone occupée par les pages : tout sauf la barre (à gauche, à droite ou en haut).
@@ -291,7 +332,7 @@ pub fn chrome_bounds(window: &Window) -> Rect {
 }
 
 /// Génère la page d'accueil (heure, date, bienvenue).
-pub fn home_page(settings: &Settings) -> String {
+pub fn home_page(settings: &Settings, bookmarks: &[Bookmark]) -> String {
     let theme = match settings.theme {
         Theme::Auto => "auto",
         Theme::Light => "light",
@@ -300,6 +341,30 @@ pub fn home_page(settings: &Settings) -> String {
     HOME_HTML
         .replace("{{THEME}}", theme)
         .replace("{{NAME}}", &escape_html(&settings.name))
+        .replace("{{BOOKMARKS}}", &bookmark_tiles(bookmarks))
+}
+
+/// Les favoris de la page d'accueil : des vignettes avec l'icône du site (ou son initiale).
+fn bookmark_tiles(bookmarks: &[Bookmark]) -> String {
+    let mut html = String::new();
+    for b in bookmarks.iter().take(12) {
+        let icon = match &b.icon {
+            Some(src) => format!(r#"<img src="{}" alt="" referrerpolicy="no-referrer">"#, escape_html(src)),
+            None => escape_html(&b.title.chars().next().unwrap_or('?').to_uppercase().to_string()),
+        };
+        html.push_str(&format!(
+            r#"<a class="fav" href="{}" title="{}"><span class="fi">{}</span><span class="ft">{}</span></a>"#,
+            escape_html(&b.url),
+            escape_html(&b.title),
+            icon,
+            escape_html(&b.title)
+        ));
+    }
+    if html.is_empty() {
+        html
+    } else {
+        format!(r#"<nav id="favs">{html}</nav>"#)
+    }
 }
 
 fn escape_html(text: &str) -> String {
@@ -397,7 +462,7 @@ mod tests {
             name: "<b>Léa</b>".into(),
             ..Default::default()
         };
-        let html = home_page(&s);
+        let html = home_page(&s, &[]);
         assert!(html.contains("&lt;b&gt;Léa&lt;/b&gt;"));
         assert!(!html.contains("{{NAME}}"));
     }

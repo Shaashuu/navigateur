@@ -5,6 +5,8 @@
 //! webview par onglet. Tout tourne sur le thread principal ; les webviews
 //! communiquent avec le code Rust par des messages (`UserEvent`).
 
+mod downloads;
+mod library;
 #[cfg(target_os = "macos")]
 mod mac_mouse;
 mod network;
@@ -13,6 +15,8 @@ mod tab_manager;
 mod ui;
 mod update;
 
+use std::cell::Cell;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use serde::Serialize;
@@ -23,9 +27,11 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::window::{Icon, Window, WindowBuilder};
 use wry::{WebView, WebViewBuilder};
 
-use settings::Settings;
+use downloads::Download;
+use library::Library;
+use settings::{Settings, Startup};
 use tab_manager::{PageContext, TabId, TabManager};
-use ui::{ChromeMessage, PageMessage, Shortcut, Surface};
+use ui::{ChromeMessage, LibraryKind, PageMessage, Shortcut, Surface};
 
 /// Événements envoyés par les webviews à la boucle principale.
 #[derive(Debug)]
@@ -41,6 +47,11 @@ pub enum UserEvent {
     Update(UpdateEvent),
     /// Les onglets fermés peuvent être détruits.
     Reap,
+    /// Un téléchargement commence, rangé à cet endroit.
+    DownloadStarted { url: String, path: PathBuf },
+    DownloadDone { url: String, path: Option<PathBuf>, success: bool },
+    /// Moment d'enregistrer l'historique, les favoris et la session.
+    Persist,
 }
 
 /// Résultat d'un travail de mise à jour fait en arrière-plan.
@@ -76,6 +87,11 @@ struct App {
     update: UpdateState,
     /// Programme à relancer quand la mise à jour est installée.
     restart: Option<update::Restart>,
+    library: Arc<RwLock<Library>>,
+    /// Téléchargements de cette session.
+    downloads: Vec<Download>,
+    /// Un enregistrement est déjà prévu (voir `schedule_persist`).
+    persist_pending: Cell<bool>,
 }
 
 fn main() -> wry::Result<()> {
@@ -112,6 +128,9 @@ fn main() -> wry::Result<()> {
     let settings = Settings::load();
     let check_update = settings.auto_update_check;
     let start_url = settings.start_url();
+    let restore = settings.startup == Startup::Restore;
+    let mut library = Library::load();
+    library.prune(settings.history_days);
 
     let mut app = App {
         window,
@@ -123,8 +142,20 @@ fn main() -> wry::Result<()> {
         expanded: false,
         update: UpdateState::Idle,
         restart: None,
+        library: Arc::new(RwLock::new(library)),
+        downloads: Vec::new(),
+        persist_pending: Cell::new(false),
     };
-    app.open_tab(&start_url);
+    let session = library::load_session();
+    if restore && !session.urls.is_empty() {
+        for url in &session.urls {
+            app.open_tab(url);
+        }
+        app.tabs.activate_index(session.active, true);
+        app.push_state();
+    } else {
+        app.open_tab(&start_url);
+    }
     if check_update {
         app.start_check(false);
     }
@@ -136,6 +167,7 @@ fn main() -> wry::Result<()> {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
+                app.persist();
                 *control_flow = ControlFlow::Exit;
             }
             Event::WindowEvent {
@@ -173,6 +205,9 @@ impl App {
             }
             UserEvent::Title(id, title) => {
                 if let Some(tab) = self.tabs.get_mut(id) {
+                    if let Ok(mut lib) = self.library.write() {
+                        lib.set_title(&tab.url, &title);
+                    }
                     tab.title = title;
                 }
                 self.push_state();
@@ -186,6 +221,9 @@ impl App {
                     }
                     tab.loading = loading;
                     tab.url = url;
+                    if !loading && let Ok(mut lib) = self.library.write() {
+                        lib.record_visit(&tab.url, &tab.title);
+                    }
                     if loading {
                         tab.audible = false;
                     } else if tab.muted {
@@ -198,6 +236,33 @@ impl App {
             UserEvent::OpenInNewTab(url) => self.open_tab(&url),
             UserEvent::Update(event) => self.handle_update(event),
             UserEvent::Reap => self.tabs.reap(),
+            UserEvent::DownloadStarted { url, path } => {
+                let id = self.downloads.iter().map(|d| d.id).max().unwrap_or(0) + 1;
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| url.clone());
+                self.downloads.push(Download { id, url, name, path, state: downloads::State::Progress });
+                self.push_state();
+            }
+            UserEvent::DownloadDone { url, path, success } => {
+                let found = self
+                    .downloads
+                    .iter_mut()
+                    .rev()
+                    .find(|d| d.url == url && d.state == downloads::State::Progress);
+                if let Some(d) = found {
+                    d.state = if success { downloads::State::Done } else { downloads::State::Failed };
+                    if let Some(path) = path {
+                        d.path = path;
+                    }
+                }
+                self.push_state();
+            }
+            UserEvent::Persist => {
+                self.persist_pending.set(false);
+                self.persist();
+            }
         }
     }
 
@@ -208,6 +273,7 @@ impl App {
             ChromeMessage::InstallUpdate => self.start_install(),
             ChromeMessage::RestartUpdate => {
                 if let Some(restart) = self.restart.take() {
+                    self.persist();
                     match restart.launch() {
                         Ok(()) => std::process::exit(0),
                         Err(err) => {
@@ -262,14 +328,61 @@ impl App {
                 if let Err(err) = settings.save() {
                     eprintln!("paramètres non enregistrés : {err}");
                 }
+                if let Ok(mut lib) = self.library.write() {
+                    lib.prune(settings.history_days);
+                }
                 if let Ok(mut current) = self.settings.write() {
                     *current = settings;
                 }
                 self.relayout();
                 // Les pages d'accueil ouvertes reprennent le nouveau prénom et thème.
-                for tab in self.tabs.home_tabs() {
-                    let _ = tab.webview().reload();
+                self.reload_home_tabs();
+            }
+            ChromeMessage::ToggleBookmark { id } => {
+                if let Some(id) = id.or(self.tabs.active_id()) {
+                    self.toggle_bookmark(id);
                 }
+            }
+            ChromeMessage::Library { kind, query } => self.send_library(kind, &query),
+            ChromeMessage::OpenUrl { url, new_tab } => {
+                if library::is_web(&url) {
+                    if new_tab {
+                        self.open_tab_in_background(&url);
+                    } else {
+                        self.load_in_active(&url);
+                    }
+                }
+            }
+            ChromeMessage::RemoveBookmark { url } => {
+                if let Ok(mut lib) = self.library.write() {
+                    lib.remove_bookmark(&url);
+                }
+                self.reload_home_tabs();
+                self.send_library(LibraryKind::Bookmarks, "");
+            }
+            ChromeMessage::RemoveVisit { url } => {
+                if let Ok(mut lib) = self.library.write() {
+                    lib.remove_visits(&url);
+                }
+            }
+            ChromeMessage::ClearHistory => {
+                if let Ok(mut lib) = self.library.write() {
+                    lib.clear_history();
+                }
+                self.send_library(LibraryKind::History, "");
+            }
+            ChromeMessage::RevealDownload { id } => {
+                if let Some(d) = self.downloads.iter().find(|d| d.id == id) {
+                    downloads::reveal(&d.path);
+                }
+            }
+            ChromeMessage::OpenDownload { id } => {
+                if let Some(d) = self.downloads.iter().find(|d| d.id == id && d.state == downloads::State::Done) {
+                    downloads::open(&d.path);
+                }
+            }
+            ChromeMessage::ClearDownloads => {
+                self.downloads.retain(|d| d.state == downloads::State::Progress);
             }
         }
         self.push_state();
@@ -332,6 +445,7 @@ impl App {
                     tab.apply_mute();
                 }
             }
+            Shortcut::ToggleBookmark => self.toggle_bookmark(id),
             Shortcut::NextTab => self.tabs.cycle(1, !self.expanded),
             Shortcut::PreviousTab => self.tabs.cycle(-1, !self.expanded),
         }
@@ -349,6 +463,7 @@ impl App {
             surface: &self.surface,
             proxy: &self.proxy,
             settings: &self.settings,
+            library: &self.library,
             bounds: ui::page_bounds(&self.window, self.read_settings().bar_position),
         };
         match self.tabs.open(url, &ctx, !self.expanded) {
@@ -424,6 +539,69 @@ impl App {
             .evaluate_script(&format!("window.navigateur && {script}"));
     }
 
+    fn toggle_bookmark(&mut self, id: TabId) {
+        let Some(tab) = self.tabs.get(id) else { return };
+        if let Ok(mut lib) = self.library.write() {
+            lib.toggle_bookmark(&tab.url, &tab.title, tab.icon.as_deref());
+        }
+        self.reload_home_tabs();
+        self.push_state();
+    }
+
+    /// Les pages d'accueil ouvertes se redessinent (nouveaux paramètres ou favoris).
+    fn reload_home_tabs(&self) {
+        for tab in self.tabs.home_tabs() {
+            let _ = tab.webview().reload();
+        }
+    }
+
+    /// Envoie au panneau Bibliothèque la liste demandée.
+    fn send_library(&self, kind: LibraryKind, query: &str) {
+        let items = match kind {
+            LibraryKind::Downloads => json!(self.downloads),
+            _ => match self.library.read() {
+                Ok(lib) if kind == LibraryKind::Bookmarks => json!(lib.search_bookmarks(query)),
+                Ok(lib) => json!(lib.search_history(query, 300)),
+                Err(_) => json!([]),
+            },
+        };
+        let kind = match kind {
+            LibraryKind::Bookmarks => "bookmarks",
+            LibraryKind::History => "history",
+            LibraryKind::Downloads => "downloads",
+        };
+        let data = json!({ "kind": kind, "items": items });
+        let _ = self
+            .chrome
+            .evaluate_script(&format!("window.navigateur && navigateur.setLibrary({data})"));
+    }
+
+    /// Prévoit un enregistrement dans deux secondes, pour regrouper les changements.
+    fn schedule_persist(&self) {
+        if self.persist_pending.replace(true) {
+            return;
+        }
+        let proxy = self.proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let _ = proxy.send_event(UserEvent::Persist);
+        });
+    }
+
+    /// Enregistre tout de suite l'historique, les favoris et les onglets ouverts.
+    fn persist(&self) {
+        if let Ok(mut lib) = self.library.write()
+            && let Err(err) = lib.save()
+        {
+            eprintln!("historique ou favoris non enregistrés : {err}");
+        }
+        if !self.tabs.is_empty()
+            && let Err(err) = library::save_session(&self.tabs.session())
+        {
+            eprintln!("session non enregistrée : {err}");
+        }
+    }
+
     fn read_settings(&self) -> Settings {
         self.settings.read().map(|s| s.clone()).unwrap_or_default()
     }
@@ -488,16 +666,20 @@ impl App {
     /// Envoie à l'interface l'état complet (onglets et paramètres) à redessiner.
     fn push_state(&self) {
         let active = self.tabs.active().map(|t| t.webview());
+        let lib = self.library.read().ok();
         let state = json!({
-            "tabs": self.tabs.snapshot(),
+            "tabs": self.tabs.snapshot(|url| lib.as_ref().is_some_and(|l| l.is_bookmarked(url))),
+            "downloads": self.downloads,
             "can_back": active.and_then(|w| w.can_go_back().ok()).unwrap_or(false),
             "can_forward": active.and_then(|w| w.can_go_forward().ok()).unwrap_or(false),
             "settings": self.read_settings(),
             "version": update::CURRENT,
             "update": self.update,
         });
+        drop(lib);
         let _ = self.chrome.evaluate_script(&format!(
             "window.navigateur && navigateur.setState({state})"
         ));
+        self.schedule_persist();
     }
 }

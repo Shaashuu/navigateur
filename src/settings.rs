@@ -24,6 +24,14 @@ pub struct Settings {
     pub auto_update_check: bool,
     /// Où se trouve la barre des onglets : à gauche, à droite ou en haut.
     pub bar_position: BarPosition,
+    /// Au démarrage : la page d'accueil, ou les onglets de la dernière session.
+    pub startup: Startup,
+    /// Nombre de jours d'historique gardés (0 : tout garder).
+    pub history_days: u32,
+    /// Les favoris s'affichent sous la recherche de la page d'accueil.
+    pub bookmarks_on_home: bool,
+    /// Dossier des téléchargements (vide : le dossier Téléchargements du système).
+    pub download_dir: String,
 }
 
 impl Default for Settings {
@@ -35,8 +43,20 @@ impl Default for Settings {
             theme: Theme::Auto,
             auto_update_check: true,
             bar_position: BarPosition::Left,
+            startup: Startup::Home,
+            history_days: 90,
+            bookmarks_on_home: true,
+            download_dir: String::new(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Startup {
+    #[default]
+    Home,
+    Restore,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,6 +128,7 @@ impl Settings {
     pub fn cleaned(mut self) -> Self {
         self.name = self.name.trim().chars().take(40).collect();
         self.home_page = network::normalize_home_page(&self.home_page).unwrap_or_default();
+        self.download_dir = self.download_dir.trim().to_string();
         self
     }
 

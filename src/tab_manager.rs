@@ -15,6 +15,8 @@ use wry::http::{Response, header::CONTENT_TYPE};
 use wry::{NewWindowResponse, PageLoadEvent, Rect, WebView, WebViewBuilder};
 
 use crate::UserEvent;
+use crate::downloads;
+use crate::library::{Library, Session};
 use crate::network;
 use crate::settings::Settings;
 use crate::ui::{self, Surface};
@@ -63,6 +65,7 @@ pub struct TabInfo<'a> {
     pub muted: bool,
     pub icon: Option<&'a str>,
     pub site_name: Option<&'a str>,
+    pub bookmarked: bool,
 }
 
 /// Tout ce qu'il faut pour créer la webview d'un nouvel onglet.
@@ -71,6 +74,7 @@ pub struct PageContext<'a> {
     pub surface: &'a Surface,
     pub proxy: &'a EventLoopProxy<UserEvent>,
     pub settings: &'a Arc<RwLock<Settings>>,
+    pub library: &'a Arc<RwLock<Library>>,
     pub bounds: Rect,
 }
 
@@ -206,7 +210,22 @@ impl TabManager {
         self.tabs.iter().filter(|t| network::is_home(&t.url))
     }
 
-    pub fn snapshot(&self) -> Vec<TabInfo<'_>> {
+    /// Les onglets ouverts, pour les rouvrir au prochain démarrage.
+    pub fn session(&self) -> Session {
+        Session {
+            urls: self.tabs.iter().map(|t| t.url.clone()).collect(),
+            active: self.active_index().unwrap_or(0),
+        }
+    }
+
+    /// Active l'onglet à cette position (restauration de la session).
+    pub fn activate_index(&mut self, index: usize, visible: bool) {
+        if let Some(id) = self.tabs.get(index).map(|t| t.id) {
+            self.activate(id, visible);
+        }
+    }
+
+    pub fn snapshot(&self, is_bookmarked: impl Fn(&str) -> bool) -> Vec<TabInfo<'_>> {
         self.tabs
             .iter()
             .map(|t| TabInfo {
@@ -220,6 +239,7 @@ impl TabManager {
                 muted: t.muted,
                 icon: t.icon.as_deref(),
                 site_name: t.site_name.as_deref(),
+                bookmarked: is_bookmarked(&t.url),
             })
             .collect()
     }
@@ -232,6 +252,10 @@ impl TabManager {
 
 fn build_page(id: TabId, url: &str, ctx: &PageContext) -> wry::Result<WebView> {
     let settings = Arc::clone(ctx.settings);
+    let library = Arc::clone(ctx.library);
+    let download_settings = Arc::clone(ctx.settings);
+    let on_download = ctx.proxy.clone();
+    let on_downloaded = ctx.proxy.clone();
     let on_ipc = ctx.proxy.clone();
     let on_title = ctx.proxy.clone();
     let on_load = ctx.proxy.clone();
@@ -256,9 +280,10 @@ fn build_page(id: TabId, url: &str, ctx: &PageContext) -> wry::Result<WebView> {
         })
         // La page d'accueil intégrée est générée à chaque visite avec les paramètres actuels.
         .with_custom_protocol("navigateur".into(), move |_id, _request| {
-            let html = match settings.read() {
-                Ok(s) => ui::home_page(&s),
-                Err(_) => ui::home_page(&Settings::default()),
+            let settings = settings.read().map(|s| s.clone()).unwrap_or_default();
+            let html = match library.read() {
+                Ok(lib) if settings.bookmarks_on_home => ui::home_page(&settings, lib.bookmarks()),
+                _ => ui::home_page(&settings, &[]),
             };
             Response::builder()
                 .header(CONTENT_TYPE, "text/html; charset=utf-8")
@@ -275,6 +300,16 @@ fn build_page(id: TabId, url: &str, ctx: &PageContext) -> wry::Result<WebView> {
         .with_on_page_load_handler(move |event, url| {
             let loading = matches!(event, PageLoadEvent::Started);
             let _ = on_load.send_event(UserEvent::PageLoad(id, loading, url));
+        })
+        // Téléchargements : rangés dans le dossier choisi, suivis dans la bibliothèque.
+        .with_download_started_handler(move |url, path| {
+            let dir = download_settings.read().map(|s| s.download_dir.clone()).unwrap_or_default();
+            *path = downloads::destination(path, &dir);
+            let _ = on_download.send_event(UserEvent::DownloadStarted { url, path: path.clone() });
+            true
+        })
+        .with_download_completed_handler(move |url, path, success| {
+            let _ = on_downloaded.send_event(UserEvent::DownloadDone { url, path, success });
         })
         // Les liens « nouvelle fenêtre » s'ouvrent dans un nouvel onglet.
         .with_new_window_req_handler(move |url, _features| {

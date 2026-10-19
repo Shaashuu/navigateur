@@ -1,0 +1,281 @@
+//! Historique, favoris et dernière session : des fichiers JSON rangés à côté
+//! des paramètres. Tout reste sur l'ordinateur de l'utilisateur.
+
+use std::fs;
+use std::io;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use directories::ProjectDirs;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+
+/// Au-delà, les visites les plus anciennes sont oubliées.
+const MAX_VISITS: usize = 5000;
+
+/// Secondes écoulées depuis le 1er janvier 1970.
+pub fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Seules les pages web vont dans l'historique et les favoris.
+pub fn is_web(url: &str) -> bool {
+    url.starts_with("https://") || url.starts_with("http://")
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Visit {
+    pub url: String,
+    pub title: String,
+    pub time: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Bookmark {
+    pub url: String,
+    pub title: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    pub added: u64,
+}
+
+/// Les onglets ouverts, pour les rouvrir au prochain démarrage.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Session {
+    pub urls: Vec<String>,
+    pub active: usize,
+}
+
+#[derive(Default)]
+pub struct Library {
+    history: Vec<Visit>,
+    bookmarks: Vec<Bookmark>,
+    history_changed: bool,
+    bookmarks_changed: bool,
+}
+
+impl Library {
+    pub fn load() -> Self {
+        Self {
+            history: read_json("historique.json").unwrap_or_default(),
+            bookmarks: read_json("favoris.json").unwrap_or_default(),
+            ..Self::default()
+        }
+    }
+
+    /// Enregistre ce qui a changé depuis la dernière fois.
+    pub fn save(&mut self) -> io::Result<()> {
+        if self.history_changed {
+            write_json("historique.json", &self.history)?;
+            self.history_changed = false;
+        }
+        if self.bookmarks_changed {
+            write_json("favoris.json", &self.bookmarks)?;
+            self.bookmarks_changed = false;
+        }
+        Ok(())
+    }
+
+    // --- Historique ---
+
+    /// Une page vient de finir de charger. Un rechargement de la même page ne crée
+    /// pas de nouvelle ligne : on met juste l'heure à jour.
+    pub fn record_visit(&mut self, url: &str, title: &str) {
+        if !is_web(url) {
+            return;
+        }
+        match self.history.last_mut() {
+            Some(last) if last.url == url => {
+                if !title.is_empty() {
+                    last.title = title.to_string();
+                }
+                last.time = now();
+            }
+            _ => self.history.push(Visit {
+                url: url.to_string(),
+                title: title.to_string(),
+                time: now(),
+            }),
+        }
+        if self.history.len() > MAX_VISITS {
+            let extra = self.history.len() - MAX_VISITS;
+            self.history.drain(..extra);
+        }
+        self.history_changed = true;
+    }
+
+    /// Le titre arrive souvent après la fin du chargement : on complète la visite.
+    pub fn set_title(&mut self, url: &str, title: &str) {
+        if title.is_empty() {
+            return;
+        }
+        if let Some(visit) = self.history.iter_mut().rev().take(20).find(|v| v.url == url)
+            && visit.title != title
+        {
+            visit.title = title.to_string();
+            self.history_changed = true;
+        }
+    }
+
+    /// Oublie les visites plus vieilles que `days` jours (0 : on garde tout).
+    pub fn prune(&mut self, days: u32) {
+        if days == 0 {
+            return;
+        }
+        let limit = now().saturating_sub(u64::from(days) * 86_400);
+        let before = self.history.len();
+        self.history.retain(|v| v.time >= limit);
+        if self.history.len() != before {
+            self.history_changed = true;
+        }
+    }
+
+    /// Les visites les plus récentes d'abord, filtrées par le texte cherché.
+    pub fn search_history(&self, query: &str, limit: usize) -> Vec<&Visit> {
+        let query = query.trim().to_lowercase();
+        self.history
+            .iter()
+            .rev()
+            .filter(|v| matches(&query, &v.title, &v.url))
+            .take(limit)
+            .collect()
+    }
+
+    pub fn remove_visits(&mut self, url: &str) {
+        self.history.retain(|v| v.url != url);
+        self.history_changed = true;
+    }
+
+    pub fn clear_history(&mut self) {
+        self.history.clear();
+        self.history_changed = true;
+    }
+
+    // --- Favoris ---
+
+    pub fn is_bookmarked(&self, url: &str) -> bool {
+        self.bookmarks.iter().any(|b| b.url == url)
+    }
+
+    /// Ajoute la page aux favoris, ou l'en retire si elle y est déjà.
+    pub fn toggle_bookmark(&mut self, url: &str, title: &str, icon: Option<&str>) {
+        if !is_web(url) {
+            return;
+        }
+        if self.is_bookmarked(url) {
+            self.remove_bookmark(url);
+            return;
+        }
+        self.bookmarks.push(Bookmark {
+            url: url.to_string(),
+            title: if title.is_empty() { url.to_string() } else { title.to_string() },
+            icon: icon.map(str::to_string),
+            added: now(),
+        });
+        self.bookmarks_changed = true;
+    }
+
+    pub fn remove_bookmark(&mut self, url: &str) {
+        self.bookmarks.retain(|b| b.url != url);
+        self.bookmarks_changed = true;
+    }
+
+    /// Les favoris, le plus récent en premier, filtrés par le texte cherché.
+    pub fn search_bookmarks(&self, query: &str) -> Vec<&Bookmark> {
+        let query = query.trim().to_lowercase();
+        self.bookmarks
+            .iter()
+            .rev()
+            .filter(|b| matches(&query, &b.title, &b.url))
+            .collect()
+    }
+
+    /// Dans l'ordre d'ajout, pour la page d'accueil.
+    pub fn bookmarks(&self) -> &[Bookmark] {
+        &self.bookmarks
+    }
+}
+
+fn matches(query: &str, title: &str, url: &str) -> bool {
+    query.is_empty() || title.to_lowercase().contains(query) || url.to_lowercase().contains(query)
+}
+
+pub fn load_session() -> Session {
+    read_json("session.json").unwrap_or_default()
+}
+
+pub fn save_session(session: &Session) -> io::Result<()> {
+    write_json("session.json", session)
+}
+
+fn path(name: &str) -> Option<PathBuf> {
+    ProjectDirs::from("app", "Feather", "Feather").map(|d| d.config_dir().join(name))
+}
+
+fn read_json<T: DeserializeOwned>(name: &str) -> Option<T> {
+    let text = fs::read_to_string(path(name)?).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// Écrit d'abord un fichier temporaire puis le renomme (voir `Settings::save`).
+fn write_json<T: Serialize>(name: &str, value: &T) -> io::Result<()> {
+    let path = path(name).ok_or_else(|| io::Error::other("dossier de configuration introuvable"))?;
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, serde_json::to_string(value).map_err(io::Error::other)?)?;
+    fs::rename(tmp, path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rechargement_sans_doublon() {
+        let mut lib = Library::default();
+        lib.record_visit("https://a.fr/", "");
+        lib.record_visit("https://a.fr/", "A");
+        lib.record_visit("https://b.fr/", "B");
+        lib.record_visit("navigateur://accueil/", "Accueil");
+        assert_eq!(lib.history.len(), 2);
+        assert_eq!(lib.history[0].title, "A");
+    }
+
+    #[test]
+    fn recherche_et_titre_tardif() {
+        let mut lib = Library::default();
+        lib.record_visit("https://wikipedia.org/", "");
+        lib.record_visit("https://youtube.com/", "YouTube");
+        lib.set_title("https://wikipedia.org/", "Wikipédia");
+        let found = lib.search_history("wiki", 10);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].title, "Wikipédia");
+        assert_eq!(lib.search_history("", 10)[0].url, "https://youtube.com/");
+    }
+
+    #[test]
+    fn favori_ajoute_puis_retire() {
+        let mut lib = Library::default();
+        lib.toggle_bookmark("https://a.fr/", "A", None);
+        assert!(lib.is_bookmarked("https://a.fr/"));
+        lib.toggle_bookmark("https://a.fr/", "A", None);
+        assert!(!lib.is_bookmarked("https://a.fr/"));
+        lib.toggle_bookmark("navigateur://accueil/", "Accueil", None);
+        assert!(lib.bookmarks().is_empty());
+    }
+
+    #[test]
+    fn historique_trop_vieux() {
+        let mut lib = Library::default();
+        lib.history.push(Visit { url: "https://old.fr/".into(), title: String::new(), time: 0 });
+        lib.record_visit("https://new.fr/", "");
+        lib.prune(30);
+        assert_eq!(lib.history.len(), 1);
+        lib.prune(0);
+        assert_eq!(lib.history.len(), 1);
+    }
+}
