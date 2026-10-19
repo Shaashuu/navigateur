@@ -638,6 +638,11 @@
       e.preventDefault();
       return;
     }
+    if (e.metaKey && !e.ctrlKey && !e.altKey && (k === '[' || k === ']')) {
+      send({ type: k === '[' ? 'back' : 'forward' });
+      e.preventDefault();
+      return;
+    }
     if (k === 'f5') { send({ type: 'reload' }); e.preventDefault(); return; }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     if (k === 'm' && e.ctrlKey && !e.metaKey) { const t = activeTab(); if (t) send({ type: 'toggle_mute', id: t.id }); }

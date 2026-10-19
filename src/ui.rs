@@ -29,6 +29,7 @@ pub const PAGE_SCRIPT: &str = r#"
     let a = null;
     if (e.altKey && !e.ctrlKey && !e.metaKey && k === 'arrowleft') a = 'back';
     else if (e.altKey && !e.ctrlKey && !e.metaKey && k === 'arrowright') a = 'forward';
+    else if (e.metaKey && !e.ctrlKey && !e.altKey && (k === '[' || k === ']')) a = k === '[' ? 'back' : 'forward';
     else if (k === 'f5' || (ctrl && k === 'r')) a = 'reload';
     else if (ctrl && (k === 'l' || k === 'k')) a = 'focus_bar';
     else if (ctrl && k === 't') a = 'new_tab';
