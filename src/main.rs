@@ -5,6 +5,8 @@
 //! webview par onglet. Tout tourne sur le thread principal ; les webviews
 //! communiquent avec le code Rust par des messages (`UserEvent`).
 
+#[cfg(target_os = "macos")]
+mod mac_mouse;
 mod network;
 mod settings;
 mod tab_manager;
@@ -87,6 +89,9 @@ fn main() -> wry::Result<()> {
         .with_min_inner_size(LogicalSize::new(480.0, 360.0))
         .build(&event_loop)
         .expect("impossible de créer la fenêtre");
+
+    #[cfg(target_os = "macos")]
+    mac_mouse::install(proxy.clone());
 
     let surface = Surface::new(&window);
 
