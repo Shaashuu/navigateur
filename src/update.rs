@@ -44,9 +44,10 @@ pub struct Restart {
 }
 
 impl Restart {
-    pub fn launch(self) -> io::Result<()> {
-        let mut cmd = Command::new(self.program);
-        cmd.args(self.args);
+    /// Ne consomme pas `self` : si le lancement échoue, on peut réessayer.
+    pub fn launch(&self) -> io::Result<()> {
+        let mut cmd = Command::new(&self.program);
+        cmd.args(&self.args);
         hide_window(&mut cmd);
         cmd.spawn().map(|_| ())
     }
@@ -139,6 +140,8 @@ pub fn check() -> Result<Option<Available>, String> {
         "20",
         "--proto",
         proto(),
+        "--proto-redir",
+        proto(),
         "-H",
         "Accept: application/vnd.github+json",
     ])
@@ -182,16 +185,21 @@ pub fn install(update: &Available) -> Result<Restart, String> {
     if update.url.is_empty() || !allowed {
         return Err("Aucun fichier pour ce système dans cette version.".into());
     }
+    // Sans empreinte annoncée, rien ne garantit que le fichier est bien celui
+    // publié : on refuse plutôt que d'installer un programme non vérifié.
+    let Some(sha256) = update.sha256.as_deref() else {
+        return Err("Cette version n'annonce pas d'empreinte : installez-la depuis la page de la version.".into());
+    };
     let exe = std::env::current_exe().map_err(|e| format!("programme introuvable : {e}"))?;
-    install_for_os(update, &exe)
+    install_for_os(update, sha256, &exe)
 }
 
 #[cfg(windows)]
-fn install_for_os(update: &Available, exe: &Path) -> Result<Restart, String> {
+fn install_for_os(update: &Available, sha256: &str, exe: &Path) -> Result<Restart, String> {
     let dir = exe.parent().ok_or("dossier introuvable")?;
     let new = dir.join("feather-update.exe");
     let result = (|| {
-        download(&update.url, &new, update.sha256.as_deref())?;
+        download(&update.url, &new, sha256)?;
         swap_executable(exe, &new).map_err(|e| {
             format!("impossible de remplacer le programme ({e}). Téléchargez-le depuis la page de la version.")
         })
@@ -207,7 +215,7 @@ fn install_for_os(update: &Available, exe: &Path) -> Result<Restart, String> {
 }
 
 #[cfg(target_os = "macos")]
-fn install_for_os(update: &Available, exe: &Path) -> Result<Restart, String> {
+fn install_for_os(update: &Available, sha256: &str, exe: &Path) -> Result<Restart, String> {
     // …/Feather.app/Contents/MacOS/feather
     let bundle = exe
         .ancestors()
@@ -222,7 +230,7 @@ fn install_for_os(update: &Available, exe: &Path) -> Result<Restart, String> {
     let mount = work.join("volume");
     let new_bundle = parent.join("Feather.app.new");
     let result = (|| {
-        download(&update.url, &dmg, update.sha256.as_deref())?;
+        download(&update.url, &dmg, sha256)?;
         fs::create_dir_all(&mount).map_err(|e| e.to_string())?;
         let mut attach = Command::new("hdiutil");
         attach
@@ -259,7 +267,7 @@ fn install_for_os(update: &Available, exe: &Path) -> Result<Restart, String> {
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
-fn install_for_os(_update: &Available, _exe: &Path) -> Result<Restart, String> {
+fn install_for_os(_update: &Available, _sha256: &str, _exe: &Path) -> Result<Restart, String> {
     Err("La mise à jour automatique n'existe pas sur ce système.".into())
 }
 
@@ -313,7 +321,7 @@ pub fn clean_leftovers() {
 // --- Téléchargement -------------------------------------------------------
 
 #[cfg(any(windows, target_os = "macos"))]
-fn download(url: &str, dest: &Path, sha256: Option<&str>) -> Result<(), String> {
+fn download(url: &str, dest: &Path, sha256: &str) -> Result<(), String> {
     let mut cmd = Command::new("curl");
     cmd.args([
         "-sSL",
@@ -333,12 +341,10 @@ fn download(url: &str, dest: &Path, sha256: Option<&str>) -> Result<(), String> 
     if size < 100_000 {
         return Err("le fichier téléchargé est trop petit".into());
     }
-    match sha256 {
-        Some(expected) if file_sha256(dest).map_err(|e| e.to_string())? != expected => {
-            Err("le fichier téléchargé est corrompu (empreinte différente)".into())
-        }
-        _ => Ok(()),
+    if file_sha256(dest).map_err(|e| e.to_string())? != sha256 {
+        return Err("le fichier téléchargé est corrompu (empreinte différente)".into());
     }
+    Ok(())
 }
 
 #[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
@@ -362,13 +368,17 @@ pub fn file_sha256(path: &Path) -> io::Result<String> {
 
 fn run(mut cmd: Command, what: &str) -> Result<Output, String> {
     hide_window(&mut cmd);
+    // « Pas de connexion ? » n'a de sens que pour curl, pas pour hdiutil ou ditto.
+    let network = cmd.get_program() == "curl";
     let output = cmd
         .output()
         .map_err(|_| format!("{what} a échoué (outil système introuvable)"))?;
     if output.status.success() {
         Ok(output)
-    } else {
+    } else if network {
         Err(format!("{what} a échoué (pas de connexion ?)"))
+    } else {
+        Err(format!("{what} a échoué"))
     }
 }
 
@@ -431,6 +441,15 @@ mod tests {
         assert_eq!(pick_release(&release(), "0.1.4", None).unwrap().url, "");
         // À jour.
         assert_eq!(pick_release(&release(), "0.1.5", Some("-macos.dmg")), None);
+    }
+
+    #[test]
+    fn installation_refusee_sans_empreinte() {
+        let win = pick_release(&release(), "0.1.4", Some("-windows.exe")).unwrap();
+        assert_eq!(win.sha256, None);
+        let err = install(&win).unwrap_err();
+        // Sur Linux, l'installation n'existe pas du tout ; ailleurs, c'est l'empreinte qui manque.
+        assert!(err.contains("empreinte") || err.contains("n'existe pas"), "{err}");
     }
 
     #[test]

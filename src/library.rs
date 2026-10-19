@@ -1,13 +1,12 @@
 //! Historique, favoris et dernière session : des fichiers JSON rangés à côté
 //! des paramètres. Tout reste sur l'ordinateur de l'utilisateur.
 
-use std::fs;
 use std::io;
-use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use directories::ProjectDirs;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize};
+
+use crate::storage::{read_json, write_json};
 
 /// Au-delà, les visites les plus anciennes sont oubliées.
 const MAX_VISITS: usize = 5000;
@@ -20,10 +19,7 @@ pub fn now() -> u64 {
         .unwrap_or(0)
 }
 
-/// Seules les pages web vont dans l'historique et les favoris.
-pub fn is_web(url: &str) -> bool {
-    url.starts_with("https://") || url.starts_with("http://")
-}
+use crate::network::is_web;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Visit {
@@ -42,7 +38,7 @@ pub struct Bookmark {
 }
 
 /// Les onglets ouverts, pour les rouvrir au prochain démarrage.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     pub urls: Vec<String>,
     pub active: usize,
@@ -68,11 +64,11 @@ impl Library {
     /// Enregistre ce qui a changé depuis la dernière fois.
     pub fn save(&mut self) -> io::Result<()> {
         if self.history_changed {
-            write_json("historique.json", &self.history)?;
+            write_json("historique.json", &self.history, false)?;
             self.history_changed = false;
         }
         if self.bookmarks_changed {
-            write_json("favoris.json", &self.bookmarks)?;
+            write_json("favoris.json", &self.bookmarks, false)?;
             self.bookmarks_changed = false;
         }
         Ok(())
@@ -207,27 +203,7 @@ pub fn load_session() -> Session {
 }
 
 pub fn save_session(session: &Session) -> io::Result<()> {
-    write_json("session.json", session)
-}
-
-fn path(name: &str) -> Option<PathBuf> {
-    ProjectDirs::from("app", "Feather", "Feather").map(|d| d.config_dir().join(name))
-}
-
-fn read_json<T: DeserializeOwned>(name: &str) -> Option<T> {
-    let text = fs::read_to_string(path(name)?).ok()?;
-    serde_json::from_str(&text).ok()
-}
-
-/// Écrit d'abord un fichier temporaire puis le renomme (voir `Settings::save`).
-fn write_json<T: Serialize>(name: &str, value: &T) -> io::Result<()> {
-    let path = path(name).ok_or_else(|| io::Error::other("dossier de configuration introuvable"))?;
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, serde_json::to_string(value).map_err(io::Error::other)?)?;
-    fs::rename(tmp, path)
+    write_json("session.json", session, false)
 }
 
 #[cfg(test)]
@@ -265,6 +241,8 @@ mod tests {
         lib.toggle_bookmark("https://a.fr/", "A", None);
         assert!(!lib.is_bookmarked("https://a.fr/"));
         lib.toggle_bookmark("navigateur://accueil/", "Accueil", None);
+        // Forme Windows de l'accueil : ce n'est pas une page web non plus.
+        lib.toggle_bookmark("http://navigateur.accueil/", "Accueil", None);
         assert!(lib.bookmarks().is_empty());
     }
 

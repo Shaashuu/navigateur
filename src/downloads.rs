@@ -52,10 +52,21 @@ pub fn destination(suggested: &Path, chosen_dir: &str) -> PathBuf {
     unique(&dir, &name)
 }
 
+/// Extensions doubles gardées entières : « archive.tar.gz » → « archive (1).tar.gz ».
+const DOUBLE_EXTENSIONS: [&str; 4] = [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst"];
+
 fn unique(dir: &Path, name: &str) -> PathBuf {
-    let (base, ext) = match name.split_once('.') {
-        Some((base, ext)) if !base.is_empty() => (base.to_string(), format!(".{ext}")),
-        _ => (name.to_string(), String::new()),
+    // On coupe au dernier point (et non au premier) : « Rapport v1.2.pdf »
+    // devenait « Rapport v1 (1).2.pdf ».
+    let lower = name.to_ascii_lowercase();
+    let cut = DOUBLE_EXTENSIONS
+        .iter()
+        .find(|ext| lower.ends_with(*ext) && lower.len() > ext.len())
+        .map(|ext| name.len() - ext.len())
+        .or_else(|| name.rfind('.').filter(|&i| i > 0));
+    let (base, ext) = match cut {
+        Some(i) => (name[..i].to_string(), name[i..].to_string()),
+        None => (name.to_string(), String::new()),
     };
     let mut path = dir.join(name);
     let mut n = 1;
@@ -70,8 +81,13 @@ fn unique(dir: &Path, name: &str) -> PathBuf {
 pub fn reveal(path: &Path) {
     #[cfg(target_os = "macos")]
     let _ = Command::new("open").arg("-R").arg(path).spawn();
+    // L'Explorateur attend /select,"chemin" : passé par `arg`, Rust entourait tout
+    // l'argument de guillemets et un chemin avec des espaces n'était pas trouvé.
     #[cfg(windows)]
-    let _ = Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
+    let _ = {
+        use std::os::windows::process::CommandExt;
+        Command::new("explorer").raw_arg(format!("/select,\"{}\"", path.display())).spawn()
+    };
     #[cfg(all(not(target_os = "macos"), not(windows)))]
     if let Some(dir) = path.parent() {
         let _ = Command::new("xdg-open").arg(dir).spawn();
@@ -104,6 +120,21 @@ mod tests {
         let suggested = std::env::temp_dir().join("feather-ailleurs").join("a.pdf");
         assert_eq!(destination(&suggested, ""), suggested);
         assert_eq!(destination(&suggested, "/nulle/part"), suggested);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn nom_libre_avec_points() {
+        let dir = std::env::temp_dir().join(format!("feather-noms-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["Rapport v1.2.pdf", "archive.tar.gz", ".bashrc", "LISEZMOI"] {
+            std::fs::write(dir.join(name), b"").unwrap();
+        }
+        assert_eq!(unique(&dir, "Rapport v1.2.pdf"), dir.join("Rapport v1.2 (1).pdf"));
+        assert_eq!(unique(&dir, "archive.tar.gz"), dir.join("archive (1).tar.gz"));
+        assert_eq!(unique(&dir, ".bashrc"), dir.join(".bashrc (1)"));
+        assert_eq!(unique(&dir, "LISEZMOI"), dir.join("LISEZMOI (1)"));
+        assert_eq!(unique(&dir, "libre.txt"), dir.join("libre.txt"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

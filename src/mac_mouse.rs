@@ -12,8 +12,9 @@ use crate::UserEvent;
 /// À appeler depuis le fil principal. Le bouton 3 (précédent) et le bouton 4
 /// (suivant) déclenchent les mêmes messages que les flèches de l'interface.
 pub fn install(proxy: EventLoopProxy<UserEvent>) {
+    // Lu une seule fois : avant, la variable d'environnement était relue à chaque clic.
+    let diag = std::env::var_os("FEATHER_DIAG").is_some();
     let handler = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
-        let diag = std::env::var_os("FEATHER_DIAG").is_some();
         let (kind_id, button) = unsafe {
             let e = event.as_ref();
             (e.r#type(), e.buttonNumber())
