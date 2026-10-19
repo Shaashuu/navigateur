@@ -100,8 +100,10 @@ mod tests {
         let got = destination(Path::new("/x/Downloads/a.pdf"), dir.to_str().unwrap());
         assert_eq!(got, dir.join("a (1).pdf"));
         // Dossier vide ou introuvable : on garde la proposition du moteur.
-        assert_eq!(destination(Path::new("/x/a.pdf"), ""), PathBuf::from("/x/a.pdf"));
-        assert_eq!(destination(Path::new("/x/a.pdf"), "/nulle/part"), PathBuf::from("/x/a.pdf"));
+        // (un chemin absolu sur tous les systèmes : sous Windows « /x » ne l'est pas)
+        let suggested = std::env::temp_dir().join("feather-ailleurs").join("a.pdf");
+        assert_eq!(destination(&suggested, ""), suggested);
+        assert_eq!(destination(&suggested, "/nulle/part"), suggested);
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
