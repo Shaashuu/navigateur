@@ -154,21 +154,30 @@
   body[data-pos="top"] #gear { order: 0; }
   body[data-pos="top"] #search-pill { display: none; }
   body[data-pos="top"] #overlay, body[data-pos="top"] #settings { left: 0; right: 0; top: 44px; }
+  /* Les onglets se partagent la largeur : larges quand ils sont peu, puis ils rétrécissent
+     jusqu'à l'icône seule ; l'onglet actif reste assez large pour lire le titre. */
+  body[data-pos="top"] #pills { flex: 1 1 0; }
   body[data-pos="top"] .tab, body[data-pos="top"] .tab.has-icon,
-  body[data-pos="top"] .tab.active, body[data-pos="top"] .tab.has-icon.active { width: 34px; height: 34px; flex: none; }
   body[data-pos="top"] .tab.active, body[data-pos="top"] .tab.has-icon.active {
-    width: auto; min-width: 150px; max-width: 340px; flex: 0 1 340px; display: flex; align-items: center;
-    gap: 8px; padding: 0 12px 0 2px; border-radius: 17px; background: var(--accent-soft);
+    display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 2px; border-radius: 17px;
+    flex: 1 1 0; min-width: 34px; max-width: 200px; width: auto;
+  }
+  body[data-pos="top"] .tab:hover { background: var(--line); }
+  body[data-pos="top"] .tab.active, body[data-pos="top"] .tab.has-icon.active {
+    flex: 2 1 0; min-width: 150px; max-width: 340px; padding-right: 12px; background: var(--accent-soft);
+  }
+  body[data-pos="top"] .tab .dot, body[data-pos="top"] .tab:hover .dot { flex: none; margin: 0 7px; }
+  body[data-pos="top"] .tab.has-icon .dot, body[data-pos="top"] .tab.has-icon:hover .dot {
+    width: 30px; height: 30px; margin: 0; border-radius: 15px;
   }
   body[data-pos="top"] .tab.active .dot, body[data-pos="top"] .tab.active:hover .dot,
   body[data-pos="top"] .tab.has-icon.active .dot, body[data-pos="top"] .tab.has-icon.active:hover .dot {
-    width: 28px; height: 28px; border-radius: 14px; background: var(--line); opacity: 1; flex: none;
-    display: grid; place-items: center;
+    width: 28px; height: 28px; margin: 0; border-radius: 14px; background: var(--line); opacity: 1;
   }
   body[data-pos="top"] .tab.active:not(.has-icon) .dot { background: var(--accent); width: 12px; height: 12px; border-radius: 6px; margin: 0 8px 0 10px; }
-  body[data-pos="top"] .tab.has-icon .dot, body[data-pos="top"] .tab.has-icon:hover .dot { width: 30px; height: 30px; }
   body[data-pos="top"] .tab .mute { bottom: -3px; right: -1px; }
   body[data-pos="top"] .tab.active .mute { position: static; margin-left: 2px; flex: none; }
+  .tab:not(.active) .ttl { color: var(--muted); cursor: pointer; }
   .ttl, .urlinput { flex: 1; min-width: 0; font-size: 13px; }
   .ttl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
   .urlinput { border: 0; outline: none; background: transparent; color: var(--text); font-family: inherit; user-select: text; }
@@ -467,9 +476,9 @@
         box.appendChild(img);
         el.querySelector('.dot').appendChild(box);
       }
-      if (tab.active && isTop()) {
-        el.classList.toggle('editing', editing);
-        if (editing) {
+      if (isTop()) {
+        el.classList.toggle('editing', tab.active && editing);
+        if (tab.active && editing) {
           const inp = document.createElement('input');
           inp.className = 'urlinput';
           inp.spellcheck = false;
