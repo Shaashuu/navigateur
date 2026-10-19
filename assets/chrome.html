@@ -98,25 +98,16 @@
   }
   .tab:hover .close { opacity: 1; transform: scale(1); pointer-events: auto; }
   .close:hover { filter: brightness(1.1); }
-  /* Onglet qui joue du son : la pastille porte un petit haut-parleur (simple repère) ;
-     un clic sur la pastille change toujours d'onglet. Le son se coupe avec le petit
-     bouton discret qui apparaît au survol, par un clic droit ou avec Ctrl+M. */
-  .tab.sound { height: 32px; }
-  .tab.sound.active { height: 56px; }
-  .tab.sound .dot, .tab.sound:hover .dot {
-    width: 22px; height: 22px; border-radius: 11px; opacity: 1;
-    display: grid; place-items: center; color: #fff;
-  }
-  .tab.sound.active .dot, .tab.sound.active:hover .dot { width: 20px; height: 48px; border-radius: 10px; }
-  .tab.sound.muted .dot { opacity: .6; }
+  /* Onglet qui joue du son : un petit bouton fixe en bas à droite coupe ou remet le son
+     (aussi : clic droit sur l'onglet, ou Ctrl+M). Un clic sur la pastille change d'onglet. */
   .mute {
     position: absolute; bottom: -3px; right: 3px; width: 16px; height: 16px; border-radius: 8px;
     display: grid; place-items: center; color: var(--muted);
     background: color-mix(in srgb, var(--surface) 80%, transparent);
     border: 1px solid var(--line);
-    opacity: 0; transform: scale(.6); pointer-events: none; transition: all .12s ease;
+    opacity: .9; transition: all .12s ease;
   }
-  .tab:hover .mute { opacity: .9; transform: scale(1); pointer-events: auto; }
+  .tab.muted .mute { opacity: 1; color: var(--text); }
   .mute:hover { opacity: 1; color: var(--text); background: var(--accent-soft); border-color: var(--accent); }
   /* Onglet avec l'icône du site : la pastille est un peu plus grande et porte l'icône */
   .tab.has-icon { height: 38px; }
@@ -134,13 +125,15 @@
     display: grid; place-items: center; overflow: hidden; box-shadow: 0 0 0 1px rgba(0, 0, 0, .06);
   }
   .favicon img { width: 16px; height: 16px; object-fit: contain; display: block; }
-  /* Petit haut-parleur dans le coin de l'icône quand la page joue du son */
-  .badge {
-    position: absolute; top: -1px; left: 3px; width: 15px; height: 15px; border-radius: 8px;
-    display: grid; place-items: center; background: var(--accent); color: #fff;
-    border: 1.5px solid var(--bg); pointer-events: none;
+  /* Menu du clic droit sur un onglet (la page est cachée pendant ce temps) */
+  #ctx { position: fixed; inset: 0; display: none; }
+  body.menu #ctx { display: block; }
+  #ctx ul {
+    position: absolute; left: 62px; margin: 0; padding: 6px; list-style: none; min-width: 190px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
   }
-  .tab.muted .badge { background: var(--muted); }
+  #ctx li { padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  #ctx li:hover { background: var(--accent-soft); }
   /* Glisser-déposer */
   .tab.dragging { opacity: .6; transform: scale(1.15); cursor: grabbing; z-index: 2; }
   .tab.dragging .close, .tab.dragging .mute { display: none; }
@@ -254,6 +247,8 @@
     <div class="help">Entrée pour valider · Échap pour revenir à la page</div>
   </div>
 
+  <div id="ctx"><ul id="ctx-menu"></ul></div>
+
   <div id="settings">
     <form id="settings-form">
       <h2>Paramètres</h2>
@@ -330,8 +325,28 @@
     mode = next;
     document.body.classList.toggle('bar', mode === 'bar');
     document.body.classList.toggle('settings', mode === 'settings');
+    document.body.classList.toggle('menu', mode === 'menu');
     if (wasOpen !== (mode !== null)) send({ type: 'expand', open: mode !== null });
   }
+
+  function openTabMenu(tab, y) {
+    const items = [];
+    if (!tab.home) items.push([tab.muted ? 'Réactiver le son' : "Couper le son de l'onglet", () => send({ type: 'toggle_mute', id: tab.id })]);
+    items.push(["Fermer l'onglet", () => send({ type: 'close_tab', id: tab.id })]);
+    const ul = $('ctx-menu');
+    ul.textContent = '';
+    for (const [text, run] of items) {
+      const li = document.createElement('li');
+      li.textContent = text;
+      li.addEventListener('click', (e) => { e.stopPropagation(); setMode(null); run(); });
+      ul.appendChild(li);
+    }
+    ul.style.top = Math.max(4, Math.min(y - 10, window.innerHeight - 20 - 40 * items.length)) + 'px';
+    if (mode === 'bar') closeBar(false);
+    setMode('menu');
+  }
+  $('ctx').addEventListener('click', () => { setMode(null); send({ type: 'focus_page' }); });
+  $('ctx').addEventListener('contextmenu', (e) => { e.preventDefault(); setMode(null); send({ type: 'focus_page' }); });
 
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme || 'auto';
@@ -359,11 +374,11 @@
       const sound = tab.audible || tab.muted;
       const icon = tab.icon && !badIcons.has(tab.icon) ? tab.icon : null;
       el.className = 'tab' + (tab.active ? ' active' : '') + (tab.loading && !sound ? ' loading' : '') +
-        (sound && !icon ? ' sound' : '') + (icon ? ' has-icon' : '') + (tab.muted ? ' muted' : '');
+        (icon ? ' has-icon' : '') + (tab.muted ? ' muted' : '');
       el.dataset.id = tab.id;
       el.setAttribute('role', 'button');
       el.setAttribute('aria-label', label(tab));
-      el.title = tab.home ? 'Accueil' : (tab.site_name || label(tab)); // bulle : le nom du site
+      el.title = label(tab); // bulle : le titre de la page
       el.innerHTML = '<span class="dot"></span>' +
         '<button class="close" aria-label="Fermer l\'onglet">' +
         '<svg width="8" height="8" viewBox="0 0 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg></button>';
@@ -378,14 +393,6 @@
         img.src = icon;
         box.appendChild(img);
         el.querySelector('.dot').appendChild(box);
-        if (sound) {
-          const badge = document.createElement('span');
-          badge.className = 'badge';
-          badge.innerHTML = (tab.muted ? SPEAKER_OFF : SPEAKER).replace(/width="12" height="12"/, 'width="9" height="9"');
-          el.appendChild(badge);
-        }
-      } else if (sound) {
-        el.querySelector('.dot').innerHTML = tab.muted ? SPEAKER_OFF : SPEAKER;
       }
       if (sound) {
         const mute = document.createElement('button');
@@ -397,11 +404,8 @@
         mute.addEventListener('click', (e) => { e.stopPropagation(); send({ type: 'toggle_mute', id: tab.id }); });
         el.appendChild(mute);
       }
-      // Clic droit : couper ou remettre le son (seulement si l'onglet joue du son)
-      el.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        if (sound) send({ type: 'toggle_mute', id: tab.id });
-      });
+      // Clic droit : menu de l'onglet
+      el.addEventListener('contextmenu', (e) => { e.preventDefault(); openTabMenu(tab, e.clientY); });
       el.querySelector('.close').addEventListener('pointerdown', (e) => e.stopPropagation());
       el.querySelector('.close').addEventListener('click', (e) => {
         e.stopPropagation();
@@ -609,6 +613,7 @@
 
   // --- Raccourcis quand l'interface a le focus ---
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && mode === 'menu') { setMode(null); send({ type: 'focus_page' }); return; }
     if (e.key === 'Escape' && mode === 'settings') { closeSettings(); return; }
     const k = e.key.toLowerCase();
     if (e.altKey && !e.ctrlKey && !e.metaKey && (k === 'arrowleft' || k === 'arrowright')) {

@@ -107,6 +107,13 @@ impl TabManager {
         let Some(index) = self.tabs.iter().position(|t| t.id == id) else {
             return;
         };
+        // On arrête le son avant de détruire la page : sous Windows, il pourrait sinon
+        // continuer un moment après la fermeture de l'onglet.
+        let tab = &self.tabs[index];
+        let _ = tab.webview.evaluate_script(
+            "document.querySelectorAll('video, audio').forEach((m) => { m.pause(); m.removeAttribute('src'); m.load(); })",
+        );
+        let _ = tab.webview.load_url("about:blank");
         // `remove` rend l'onglet, qui est détruit à la fin de cette instruction.
         self.tabs.remove(index);
         if self.active == Some(id) {
