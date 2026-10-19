@@ -232,6 +232,8 @@ fn build_page(id: TabId, url: &str, ctx: &PageContext) -> wry::Result<WebView> {
         .with_bounds(ctx.bounds)
         .with_url(url)
         .with_devtools(cfg!(debug_assertions))
+        // macOS : un clic sur une page peu après l'avoir quittée ne doit pas servir qu'à la réactiver.
+        .with_accept_first_mouse(true)
         // FEATHER_SANS_SCRIPT=1 : pas de script injecté (pour chercher l'origine d'un défaut).
         .with_initialization_script(if std::env::var_os("FEATHER_SANS_SCRIPT").is_some() {
             ""
