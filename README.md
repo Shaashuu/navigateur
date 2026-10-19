@@ -26,8 +26,8 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   point par autre onglet, `+` pour en ouvrir un. Au survol, le titre s'affiche
   et une petite croix rouge apparaît en haut de la pastille pour la fermer.
   Maintenez le clic sur un onglet pour le monter ou le descendre.
-- **Son** : un petit haut-parleur apparaît sur l'onglet qui joue une vidéo ou
-  une musique ; un clic dessus coupe ou remet le son de cet onglet.
+- **Son** : la pastille d'un onglet qui joue une vidéo ou une musique devient
+  un haut-parleur ; un clic dessus coupe ou remet le son de cet onglet.
 - **Paramètres** (engrenage en haut à gauche) : prénom, moteur de recherche
   (DuckDuckGo, Qwant, Ecosia, Google, Bing), adresse du bouton maison (ouverte
   aussi au démarrage ; les nouveaux onglets ouvrent l'accueil Feather), thème clair, sombre
