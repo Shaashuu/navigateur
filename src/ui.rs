@@ -10,131 +10,23 @@ use wry::{Rect, WebView, WebViewBuilder};
 
 use crate::library::Bookmark;
 use crate::settings::{BarPosition, Settings, Theme};
+use crate::sitedata::Permission;
 use crate::tab_manager::TabId;
 
 /// Largeur de la colonne des pastilles, à gauche (pixels logiques).
 pub const SIDEBAR_WIDTH: f64 = 56.0;
 /// Hauteur de la barre quand elle est placée en haut.
 pub const TOP_BAR_HEIGHT: f64 = 44.0;
+/// Hauteur du bandeau du bas (recherche dans la page, question d'autorisation,
+/// fin d'un minuteur) : la page rétrécit pour le laisser voir.
+pub const STRIP_HEIGHT: f64 = 48.0;
 
 pub const CHROME_HTML: &str = include_str!("../assets/chrome.html");
 const HOME_HTML: &str = include_str!("../assets/home.html");
 
-/// Injecté dans chaque page : relaie quelques raccourcis clavier vers Rust,
-/// car une page qui a le focus reçoit les touches avant la fenêtre.
-pub const PAGE_SCRIPT: &str = r#"
-(() => {
-  const post = (msg) => window.ipc.postMessage(JSON.stringify(msg));
-  const send = (shortcut) => post({ shortcut });
-  window.addEventListener('keydown', (e) => {
-    const k = e.key.toLowerCase();
-    const ctrl = (e.ctrlKey || e.metaKey) && !e.altKey;
-    let a = null;
-    if (e.altKey && !e.ctrlKey && !e.metaKey && k === 'arrowleft') a = 'back';
-    else if (e.altKey && !e.ctrlKey && !e.metaKey && k === 'arrowright') a = 'forward';
-    else if (e.metaKey && !e.ctrlKey && !e.altKey && (k === '[' || k === ']')) a = k === '[' ? 'back' : 'forward';
-    else if (k === 'f5' || (ctrl && k === 'r')) a = 'reload';
-    else if (ctrl && (k === 'l' || k === 'k')) a = 'focus_bar';
-    else if (ctrl && k === 't') a = 'new_tab';
-    else if (ctrl && k === 'w') a = 'close_tab';
-    else if (e.ctrlKey && !e.metaKey && !e.altKey && k === 'm') a = 'toggle_mute';
-    else if (ctrl && k === 'tab') a = e.shiftKey ? 'previous_tab' : 'next_tab';
-    else if (ctrl && k === ',') a = 'settings';
-    else if (ctrl && k === 'd') a = 'toggle_bookmark';
-    if (a) { e.preventDefault(); e.stopPropagation(); send(a); }
-  }, true);
-
-  // Boutons latéraux de la souris : précédent et suivant (aussi dans les cadres).
-  for (const type of ['mousedown', 'mouseup', 'auxclick']) {
-    window.addEventListener(type, (e) => {
-      if (e.button !== 3 && e.button !== 4) return;
-      e.preventDefault();
-      if (type === 'mouseup') send(e.button === 3 ? 'back' : 'forward');
-    }, true);
-  }
-
-  // Clic de molette sur un lien : ouvre la page dans un nouvel onglet (aussi dans les cadres).
-  const linkOf = (e) => {
-    const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
-    return a && /^https?:/i.test(a.href) ? a.href : null;
-  };
-  window.addEventListener('mousedown', (e) => { if (e.button === 1 && linkOf(e)) e.preventDefault(); }, true);
-  window.addEventListener('auxclick', (e) => {
-    if (e.button !== 1) return;
-    const url = linkOf(e);
-    if (!url) return;
-    e.preventDefault();
-    e.stopPropagation();
-    post({ open_tab: url });
-  }, true);
-
-  // Le reste ne concerne que la page elle-même, pas ses cadres (publicités, lecteurs
-  // intégrés…) : sous Windows, ce script est injecté dans chacun d'eux.
-  if (window.top !== window) return;
-
-  // YouTube : l'aperçu vidéo qui couvre la miniature au survol avale le clic dans
-  // le moteur de macOS ; sans lui, la miniature redevient un simple lien.
-  if (/(^|\.)youtube\.com$/.test(location.hostname)) {
-    const css = document.createElement('style');
-    css.textContent = 'ytd-video-preview,#video-preview{display:none!important}';
-    (document.head || document.documentElement).appendChild(css);
-    document.addEventListener('DOMContentLoaded', () => (document.head || document.documentElement).appendChild(css));
-  }
-
-  // Son : prévient l'interface quand une vidéo ou une musique joue, et
-  // permet de couper le son de l'onglet.
-  let muted = false;
-  let last = false;
-  const media = () => Array.from(document.querySelectorAll('video, audio'));
-  const audible = (m) => !m.paused && !m.ended && (m.muted ? m.__featherMuted === true : m.volume > 0);
-  const report = () => {
-    const now = media().some(audible);
-    if (now !== last) { last = now; post({ audible: now }); }
-  };
-  const silence = (m) => { if (!m.muted) { m.muted = true; m.__featherMuted = true; } };
-  for (const type of ['play', 'playing', 'pause', 'ended', 'volumechange', 'emptied']) {
-    document.addEventListener(type, (e) => {
-      if (muted && type === 'play' && e.target instanceof HTMLMediaElement) silence(e.target);
-      report();
-    }, true);
-  }
-  // Icône et nom du site, pour la pastille de l'onglet. On passe par l'icône que le
-  // site indique lui-même (ou /favicon.ico), jamais par un service tiers.
-  let lastSite = '';
-  const reportSite = () => {
-    if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
-    let icon = null;
-    for (const l of document.querySelectorAll('link[rel~="icon"]')) {
-      if (l.href) { icon = l.href; break; }
-    }
-    if (!icon) icon = location.origin + '/favicon.ico';
-    const meta = (sel) => (document.querySelector(sel) || {}).content;
-    const host = location.hostname.replace(/^www\./, '');
-    const name = (meta('meta[property="og:site_name"]') || meta('meta[name="application-name"]') || host).trim();
-    const key = icon + '|' + name;
-    if (key === lastSite) return;
-    lastSite = key;
-    post({ site: { icon, name } });
-  };
-  document.addEventListener('DOMContentLoaded', () => {
-    reportSite();
-    // Icône ajoutée ou changée après coup.
-    let timer = 0;
-    new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(reportSite, 300); })
-      .observe(document.head || document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['href', 'rel'] });
-  });
-  window.addEventListener('load', reportSite);
-
-  window.__featherSetMuted = (on) => {
-    muted = on;
-    for (const m of media()) {
-      if (on) silence(m);
-      else if (m.__featherMuted) { m.muted = false; m.__featherMuted = false; }
-    }
-    report();
-  };
-})();
-"#;
+/// Injecté dans chaque page : raccourcis clavier, son, icône du site, recherche
+/// dans la page, menu des liens, mesures, autorisations (voir le fichier).
+pub const PAGE_SCRIPT: &str = include_str!("../assets/page.js");
 
 /// Mode de diagnostic (FEATHER_DIAG=1) : affiche sur la page les derniers événements de
 /// souris reçus (type, bouton, élément visé), pour comprendre des clics perdus.
@@ -226,6 +118,50 @@ pub enum ChromeMessage {
         url: String,
         #[serde(default)]
         new_tab: bool,
+        #[serde(default)]
+        private: bool,
+    },
+    /// Le bandeau du bas s'ouvre ou se ferme : la page doit lui laisser la place.
+    Strip {
+        open: bool,
+    },
+    /// Recherche dans la page active (`backwards` : occurrence précédente).
+    Find {
+        text: String,
+        #[serde(default)]
+        backwards: bool,
+    },
+    /// Fin de la recherche dans la page : on efface la sélection.
+    FindClose,
+    /// Suggestions de la barre (favoris et historique) pour ce texte.
+    Suggest {
+        query: String,
+    },
+    /// Commande native de la barre (« /calcul 2+2 ») : aperçu ou exécution.
+    Command {
+        input: String,
+        #[serde(default)]
+        run: bool,
+    },
+    /// Réponse de l'utilisateur à une demande d'autorisation.
+    PermissionAnswer {
+        request: u32,
+        allow: bool,
+        #[serde(default)]
+        remember: bool,
+    },
+    /// Oublie une décision retenue (paramètres).
+    ForgetPermission {
+        host: String,
+        permission: Permission,
+    },
+    /// Met un onglet en veille (menu de l'onglet).
+    SleepTab {
+        id: TabId,
+    },
+    /// Annule un téléchargement en cours.
+    CancelDownload {
+        id: u32,
     },
     RemoveBookmark {
         url: String,
@@ -266,6 +202,54 @@ pub struct PageMessage {
     pub open_tab: Option<String>,
     /// Icône et nom du site (voir `clean_site`).
     pub site: Option<SiteInfo>,
+    /// Résultat d'une recherche dans la page.
+    pub find_result: Option<FindResult>,
+    /// Choix fait dans le menu d'un lien (clic droit).
+    pub link: Option<LinkAction>,
+    /// Mesures de la page (voir `weight.rs`).
+    pub metrics: Option<PageMetrics>,
+    /// Texte lisible de la page, pour la recherche dans l'historique.
+    pub text: Option<String>,
+    /// La page demande une autorisation (caméra, position…).
+    pub permission: Option<PermissionRequest>,
+}
+
+#[derive(Debug, Default, Deserialize, serde::Serialize, Clone, Copy)]
+#[serde(default)]
+pub struct FindResult {
+    pub current: u32,
+    pub total: u32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LinkAction {
+    pub url: String,
+    pub how: LinkHow,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkHow {
+    /// Nouvel onglet affiché.
+    Tab,
+    /// Nouvel onglet en arrière-plan.
+    Background,
+    /// Onglet privé.
+    Private,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct PageMetrics {
+    pub heap_mb: Option<u32>,
+    pub lag_ms: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PermissionRequest {
+    /// Numéro donné par la page, rendu avec la réponse.
+    pub id: u32,
+    pub permission: Permission,
 }
 
 /// Ce que la page dit d'elle-même : l'adresse de son icône et le nom du site.
@@ -309,15 +293,24 @@ pub enum Shortcut {
     PreviousTab,
     Settings,
     ToggleBookmark,
+    Find,
+    ZoomIn,
+    ZoomOut,
+    ZoomReset,
+    ReopenTab,
+    Print,
+    NewPrivateTab,
 }
 
-/// Zone occupée par les pages : tout sauf la barre (à gauche, à droite ou en haut).
-pub fn page_bounds(window: &Window, bar: BarPosition) -> Rect {
+/// Zone occupée par les pages : tout sauf la barre (à gauche, à droite ou en
+/// haut) et, s'il est ouvert, le bandeau du bas.
+pub fn page_bounds(window: &Window, bar: BarPosition, strip: bool) -> Rect {
     let size = window.inner_size().to_logical::<f64>(window.scale_factor());
+    let strip = if strip { STRIP_HEIGHT } else { 0.0 };
     let (x, y, w, h) = match bar {
-        BarPosition::Left => (SIDEBAR_WIDTH, 0.0, size.width - SIDEBAR_WIDTH, size.height),
-        BarPosition::Right => (0.0, 0.0, size.width - SIDEBAR_WIDTH, size.height),
-        BarPosition::Top => (0.0, TOP_BAR_HEIGHT, size.width, size.height - TOP_BAR_HEIGHT),
+        BarPosition::Left => (SIDEBAR_WIDTH, 0.0, size.width - SIDEBAR_WIDTH, size.height - strip),
+        BarPosition::Right => (0.0, 0.0, size.width - SIDEBAR_WIDTH, size.height - strip),
+        BarPosition::Top => (0.0, TOP_BAR_HEIGHT, size.width, size.height - TOP_BAR_HEIGHT - strip),
     };
     Rect {
         position: LogicalPosition::new(x, y).into(),

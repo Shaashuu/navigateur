@@ -5,10 +5,9 @@
 <title>Accueil</title>
 <style>
   :root { --bg: #f4f3ef; --surface: #ffffff; --text: #1d1d1f; --muted: #8a8a8e; --line: #e2e0da; --accent: #5b5bd6; --shadow: 0 6px 24px rgba(0,0,0,.08); }
-  :root[data-theme="dark"] { --bg: #17171a; --surface: #222226; --text: #ececef; --muted: #7d7d85; --line: #34343a; --accent: #8f8ff5; --shadow: 0 6px 24px rgba(0,0,0,.45); }
-  @media (prefers-color-scheme: dark) {
-    :root[data-theme="auto"] { --bg: #17171a; --surface: #222226; --text: #ececef; --muted: #7d7d85; --line: #34343a; --accent: #8f8ff5; --shadow: 0 6px 24px rgba(0,0,0,.45); }
-  }
+  /* Une seule palette sombre : le script ci-dessous choisit le mode (data-mode)
+     selon le réglage et, en « automatique », selon le système. */
+  :root[data-mode="dark"] { --bg: #17171a; --surface: #222226; --text: #ececef; --muted: #7d7d85; --line: #34343a; --accent: #8f8ff5; --shadow: 0 6px 24px rgba(0,0,0,.45); }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body {
@@ -44,6 +43,19 @@
   #hint { position: fixed; bottom: 18px; color: var(--muted); font-size: 12px; opacity: .8; }
   kbd { font: inherit; border: 1px solid var(--muted); border-radius: 4px; padding: 0 4px; }
 </style>
+<script>
+  // Thème : « auto » suit le système, et change avec lui.
+  (() => {
+    const root = document.documentElement;
+    const dark = matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      const t = root.dataset.theme;
+      root.dataset.mode = t === 'dark' || (t !== 'light' && dark.matches) ? 'dark' : 'light';
+    };
+    apply();
+    if (dark.addEventListener) dark.addEventListener('change', apply); else dark.addListener(apply);
+  })();
+</script>
 </head>
 <body>
   <div id="clock">--:--</div>

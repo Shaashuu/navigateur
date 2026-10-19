@@ -11,6 +11,8 @@ pub enum State {
     Progress,
     Done,
     Failed,
+    /// Annulé par l'utilisateur : le fichier est supprimé dès que le moteur le libère.
+    Cancelled,
 }
 
 /// Un téléchargement de cette session (la liste n'est pas gardée au redémarrage).
@@ -22,6 +24,77 @@ pub struct Download {
     #[serde(skip)]
     pub path: PathBuf,
     pub state: State,
+    /// Octets déjà écrits sur le disque (mesurés chaque seconde).
+    pub received: Option<u64>,
+    /// Taille annoncée par le serveur, si on la connaît.
+    pub total: Option<u64>,
+    /// Vitesse moyenne sur la dernière seconde, en octets par seconde.
+    pub speed: Option<u64>,
+}
+
+impl Download {
+    pub fn new(id: u32, url: String, path: PathBuf) -> Self {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| url.clone());
+        Self { id, url, name, path, state: State::Progress, received: None, total: None, speed: None }
+    }
+
+    /// Mesure la taille du fichier en cours d'écriture (appelé chaque seconde).
+    pub fn probe(&mut self) {
+        let Some(size) = written_size(&self.path) else { return };
+        self.speed = self.received.map(|before| size.saturating_sub(before));
+        self.received = Some(size);
+    }
+}
+
+/// Taille du fichier en cours d'écriture. Selon le moteur, il est écrit sous
+/// son nom final ou sous un nom provisoire à côté (« .crdownload » pour
+/// WebView2, « .download » pour WebKit).
+fn written_size(path: &Path) -> Option<u64> {
+    let mut candidates = vec![path.to_path_buf()];
+    for ext in ["crdownload", "download", "part"] {
+        let mut name = path.as_os_str().to_os_string();
+        name.push(format!(".{ext}"));
+        candidates.push(PathBuf::from(name));
+    }
+    candidates.iter().filter_map(|p| std::fs::metadata(p).ok()).map(|m| m.len()).max()
+}
+
+/// Taille annoncée par le serveur (requête HEAD, en arrière-plan). On n'envoie
+/// pas les cookies du site : pour une page protégée, la taille reste inconnue.
+pub fn content_length(url: &str) -> Option<u64> {
+    if !crate::network::is_web(url) {
+        return None;
+    }
+    let mut cmd = Command::new("curl");
+    cmd.args(["-sIL", "--max-time", "10", "--proto", "=http,https"]).arg(url);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let output = cmd.output().ok()?;
+    // Après une redirection, c'est la dernière réponse qui compte.
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|l| {
+            let (k, v) = l.split_once(':')?;
+            k.trim().eq_ignore_ascii_case("content-length").then(|| v.trim().parse::<u64>().ok())?
+        })
+        .next_back()
+        .filter(|n| *n > 0)
+}
+
+/// Supprime un fichier téléchargé (et son nom provisoire), après une annulation.
+pub fn remove(path: &Path) {
+    let _ = std::fs::remove_file(path);
+    for ext in ["crdownload", "download", "part"] {
+        let mut name = path.as_os_str().to_os_string();
+        name.push(format!(".{ext}"));
+        let _ = std::fs::remove_file(PathBuf::from(name));
+    }
 }
 
 /// Le moteur propose un chemin dans le dossier Téléchargements du système. Si
@@ -120,6 +193,27 @@ mod tests {
         let suggested = std::env::temp_dir().join("feather-ailleurs").join("a.pdf");
         assert_eq!(destination(&suggested, ""), suggested);
         assert_eq!(destination(&suggested, "/nulle/part"), suggested);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn progression_mesuree() {
+        let dir = std::env::temp_dir().join(format!("feather-progres-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("film.mp4");
+        let mut d = Download::new(1, "https://a.fr/film.mp4".into(), path.clone());
+        assert_eq!(d.name, "film.mp4");
+        d.probe();
+        assert_eq!(d.received, None);
+        // Nom provisoire de WebView2.
+        std::fs::write(dir.join("film.mp4.crdownload"), vec![0u8; 1000]).unwrap();
+        d.probe();
+        assert_eq!((d.received, d.speed), (Some(1000), None));
+        std::fs::write(dir.join("film.mp4.crdownload"), vec![0u8; 3000]).unwrap();
+        d.probe();
+        assert_eq!((d.received, d.speed), (Some(3000), Some(2000)));
+        remove(&path);
+        assert!(!dir.join("film.mp4.crdownload").exists());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

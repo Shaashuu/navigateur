@@ -15,7 +15,9 @@
     --danger: #e5484d;
     --shadow: 0 6px 24px rgba(0, 0, 0, .10);
   }
-  :root[data-theme="dark"] {
+  /* Une seule palette sombre : `applyTheme` choisit le mode (data-mode) selon le
+     réglage et, en « automatique », selon le système. */
+  :root[data-mode="dark"] {
     --bg: #17171a;
     --surface: #222226;
     --text: #ececef;
@@ -24,18 +26,6 @@
     --accent: #8f8ff5;
     --accent-soft: #2c2c4a;
     --shadow: 0 6px 24px rgba(0, 0, 0, .45);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root[data-theme="auto"] {
-      --bg: #17171a;
-      --surface: #222226;
-      --text: #ececef;
-      --muted: #7d7d85;
-      --line: #34343a;
-      --accent: #8f8ff5;
-      --accent-soft: #2c2c4a;
-      --shadow: 0 6px 24px rgba(0, 0, 0, .45);
-    }
   }
 
   * { box-sizing: border-box; }
@@ -329,6 +319,73 @@
   #library .foot button { height: 30px; padding: 0 14px; border-radius: 15px; border: 1px solid var(--line); color: var(--text); }
   #library .foot button.confirm { background: var(--danger); border-color: var(--danger); color: #fff; }
   #library .foot button[hidden] { display: none; }
+
+  /* Onglet privé : pastille en pointillés ; en veille : pâle ; anneau de poids */
+  .tab.private .dot { outline: 2px dashed var(--accent); outline-offset: 2px; }
+  .tab.asleep .dot { opacity: .3; }
+  .tab.asleep.has-icon .dot { opacity: .45; filter: grayscale(1); }
+  .tab.w1 .dot { box-shadow: 0 0 0 2.5px #e8a317; }
+  .tab.w2 .dot { box-shadow: 0 0 0 2.5px var(--danger); }
+  /* Pastille de recherche d'une page non chiffrée (http) */
+  #search-pill.insecure { border-color: var(--danger); color: var(--danger); }
+  #lock { flex: none; display: grid; place-items: center; color: var(--muted); }
+  #lock.insecure { color: var(--danger); }
+  #lock[hidden] { display: none; }
+  .ttl.insecure::before { content: '⚠ '; color: var(--danger); }
+
+  /* Suggestions et résultat des commandes natives, sous la barre */
+  #command-list li .name.page { color: var(--text); font-weight: 400; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #command-list li .desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #command-list li .mark { color: #e8a317; flex: none; }
+  #cmd-result {
+    margin-top: 10px; width: min(660px, 100%); padding: 14px 18px; border-radius: 16px;
+    background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); user-select: text;
+  }
+  #cmd-result[hidden] { display: none; }
+  #cmd-result .main { font-size: 18px; font-variant-numeric: tabular-nums; }
+  #cmd-result.err .main { font-size: 14px; color: var(--danger); }
+  #cmd-result ul { margin: 8px 0 0; padding-left: 18px; color: var(--text); font-size: 13px; max-height: 40vh; overflow-y: auto; }
+
+  /* Bandeau du bas (48 px, voir ui.rs) : recherche dans la page, question d'autorisation, avis */
+  #strip {
+    position: fixed; left: 56px; right: 0; bottom: 0; height: 48px; z-index: 30; display: none;
+    align-items: center; gap: 8px; padding: 0 12px; background: var(--surface); border-top: 1px solid var(--line);
+  }
+  body.strip #strip { display: flex; }
+  body[data-pos="right"] #strip { left: 0; right: 56px; }
+  body[data-pos="top"] #strip { left: 0; }
+  #strip > div { display: none; flex: 1; align-items: center; gap: 8px; min-width: 0; }
+  #strip > div.on { display: flex; }
+  #strip input[type=text] {
+    width: 260px; height: 32px; padding: 0 12px; border-radius: 16px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); font: inherit; outline: none; user-select: text;
+  }
+  #strip input[type=text]:focus { border-color: var(--accent); }
+  #strip .count { color: var(--muted); font-size: 13px; min-width: 90px; }
+  #strip .count.none { color: var(--danger); }
+  #strip .msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #strip .msg b { font-weight: 600; }
+  #strip button.b { height: 32px; padding: 0 14px; border-radius: 16px; border: 1px solid var(--line); flex: none; }
+  #strip button.b:hover { background: var(--accent-soft); }
+  #strip button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #strip .x { width: 30px; height: 30px; border-radius: 15px; color: var(--muted); font-size: 18px; flex: none; }
+  #strip .x:hover { background: var(--accent-soft); color: var(--text); }
+  #strip label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); flex: none; }
+
+  /* Téléchargement en cours : barre de progression */
+  .row .bar { height: 4px; margin-top: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  .row .bar i { display: block; height: 100%; background: var(--accent); }
+  .row .bar.unknown i { width: 30%; animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
+  .row .snip { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Paramètres : autorisations retenues */
+  #s-perms { margin-top: 8px; font-size: 13px; }
+  #s-perms .perm { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+  #s-perms .perm span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #s-perms .perm em { font-style: normal; color: var(--muted); }
+  #s-perms button { height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid var(--line); }
+  #s-perms .none { color: var(--muted); }
 </style>
 </head>
 <body data-pos="left">
@@ -371,17 +428,40 @@
 
   <div id="overlay">
     <div id="bar">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <span id="lock" hidden></span>
+      <svg id="loupe" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="input" spellcheck="false" autocomplete="off"
              placeholder="Aller à, chercher, ou taper / pour une commande">
       <button class="icon star" id="star" title="Ajouter aux favoris (Ctrl+D)"><svg width="17" height="17" style="margin:auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg></button>
       <button class="icon" id="reload" title="Actualiser (F5)">&#8635;</button>
     </div>
     <ul id="command-list"></ul>
+    <div id="cmd-result" hidden><div class="main"></div><ul></ul></div>
     <div class="help">Entrée pour valider · Échap pour revenir à la page</div>
   </div>
 
   <div id="ctx"></div>
+
+  <div id="strip" role="region" aria-label="Bandeau">
+    <div id="st-find">
+      <input type="text" id="find-input" spellcheck="false" autocomplete="off" placeholder="Rechercher dans la page">
+      <span class="count" id="find-count"></span>
+      <button type="button" class="b" id="find-prev" title="Précédent (Maj+Entrée)">&#8593;</button>
+      <button type="button" class="b" id="find-next" title="Suivant (Entrée)">&#8595;</button>
+      <span style="flex:1"></span>
+      <button type="button" class="x" id="find-close" title="Fermer (Échap)" aria-label="Fermer">&times;</button>
+    </div>
+    <div id="st-perm">
+      <span class="msg" id="perm-msg"></span>
+      <label><input type="checkbox" id="perm-remember" checked> Retenir pour ce site</label>
+      <button type="button" class="b" id="perm-deny">Refuser</button>
+      <button type="button" class="b primary" id="perm-allow">Autoriser</button>
+    </div>
+    <div id="st-notice">
+      <span class="msg" id="notice-msg"></span>
+      <button type="button" class="b" id="notice-ok">OK</button>
+    </div>
+  </div>
 
   <div id="library">
     <div class="panel">
@@ -445,6 +525,20 @@
       </select>
       <label class="check"><input type="checkbox" id="s-bmhome"> Afficher les favoris sur la page d'accueil</label>
       <button type="button" class="danger" id="s-clear">Effacer l'historique</button>
+      <label class="check"><input type="checkbox" id="s-index"> Retrouver les pages par leur texte (gardé sur cet ordinateur)</label>
+      <h3 class="sec">Vie privée et sites</h3>
+      <label class="check"><input type="checkbox" id="s-trackers"> Bloquer les traqueurs (mesure d'audience, publicité)</label>
+      <label>Autorisations retenues</label>
+      <div id="s-perms"></div>
+      <h3 class="sec">Onglets</h3>
+      <label for="s-sleep">Mettre en veille un onglet caché après</label>
+      <select id="s-sleep">
+        <option value="0">Jamais</option>
+        <option value="15">15 minutes</option>
+        <option value="30">30 minutes</option>
+        <option value="60">1 heure</option>
+        <option value="120">2 heures</option>
+      </select>
       <h3 class="sec">Téléchargements</h3>
       <label for="s-dldir">Dossier (vide = dossier Téléchargements de l'ordinateur)</label>
       <input type="text" id="s-dldir" placeholder="Téléchargements" autocomplete="off" spellcheck="false">
@@ -482,9 +576,17 @@
     { name: '/suivant', desc: 'Page suivante', run: () => send({ type: 'forward' }) },
     { name: '/actualiser', desc: 'Recharger la page', run: () => send({ type: 'reload' }) },
     { name: '/parametres', desc: 'Ouvrir les paramètres', run: () => openSettings() },
+    { name: '/prive', desc: 'Ouvrir un onglet privé (Ctrl+Maj+N)', run: () => shortcut('new_private_tab') },
+    { name: '/rouvrir', desc: 'Rouvrir le dernier onglet fermé (Ctrl+Maj+T)', run: () => shortcut('reopen_tab') },
+    { name: '/chercher', desc: 'Chercher dans la page (Ctrl+F)', run: () => openFind() },
+    { name: '/imprimer', desc: 'Imprimer la page (Ctrl+P)', run: () => shortcut('print') },
   ];
+  const shortcut = (name) => send({ type: 'shortcut', shortcut: name });
 
-  let state = { tabs: [], settings: {}, version: '', update: { state: 'idle' }, can_back: false, can_forward: false };
+  let state = { tabs: [], settings: {}, version: '', update: { state: 'idle' }, can_back: false, can_forward: false,
+    permissions: [], permission_prompt: null, native_commands: [] };
+  let suggestions = [];     // pages proposées sous la barre (favoris, historique)
+  let lastActive = null;    // onglet actif au dernier dessin
   let drag = null;          // onglet en cours de déplacement
   const badIcons = new Set(); // icônes introuvables : on garde le point gris
   let mode = null;          // null, 'bar', 'settings' ou 'library'
@@ -523,14 +625,18 @@
   function openTabMenu(tab, ev) {
     const y = ev.clientY;
     const items = [];
-    if (!tab.home) items.push([tab.muted ? SPEAKER_OFF : SPEAKER, tab.muted ? 'Son' : 'Muet', () => send({ type: 'toggle_mute', id: tab.id })]);
-    items.push(['<svg width="12" height="12" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg>', 'Fermer', () => send({ type: 'close_tab', id: tab.id })]);
+    if (!tab.home) items.push([tab.muted ? SPEAKER_OFF : SPEAKER, tab.muted ? 'Son' : 'Muet', tab.muted ? 'Réactiver le son' : "Couper le son de l'onglet", () => send({ type: 'toggle_mute', id: tab.id })]);
+    // Veille : libère la mémoire d'un onglet caché ; sa page revient au clic.
+    if (!tab.active && !tab.asleep && !tab.private && !tab.audible) {
+      items.push(['<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>', 'Veille', "Mettre l'onglet en veille (libère la mémoire)", () => send({ type: 'sleep_tab', id: tab.id })]);
+    }
+    items.push(['<svg width="12" height="12" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg>', 'Fermer', "Fermer l'onglet", () => send({ type: 'close_tab', id: tab.id })]);
     const box = $('ctx');
     box.textContent = '';
-    for (const [icon, text, run] of items) {
+    for (const [icon, text, title, run] of items) {
       const b = document.createElement('button');
       b.innerHTML = icon + '<span>' + text + '</span>';
-      b.title = text === 'Muet' ? "Couper le son de l'onglet" : text === 'Son' ? 'Réactiver le son' : "Fermer l'onglet";
+      b.title = title;
       b.addEventListener('click', (e) => { e.stopPropagation(); closeTabMenu(); run(); });
       box.appendChild(b);
     }
@@ -559,9 +665,17 @@
     }, true);
   }
 
+  const darkQuery = matchMedia('(prefers-color-scheme: dark)');
   function applyTheme(theme) {
-    document.documentElement.dataset.theme = theme || 'auto';
+    const root = document.documentElement;
+    root.dataset.theme = theme || 'auto';
+    const t = root.dataset.theme;
+    root.dataset.mode = t === 'dark' || (t !== 'light' && darkQuery.matches) ? 'dark' : 'light';
   }
+  // En « automatique », on suit le système quand il change.
+  const followSystem = () => applyTheme(document.documentElement.dataset.theme);
+  if (darkQuery.addEventListener) darkQuery.addEventListener('change', followSystem); else darkQuery.addListener(followSystem);
+  applyTheme('auto');
 
   const SPEAKER = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/>' +
     '<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
@@ -576,6 +690,10 @@
     const pill = $('search-pill');
     pill.hidden = !tab || tab.home;
     pill.classList.toggle('loading', !!(tab && tab.loading));
+    const insecure = !!(tab && !tab.home && !tab.secure);
+    pill.classList.toggle('insecure', insecure);
+    pill.title = insecure ? 'Connexion non sécurisée (http)' : '';
+    renderLock(tab);
     $('star').hidden = !tab || tab.home;
     $('star').classList.toggle('on', !!(tab && tab.bookmarked));
     $('star').title = tab && tab.bookmarked ? 'Retirer des favoris (Ctrl+D)' : 'Ajouter aux favoris (Ctrl+D)';
@@ -588,12 +706,14 @@
       const el = document.createElement('div');
       const sound = tab.audible || tab.muted;
       const icon = tab.icon && !badIcons.has(tab.icon) ? tab.icon : null;
+      const level = tab.weight ? tab.weight.level : 0;
       el.className = 'tab' + (tab.active ? ' active' : '') + (tab.loading && !sound ? ' loading' : '') +
-        (icon ? ' has-icon' : '') + (tab.muted ? ' muted' : '');
+        (icon ? ' has-icon' : '') + (tab.muted ? ' muted' : '') + (tab.private ? ' private' : '') +
+        (tab.asleep ? ' asleep' : '') + (level ? ' w' + level : '');
       el.dataset.id = tab.id;
       el.setAttribute('role', 'button');
       el.setAttribute('aria-label', label(tab));
-      el.title = label(tab); // bulle : le titre de la page
+      el.title = tabTitle(tab); // bulle : le titre de la page, et son état
       el.innerHTML = '<span class="dot"></span>' +
         '<button class="close" aria-label="Fermer l\'onglet">' +
         '<svg width="8" height="8" viewBox="0 0 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg></button>';
@@ -618,6 +738,9 @@
           inp.autocomplete = 'off';
           inp.placeholder = 'Aller à, chercher, ou taper / pour une commande';
           inp.addEventListener('pointerdown', (e) => e.stopPropagation());
+          inp.addEventListener('input', () => {
+            if (inp.value.startsWith('/')) { const v = inp.value; editing = false; openBar(v, true); }
+          });
           inp.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
               const text = inp.value.trim();
@@ -635,7 +758,7 @@
           el.appendChild(inp);
         } else {
           const ttl = document.createElement('span');
-          ttl.className = 'ttl';
+          ttl.className = 'ttl' + (!tab.home && !tab.secure ? ' insecure' : '');
           ttl.textContent = label(tab);
           el.appendChild(ttl);
           if (tab.active && !tab.home) {
@@ -670,6 +793,36 @@
       el.addEventListener('pointerdown', (e) => startDrag(e, el, tab));
       box.appendChild(el);
     }
+  }
+
+  // Bulle d'un onglet : titre, puis privé, en veille, poids.
+  function tabTitle(tab) {
+    const parts = [label(tab)];
+    if (tab.private) parts.push('Onglet privé');
+    if (tab.asleep) parts.push('En veille (rechargé au clic)');
+    const w = tab.weight || {};
+    if (w.level) {
+      const m = [];
+      if (w.memory_mb != null) m.push(w.memory_mb + ' Mo');
+      if (w.cpu != null) m.push(w.cpu + ' % processeur');
+      if (w.lag_ms != null && w.lag_ms >= 100) m.push('page ralentie');
+      parts.push((w.level === 2 ? 'Onglet lourd' : 'Onglet chargé') + (m.length ? ' : ' + m.join(', ') : ''));
+    }
+    if (!tab.home && !tab.secure) parts.push('Connexion non sécurisée');
+    return parts.join('\n');
+  }
+  // Cadenas de la barre : chiffré (https) ou non (http).
+  const LOCK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+  const WARN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17v.5"/></svg>';
+  function renderLock(tab) {
+    const lock = $('lock');
+    const show = !!(tab && !tab.home && /^https?:/.test(tab.url));
+    lock.hidden = !show;
+    $('loupe').style.display = show ? 'none' : '';
+    if (!show) return;
+    lock.classList.toggle('insecure', !tab.secure);
+    lock.innerHTML = tab.secure ? LOCK : WARN;
+    lock.title = tab.secure ? 'Connexion chiffrée (https)' : 'Connexion non sécurisée : ce que vous tapez ici peut être lu en chemin';
   }
 
   // Barre en haut : l'adresse de l'onglet actif se modifie directement dans sa pastille.
@@ -732,31 +885,88 @@
   window.addEventListener('pointerup', endDrag);
   window.addEventListener('pointercancel', endDrag);
 
+  // Sous la barre : les commandes (texte commençant par « / ») ou les pages
+  // proposées (favoris et historique). `selected` vaut -1 tant qu'aucune page
+  // n'est choisie : Entrée va alors à ce qui est tapé.
+  const nativeNames = () => (state.native_commands || []).map((c) => c.name);
+  const isNative = (text) => {
+    const word = text.trim().split(/\s+/)[0].toLowerCase();
+    return nativeNames().includes(word);
+  };
   function renderCommands() {
-    const q = input.value.trim().toLowerCase();
-    matches = q.startsWith('/') ? COMMANDS.filter((c) => c.name.startsWith(q)) : [];
-    if (selected >= matches.length) selected = 0;
+    const raw = input.value.trim();
+    const q = raw.toLowerCase();
+    if (q.startsWith('/')) {
+      const word = q.split(/\s+/)[0];
+      const typedArgs = /\s/.test(raw);
+      const all = COMMANDS.concat((state.native_commands || []).map((c) => ({
+        name: c.name, desc: c.desc, native: true,
+        run: () => { input.value = c.name + ' '; input.focus(); renderCommands(); },
+      })));
+      matches = typedArgs ? [] : all.filter((c) => c.name.startsWith(word));
+      if (selected < 0 || selected >= matches.length) selected = 0;
+    } else {
+      matches = suggestions.map((p) => ({ name: p.title || p.url, desc: p.url, page: true, bookmark: p.bookmark,
+        run: () => { closeBar(false); send({ type: 'open_url', url: p.url, new_tab: false }); } }));
+      if (selected >= matches.length) selected = -1;
+    }
     const ul = $('command-list');
     ul.textContent = '';
     matches.forEach((c, i) => {
       const li = document.createElement('li');
       if (i === selected) li.className = 'selected';
-      li.innerHTML = '<span class="name"></span><span class="desc"></span>';
+      li.innerHTML = (c.bookmark ? '<span class="mark">★</span>' : '') + '<span class="name"></span><span class="desc"></span>';
       li.querySelector('.name').textContent = c.name;
-      li.querySelector('.desc').textContent = c.desc;
+      li.querySelector('.name').classList.toggle('page', !!c.page);
+      li.querySelector('.desc').textContent = c.page ? host(c.desc) : c.desc;
       li.addEventListener('mousedown', (e) => { e.preventDefault(); runCommand(c); });
       ul.appendChild(li);
     });
   }
 
+  // Commandes natives (calcul, conversion…) : aperçu pendant la frappe, calculé par Rust.
+  let previewTimer = 0;
+  function requestPreview() {
+    clearTimeout(previewTimer);
+    const text = input.value.trim();
+    if (!text.startsWith('/') || !isNative(text)) { showResult(null); return; }
+    previewTimer = setTimeout(() => send({ type: 'command', input: text, run: false }), 60);
+  }
+  function showResult(r) {
+    const box = $('cmd-result');
+    if (!r || !r.texte) { box.hidden = true; return; }
+    box.hidden = false;
+    box.classList.toggle('err', !!r.erreur);
+    box.querySelector('.main').textContent = r.texte;
+    const ul = box.querySelector('ul');
+    ul.textContent = '';
+    for (const line of r.lignes || []) {
+      const li = document.createElement('li');
+      li.textContent = line;
+      ul.appendChild(li);
+    }
+  }
+  // Suggestions : demandées à Rust pendant la frappe (hors commandes).
+  let suggestTimer = 0;
+  function requestSuggestions() {
+    clearTimeout(suggestTimer);
+    const text = input.value.trim();
+    if (!text || text.startsWith('/')) { suggestions = []; return; }
+    suggestTimer = setTimeout(() => send({ type: 'suggest', query: text }), 60);
+  }
+
   // Ouvre la barre par-dessus la page, avec l'adresse actuelle (ou un texte donné).
-  function openBar(text) {
-    if (isTop() && startEdit(text)) return;
+  function openBar(text, overlay) {
+    if (!overlay && isTop() && startEdit(text)) return;
+    stopEdit();
     setMode('bar');
     const tab = activeTab();
     input.value = text || (tab && !tab.home ? tab.url : '');
     selected = 0;
+    suggestions = [];
+    showResult(null);
     renderCommands();
+    requestPreview();
     input.focus();
     if (!text) input.select();
   }
@@ -764,13 +974,16 @@
   function closeBar(focusPage) {
     if (mode !== 'bar') return;
     input.value = '';
+    suggestions = [];
+    showResult(null);
     renderCommands();
     setMode(null);
     if (focusPage) send({ type: 'focus_page' });
   }
 
   function runCommand(c) {
-    closeBar(c.name !== '/parametres');
+    if (c.native || c.page) { c.run(); return; }
+    closeBar(c.name !== '/parametres' && c.name !== '/chercher');
     c.run();
   }
 
@@ -787,6 +1000,11 @@
     if (!$('s-history').value) $('s-history').value = '90';
     $('s-bmhome').checked = s.bookmarks_on_home !== false;
     $('s-dldir').value = s.download_dir || '';
+    $('s-trackers').checked = s.block_trackers !== false;
+    $('s-index').checked = s.index_pages !== false;
+    $('s-sleep').value = String(s.sleep_minutes ?? 30);
+    if (!$('s-sleep').value) $('s-sleep').value = '30';
+    renderPermissions();
     disarm($('s-clear'), "Effacer l'historique");
     renderStartupChoices();
     renderThemeChoices();
@@ -796,6 +1014,32 @@
     if (mode === 'library') setMode(null);
     setMode('settings');
     $('s-name').focus();
+  }
+
+  // Autorisations retenues par site, avec un bouton pour les oublier.
+  function renderPermissions() {
+    const box = $('s-perms');
+    box.textContent = '';
+    const list = state.permissions || [];
+    if (!list.length) {
+      box.innerHTML = '<div class="none">Aucune pour l\'instant : Feather demande à chaque site.</div>';
+      return;
+    }
+    for (const p of list) {
+      const row = document.createElement('div');
+      row.className = 'perm';
+      const t = document.createElement('span');
+      t.textContent = p.host + ' · ' + p.label + ' ';
+      const v = document.createElement('em');
+      v.textContent = p.allowed ? '(autorisé)' : '(refusé)';
+      t.appendChild(v);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = 'Oublier';
+      b.addEventListener('click', () => { send({ type: 'forget_permission', host: p.host, permission: p.permission }); row.remove(); });
+      row.append(t, b);
+      box.appendChild(row);
+    }
   }
 
   function closeSettings() {
@@ -834,16 +1078,25 @@
   input.addEventListener('blur', () => setTimeout(() => {
     if (mode === 'bar' && document.activeElement !== input) closeBar(false);
   }, 0));
-  input.addEventListener('input', () => { selected = 0; renderCommands(); });
+  input.addEventListener('input', () => {
+    selected = input.value.trim().startsWith('/') ? 0 : -1;
+    requestSuggestions();
+    renderCommands();
+    requestPreview();
+  });
   input.addEventListener('keydown', (e) => {
     if (matches.length) {
-      if (e.key === 'ArrowDown') { selected = (selected + 1) % matches.length; renderCommands(); e.preventDefault(); return; }
-      if (e.key === 'ArrowUp') { selected = (selected - 1 + matches.length) % matches.length; renderCommands(); e.preventDefault(); return; }
-      if (e.key === 'Enter') { runCommand(matches[selected]); e.preventDefault(); return; }
+      const first = matches[0].page ? -1 : 0;
+      const span = matches.length - first;
+      if (e.key === 'ArrowDown') { selected = (selected - first + 1) % span + first; renderCommands(); e.preventDefault(); return; }
+      if (e.key === 'ArrowUp') { selected = (selected - first - 1 + span) % span + first; renderCommands(); e.preventDefault(); return; }
+      if (e.key === 'Enter' && selected >= 0) { runCommand(matches[selected]); e.preventDefault(); return; }
     }
     if (e.key === 'Enter') {
       const text = input.value.trim();
-      if (text) { closeBar(false); send({ type: 'navigate', input: text }); }
+      // Commande native : le résultat s'affiche sous la barre, qui reste ouverte.
+      if (text.startsWith('/') && isNative(text)) send({ type: 'command', input: text, run: true });
+      else if (text) { closeBar(false); send({ type: 'navigate', input: text }); }
       e.preventDefault();
     } else if (e.key === 'Escape') {
       closeBar(true);
@@ -902,6 +1155,9 @@
         history_days: Number($('s-history').value),
         bookmarks_on_home: $('s-bmhome').checked,
         download_dir: $('s-dldir').value,
+        block_trackers: $('s-trackers').checked,
+        sleep_minutes: Number($('s-sleep').value),
+        index_pages: $('s-index').checked,
       },
     });
     setMode(null);
@@ -978,6 +1234,13 @@
     txt.innerHTML = '<span class="t"></span><span class="u"></span>';
     txt.firstChild.textContent = item.title || host(item.url);
     txt.lastChild.textContent = host(item.url);
+    // Page retrouvée par son texte : un extrait autour du mot cherché.
+    if (item.snippet) {
+      const snip = document.createElement('span');
+      snip.className = 'snip';
+      snip.textContent = '… ' + item.snippet + ' …';
+      txt.appendChild(snip);
+    }
     row.appendChild(txt);
     if (time) {
       const tm = document.createElement('span');
@@ -1009,17 +1272,35 @@
     txt.className = 'txt';
     txt.innerHTML = '<span class="t"></span><span class="u"></span>';
     txt.firstChild.textContent = d.name;
-    const status = { progress: 'Téléchargement en cours…', done: 'Terminé · ' + host(d.url), failed: 'Échec du téléchargement' };
+    const status = { progress: progressText(d), done: 'Terminé · ' + host(d.url), failed: 'Échec du téléchargement', cancelled: 'Annulé' };
     txt.lastChild.textContent = status[d.state] || '';
     txt.lastChild.classList.toggle('failed', d.state === 'failed');
+    if (d.state === 'progress') {
+      const bar = document.createElement('span');
+      const known = d.total && d.received != null;
+      bar.className = 'bar' + (known ? '' : ' unknown');
+      bar.innerHTML = '<i></i>';
+      if (known) bar.firstChild.style.width = Math.min(100, (d.received / d.total) * 100).toFixed(1) + '%';
+      txt.appendChild(bar);
+    }
     row.appendChild(txt);
     const acts = document.createElement('span');
     acts.className = 'acts';
+    if (d.state === 'progress') acts.appendChild(actButton('Annuler', 'Arrêter et supprimer le fichier', () => send({ type: 'cancel_download', id: d.id })));
     if (d.state === 'done') acts.appendChild(actButton('Ouvrir', 'Ouvrir le fichier', () => send({ type: 'open_download', id: d.id })));
-    if (d.state !== 'failed') acts.appendChild(actButton(isMac ? 'Afficher dans le Finder' : 'Afficher dans le dossier', 'Montrer le fichier dans son dossier', () => send({ type: 'reveal_download', id: d.id })));
+    if (d.state === 'progress' || d.state === 'done') acts.appendChild(actButton(isMac ? 'Afficher dans le Finder' : 'Afficher dans le dossier', 'Montrer le fichier dans son dossier', () => send({ type: 'reveal_download', id: d.id })));
     row.appendChild(acts);
     if (d.state === 'done') row.addEventListener('dblclick', () => send({ type: 'open_download', id: d.id }));
     return row;
+  }
+  // « 12,3 Mo sur 40 Mo · 2,1 Mo/s »
+  const size = (n) => n >= 1073741824 ? (n / 1073741824).toFixed(1).replace('.', ',') + ' Go'
+    : n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' Mo' : Math.max(1, Math.round(n / 1024)) + ' ko';
+  function progressText(d) {
+    if (d.received == null) return 'Téléchargement en cours…';
+    let t = size(d.received) + (d.total ? ' sur ' + size(d.total) : '');
+    if (d.speed) t += ' · ' + size(d.speed) + '/s';
+    return t;
   }
   function renderLibrary() {
     const list = $('lib-list');
@@ -1029,6 +1310,7 @@
     if (libKind === 'downloads') {
       items = (state.downloads || []).slice().reverse().filter((d) => !q || d.name.toLowerCase().includes(q) || d.url.toLowerCase().includes(q));
       seenDownloads = (state.downloads || []).filter((d) => d.state !== 'progress').length;
+
       renderDownloadsButton();
     }
     const empty = {
@@ -1062,7 +1344,7 @@
     }
     const hints = {
       bookmarks: 'Clic : ouvrir · clic molette : nouvel onglet',
-      history: 'Clic : ouvrir · clic molette : nouvel onglet',
+      history: state.settings.index_pages !== false ? 'Cherche aussi dans le texte des pages · clic molette : nouvel onglet' : 'Clic : ouvrir · clic molette : nouvel onglet',
       downloads: (state.settings.download_dir ? 'Dossier : ' + state.settings.download_dir : 'Rangés dans le dossier Téléchargements'),
     };
     $('lib-hint').textContent = hints[libKind];
@@ -1106,6 +1388,80 @@
   });
   $('star').addEventListener('mousedown', (e) => e.preventDefault());
   $('star').addEventListener('click', () => send({ type: 'toggle_bookmark', id: null }));
+
+  // --- Bandeau du bas : recherche dans la page, autorisations, avis ---
+  let findOpen = false;
+  let notice = null;
+  let noticeTimer = 0;
+  let stripOpen = false;
+  function renderStrip() {
+    const prompt = state.permission_prompt;
+    const show = prompt ? 'perm' : findOpen ? 'find' : notice ? 'notice' : null;
+    for (const k of ['find', 'perm', 'notice']) $('st-' + k).classList.toggle('on', show === k);
+    if (prompt) {
+      const msg = $('perm-msg');
+      msg.textContent = '';
+      const b = document.createElement('b');
+      b.textContent = prompt.host;
+      msg.append(b, ' veut utiliser ' + prompt.label + '.');
+      $('perm-remember').parentNode.hidden = !!(activeTab() || {}).private;
+    }
+    if (notice) $('notice-msg').textContent = notice;
+    document.body.classList.toggle('strip', !!show);
+    // La page rétrécit pour laisser la place au bandeau (Rust ajuste sa taille).
+    if (!!show !== stripOpen) { stripOpen = !!show; send({ type: 'strip', open: stripOpen }); }
+  }
+  function openFind() {
+    if (mode === 'bar') closeBar(false);
+    findOpen = true;
+    renderStrip();
+    const f = $('find-input');
+    f.focus();
+    f.select();
+    if (f.value) send({ type: 'find', text: f.value, backwards: false });
+  }
+  function closeFind() {
+    if (!findOpen) return;
+    findOpen = false;
+    $('find-count').textContent = '';
+    renderStrip();
+    send({ type: 'find_close' });
+  }
+  let findTimer = 0;
+  $('find-input').addEventListener('input', () => {
+    clearTimeout(findTimer);
+    const text = $('find-input').value;
+    if (!text) $('find-count').textContent = '';
+    findTimer = setTimeout(() => send({ type: 'find', text, backwards: false }), 120);
+  });
+  const findStep = (backwards) => {
+    const text = $('find-input').value;
+    if (text) send({ type: 'find', text, backwards });
+  };
+  $('find-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { findStep(e.shiftKey); e.preventDefault(); }
+    else if (e.key === 'Escape') { closeFind(); e.preventDefault(); e.stopPropagation(); }
+  });
+  $('find-prev').addEventListener('click', () => findStep(true));
+  $('find-next').addEventListener('click', () => findStep(false));
+  $('find-close').addEventListener('click', closeFind);
+  const answer = (allow) => {
+    const p = state.permission_prompt;
+    if (!p) return;
+    send({ type: 'permission_answer', request: p.request, allow, remember: $('perm-remember').checked });
+    state.permission_prompt = null;
+    renderStrip();
+    send({ type: 'focus_page' });
+  };
+  $('perm-allow').addEventListener('click', () => answer(true));
+  $('perm-deny').addEventListener('click', () => answer(false));
+  function showNotice(text) {
+    notice = text;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => { notice = null; renderStrip(); }, 10000);
+    renderStrip();
+  }
+  $('notice-ok').addEventListener('click', () => { notice = null; clearTimeout(noticeTimer); renderStrip(); send({ type: 'focus_page' }); });
 
   // --- Mise à jour ---
   function renderUpdate() {
@@ -1162,7 +1518,14 @@
     }
     if (k === 'f5') { send({ type: 'reload' }); e.preventDefault(); return; }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-    if (k === 'm' && e.ctrlKey && !e.metaKey) { const t = activeTab(); if (t) send({ type: 'toggle_mute', id: t.id }); }
+    if (e.shiftKey && k === 't') shortcut('reopen_tab');
+    else if (e.shiftKey && k === 'n') shortcut('new_private_tab');
+    else if (k === 'f' && !e.shiftKey) openFind();
+    else if (k === 'p' && !e.shiftKey) shortcut('print');
+    else if (k === '+' || k === '=') shortcut('zoom_in');
+    else if (k === '-' || k === '_') shortcut('zoom_out');
+    else if (k === '0') shortcut('zoom_reset');
+    else if (k === 'm' && e.ctrlKey && !e.metaKey) { const t = activeTab(); if (t) send({ type: 'toggle_mute', id: t.id }); }
     else if (k === 'l' || k === 'k') send({ type: 'focus_bar' });
     else if (k === 'r') send({ type: 'reload' });
     else if (k === 'd') send({ type: 'toggle_bookmark', id: null });
@@ -1180,8 +1543,13 @@
     setState(next) {
       state = next;
       if (mode !== 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
+      // Autre onglet affiché : la recherche dans la page se ferme.
+      const active = activeTab();
+      const id = active ? active.id : null;
+      if (id !== lastActive) { lastActive = id; if (findOpen) closeFind(); }
       renderSidebar();
       renderUpdate();
+      renderStrip();
       if (mode === 'library' && libKind === 'downloads') renderLibrary();
     },
     setLibrary(data) {
@@ -1191,6 +1559,25 @@
     },
     openBar,
     openSettings,
+    openFind,
+    setFind(r) {
+      const c = $('find-count');
+      if (!findOpen || !$('find-input').value) { c.textContent = ''; return; }
+      c.classList.toggle('none', !r.total);
+      c.textContent = r.total ? r.current + ' sur ' + r.total : 'Aucun résultat';
+    },
+    setSuggestions(data) {
+      if (mode !== 'bar' || data.query !== input.value.trim()) return;
+      suggestions = data.items || [];
+      selected = -1;
+      renderCommands();
+    },
+    setCommandResult(r) {
+      if (mode !== 'bar') return;
+      if (r && !r.run && !isNative(input.value)) return;
+      showResult(r);
+    },
+    showNotice,
   };
 
   send({ type: 'ready' });

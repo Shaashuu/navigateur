@@ -1,4 +1,4 @@
-# Feather 0.1
+# Feather
 
 Feather est un navigateur léger écrit en Rust. Il n'embarque pas de moteur : il utilise la
 webview du système (WebView2 sur Windows, WebKit sur macOS et Linux) grâce à
@@ -49,11 +49,43 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   Historique, favoris et onglets sont enregistrés dans `historique.json`,
   `favoris.json` et `session.json`, à côté de `parametres.json`, et restent sur
   l'ordinateur.
+- **Nouveautés (prochaine version)** :
+  - **Chercher dans la page** (`Ctrl+F`) : un bandeau en bas de la fenêtre,
+    `Entrée` / `Maj+Entrée` pour l'occurrence suivante ou précédente.
+  - **Zoom retenu par site** (`Ctrl++`, `Ctrl+-`, `Ctrl+0`), rangé dans `sites.json`.
+  - **Rouvrir l'onglet fermé** (`Ctrl+Maj+T`, les dix derniers) et **imprimer** (`Ctrl+P`).
+  - **Cadenas** dans la barre : chiffré (https) ou non (http, signalé en rouge
+    sur la pastille de recherche et dans l'onglet).
+  - **Suggestions** sous la barre : favoris puis historique, au fil de la frappe.
+  - **Menu des liens** (clic droit) : nouvel onglet, arrière-plan, onglet privé,
+    copier l'adresse. `Maj+clic droit` garde le menu habituel.
+  - **Onglets privés** (`Ctrl+Maj+N`, ou `/prive`) : pastille en pointillés,
+    rien dans l'historique ni sur le disque ; chaque onglet privé a sa propre
+    session, oubliée à sa fermeture.
+  - **Téléchargements** : progression, vitesse et bouton Annuler.
+  - **Veille des onglets** : un onglet caché depuis longtemps (30 minutes par
+    défaut, réglable) libère sa mémoire et se recharge au clic. Au démarrage,
+    seuls les onglets affichés sont chargés. Aussi : clic droit → Veille.
+  - **Blocage des traqueurs** (macOS et Windows) : une liste courte de domaines
+    de mesure d'audience et de publicité, désactivable dans les paramètres.
+  - **Autorisations par site** : caméra, micro, position, notifications,
+    partage d'écran, presse-papiers. Feather demande dans le bandeau du bas, et
+    retient le choix si on le souhaite (liste et « Oublier » dans les paramètres).
+  - **Commandes natives** dans la barre : `/calcul (12+3)*7`,
+    `/convertir 5 km en miles`, `/minuteur 10 min thé`, `/note acheter du pain`,
+    `/notes` (et `/notes effacer`). L'aperçu s'affiche pendant la frappe.
+  - **Poids des onglets** : un anneau orange (chargé) ou rouge (lourd) autour de
+    la pastille ; la bulle donne la mémoire et le processeur. Un onglet caché et
+    lourd s'endort au bout de cinq minutes.
+  - **Recherche dans le texte des pages** : l'historique retrouve une page par
+    un mot de son contenu, avec un extrait (`contenu.json`, désactivable).
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
 ou suivante, `F5` ou `Ctrl+R` actualiser, `Ctrl+M` couper le son de l'onglet,
-`Ctrl+D` ajouter aux favoris, `Ctrl+,` paramètres.
+`Ctrl+D` ajouter aux favoris, `Ctrl+,` paramètres, `Ctrl+F` chercher dans la
+page, `Ctrl++` / `Ctrl+-` / `Ctrl+0` zoom, `Ctrl+Maj+T` rouvrir l'onglet fermé,
+`Ctrl+Maj+N` onglet privé, `Ctrl+P` imprimer.
 
 ## Lancer le navigateur
 
@@ -86,7 +118,14 @@ Pour lancer les tests : `cargo test`.
 | `src/ui.rs` | Messages échangés avec l'interface et les pages, placement des zones, page d'accueil. |
 | `src/network.rs` | Décide si la saisie est une adresse ou une recherche. |
 | `src/library.rs` | Historique, favoris et onglets de la dernière session (fichiers JSON). |
-| `src/downloads.rs` | Où ranger les téléchargements, et les montrer dans le dossier. |
+| `src/downloads.rs` | Où ranger les téléchargements, leur progression, les montrer dans le dossier. |
+| `src/features.rs` | Zoom, recherche dans la page, suggestions, commandes, autorisations, veille, téléchargements. |
+| `src/commands.rs` | Commandes natives de la barre (calcul, conversion, minuteur, notes). |
+| `src/fulltext.rs` | Texte des pages visitées, pour chercher dans l'historique. |
+| `src/sitedata.rs` | Zoom et autorisations retenus par site (`sites.json`). |
+| `src/trackers.rs` | Liste des traqueurs et blocage (WebKit sous macOS, WebView2 sous Windows). |
+| `src/weight.rs` | Poids d'un onglet (mémoire, processeur, page ralentie). |
+| `assets/page.js` | Script injecté dans chaque page : raccourcis, son, recherche, menu des liens, autorisations. |
 | `assets/chrome.html` | L'interface (pastilles, barre, commandes, paramètres) en HTML/CSS. |
 | `assets/home.html` | La page d'accueil. |
 
@@ -103,10 +142,20 @@ leur onglet et envoient des messages.
 
 ## Limites connues
 
-- Pas de navigation privée.
-- Téléchargements : pas de barre de progression (le moteur ne donne pas
-  l'avancement), pas de choix du dossier à chaque fichier, et la liste se vide
-  au redémarrage (les fichiers restent sur le disque).
+- Navigation privée : des onglets privés dans la même fenêtre, pas une fenêtre à part.
+- Téléchargements : la progression est mesurée sur le fichier en cours
+  d'écriture (le moteur ne la donne pas). « Annuler » ne peut pas arrêter le
+  transfert : Feather supprime le fichier tout de suite, puis de nouveau quand
+  le moteur a fini. Pas de choix du dossier à chaque fichier, et la liste se
+  vide au redémarrage.
+- Blocage des traqueurs : pas sous Linux. Sous Windows, les requêtes bloquées
+  reçoivent une réponse 403.
+- Poids des onglets : mémoire et processeur mesurés par le système sous macOS
+  seulement ; ailleurs, mémoire du JavaScript (Windows) et lenteur de la page.
+- Autorisations : Feather répond avant le moteur pour les fonctions que la page
+  appelle directement ; une demande faite depuis un cadre (iframe) reste
+  traitée par le moteur.
+- Suggestions sous la barre : seulement avec la barre à gauche ou à droite.
 - Icônes : Feather télécharge l'icône que le site indique lui-même (ou
   `/favicon.ico`), jamais via un service tiers, sans envoyer l'adresse de la
   page d'origine. Elle n'est gardée que pour les onglets ouverts.
