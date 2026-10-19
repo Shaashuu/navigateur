@@ -268,5 +268,12 @@ fn build_page(id: TabId, url: &str, ctx: &PageContext) -> wry::Result<WebView> {
             NewWindowResponse::Deny
         });
 
+    // Sur macOS, WebKit s'annonce sans « Safari » : YouTube et d'autres sites se comportent
+    // alors comme dans une vue intégrée (miniatures qui ne réagissent pas au clic).
+    #[cfg(target_os = "macos")]
+    let builder = builder.with_user_agent(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
+    );
+
     ctx.surface.attach(builder, ctx.window)
 }
