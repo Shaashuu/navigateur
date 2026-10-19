@@ -37,6 +37,8 @@ pub enum UserEvent {
     PageLoad(TabId, bool, String),
     OpenInNewTab(String),
     Update(UpdateEvent),
+    /// Les onglets fermés peuvent être détruits.
+    Reap,
 }
 
 /// Résultat d'un travail de mise à jour fait en arrière-plan.
@@ -190,6 +192,7 @@ impl App {
             }
             UserEvent::OpenInNewTab(url) => self.open_tab(&url),
             UserEvent::Update(event) => self.handle_update(event),
+            UserEvent::Reap => self.tabs.reap(),
         }
     }
 
@@ -347,6 +350,11 @@ impl App {
     /// Ferme un onglet ; on garde toujours au moins un onglet ouvert.
     fn close_tab(&mut self, id: TabId) {
         self.tabs.close(id, !self.expanded);
+        let proxy = self.proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(3100));
+            let _ = proxy.send_event(UserEvent::Reap);
+        });
         if self.tabs.is_empty() {
             self.open_new_tab();
         }

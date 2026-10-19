@@ -107,6 +107,36 @@ pub const PAGE_SCRIPT: &str = r#"
 })();
 "#;
 
+/// Mode de diagnostic (FEATHER_DIAG=1) : affiche sur la page les derniers événements de
+/// souris reçus (type, bouton, élément visé), pour comprendre des clics perdus.
+pub const DIAG_SCRIPT: &str = r#"
+(() => {
+  if (window.top !== window) return;
+  const lines = [];
+  let hud = null;
+  const show = () => {
+    if (!hud) {
+      hud = document.createElement('pre');
+      hud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:2147483647;margin:0;padding:8px;' +
+        'background:rgba(0,0,0,.8);color:#7CFC00;font:11px/1.3 monospace;pointer-events:none;max-width:60vw;overflow:hidden';
+      (document.body || document.documentElement).appendChild(hud);
+    }
+    hud.textContent = lines.join('\n');
+  };
+  const who = (t) => t && t.tagName ? t.tagName.toLowerCase() + (t.id ? '#' + t.id : '') : '?';
+  let moves = 0;
+  const log = (e) => {
+    if (e.type === 'mousemove') { moves++; if (moves % 20) return; }
+    lines.push(e.type + ' b=' + e.button + ' ' + Math.round(e.clientX) + ',' + Math.round(e.clientY) + ' ' + who(e.target) + (e.type === 'mousemove' ? ' (x' + moves + ')' : ''));
+    if (lines.length > 12) lines.shift();
+    show();
+  };
+  for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click', 'auxclick', 'contextmenu', 'mousemove']) {
+    window.addEventListener(type, log, true);
+  }
+})();
+"#;
+
 /// Messages envoyés par l'interface (JSON `{"type": "...", ...}`).
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

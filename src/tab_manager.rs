@@ -79,6 +79,8 @@ pub struct TabManager {
     tabs: Vec<Tab>,
     active: Option<TabId>,
     next_id: TabId,
+    /// Onglets fermés, gardés quelques secondes le temps que leur page s'arrête vraiment.
+    closing: Vec<(std::time::Instant, Tab)>,
 }
 
 impl TabManager {
@@ -107,15 +109,16 @@ impl TabManager {
         let Some(index) = self.tabs.iter().position(|t| t.id == id) else {
             return;
         };
-        // On arrête le son avant de détruire la page : sous Windows, il pourrait sinon
-        // continuer un moment après la fermeture de l'onglet.
+        // On arrête le son avant de détruire la page, et on lui laisse quelques secondes
+        // pour s'arrêter (voir `reap`) : détruite tout de suite, sa vidéo pouvait continuer.
         let tab = &self.tabs[index];
+        let _ = tab.webview.set_visible(false);
         let _ = tab.webview.evaluate_script(
             "document.querySelectorAll('video, audio').forEach((m) => { m.pause(); m.removeAttribute('src'); m.load(); })",
         );
         let _ = tab.webview.load_url("about:blank");
-        // `remove` rend l'onglet, qui est détruit à la fin de cette instruction.
-        self.tabs.remove(index);
+        let closed = self.tabs.remove(index);
+        self.closing.push((std::time::Instant::now(), closed));
         if self.active == Some(id) {
             self.active = None;
             let neighbour = self
@@ -127,6 +130,12 @@ impl TabManager {
                 self.activate(next, visible);
             }
         }
+    }
+
+    /// Détruit les onglets fermés depuis un moment.
+    pub fn reap(&mut self) {
+        self.closing
+            .retain(|(since, _)| since.elapsed() < std::time::Duration::from_secs(3));
     }
 
     pub fn activate(&mut self, id: TabId, visible: bool) {
@@ -234,6 +243,11 @@ fn build_page(id: TabId, url: &str, ctx: &PageContext) -> wry::Result<WebView> {
         .with_devtools(cfg!(debug_assertions))
         // macOS : un clic sur une page peu après l'avoir quittée ne doit pas servir qu'à la réactiver.
         .with_accept_first_mouse(true)
+        .with_initialization_script(if std::env::var_os("FEATHER_DIAG").is_some() {
+            ui::DIAG_SCRIPT
+        } else {
+            ""
+        })
         // FEATHER_SANS_SCRIPT=1 : pas de script injecté (pour chercher l'origine d'un défaut).
         .with_initialization_script(if std::env::var_os("FEATHER_SANS_SCRIPT").is_some() {
             ""
