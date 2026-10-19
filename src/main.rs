@@ -1,7 +1,7 @@
 // En mode release sur Windows, pas de console noire derrière la fenêtre.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! Feather 0.1 : une fenêtre tao, une webview pour l'interface, et une
+//! Feather : une fenêtre tao, une webview pour l'interface, et une
 //! webview par onglet. Tout tourne sur le thread principal ; les webviews
 //! communiquent avec le code Rust par des messages (`UserEvent`).
 
@@ -11,13 +11,16 @@ mod library;
 mod mac_mouse;
 mod network;
 mod settings;
+mod storage;
 mod tab_manager;
 mod ui;
 mod update;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde_json::json;
@@ -28,10 +31,15 @@ use tao::window::{Icon, Window, WindowBuilder};
 use wry::{WebView, WebViewBuilder};
 
 use downloads::Download;
-use library::Library;
+use library::{Library, Session};
 use settings::{Settings, Startup};
 use tab_manager::{PageContext, TabId, TabManager};
 use ui::{ChromeMessage, LibraryKind, PageMessage, Shortcut, Surface};
+
+/// Une page peut ouvrir au plus ce nombre d'onglets (clic de molette)…
+const PAGE_TAB_LIMIT: usize = 10;
+/// … sur cette durée : au-delà, une page malveillante pourrait en ouvrir sans fin.
+const PAGE_TAB_WINDOW: Duration = Duration::from_secs(10);
 
 /// Événements envoyés par les webviews à la boucle principale.
 #[derive(Debug)]
@@ -90,8 +98,14 @@ struct App {
     library: Arc<RwLock<Library>>,
     /// Téléchargements de cette session.
     downloads: Vec<Download>,
+    /// Prochain numéro de téléchargement (jamais réutilisé, même après « Vider la liste »).
+    next_download_id: u32,
     /// Un enregistrement est déjà prévu (voir `schedule_persist`).
     persist_pending: Cell<bool>,
+    /// Dernière session écrite sur le disque, pour ne pas la réécrire à l'identique.
+    saved_session: RefCell<Option<Session>>,
+    /// Heures des derniers onglets ouverts à la demande d'une page (voir `PAGE_TAB_LIMIT`).
+    page_opens: VecDeque<Instant>,
 }
 
 fn main() -> wry::Result<()> {
@@ -144,7 +158,10 @@ fn main() -> wry::Result<()> {
         restart: None,
         library: Arc::new(RwLock::new(library)),
         downloads: Vec::new(),
+        next_download_id: 1,
         persist_pending: Cell::new(false),
+        saved_session: RefCell::new(None),
+        page_opens: VecDeque::new(),
     };
     let session = library::load_session();
     if restore && !session.urls.is_empty() {
@@ -233,11 +250,18 @@ impl App {
                 }
                 self.push_state();
             }
-            UserEvent::OpenInNewTab(url) => self.open_tab(&url),
+            // window.open : seules les pages web sont acceptées. Avant, une page
+            // pouvait ouvrir ainsi un onglet sur file:// (fichiers de l'ordinateur).
+            UserEvent::OpenInNewTab(url) => {
+                if network::is_web(&url) {
+                    self.open_tab(&url);
+                }
+            }
             UserEvent::Update(event) => self.handle_update(event),
             UserEvent::Reap => self.tabs.reap(),
             UserEvent::DownloadStarted { url, path } => {
-                let id = self.downloads.iter().map(|d| d.id).max().unwrap_or(0) + 1;
+                let id = self.next_download_id;
+                self.next_download_id += 1;
                 let name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
@@ -246,11 +270,15 @@ impl App {
                 self.push_state();
             }
             UserEvent::DownloadDone { url, path, success } => {
-                let found = self
-                    .downloads
-                    .iter_mut()
-                    .rev()
-                    .find(|d| d.url == url && d.state == downloads::State::Progress);
+                // Deux téléchargements de la même adresse : on reconnaît d'abord le bon
+                // par son chemin, et seulement à défaut par son adresse.
+                let in_progress = |d: &Download| d.state == downloads::State::Progress;
+                let by_path = path
+                    .as_ref()
+                    .and_then(|p| self.downloads.iter().position(|d| in_progress(d) && &d.path == p));
+                let index = by_path
+                    .or_else(|| self.downloads.iter().rposition(|d| in_progress(d) && d.url == url));
+                let found = index.map(|i| &mut self.downloads[i]);
                 if let Some(d) = found {
                     d.state = if success { downloads::State::Done } else { downloads::State::Failed };
                     if let Some(path) = path {
@@ -272,15 +300,12 @@ impl App {
             ChromeMessage::CheckUpdate => self.start_check(true),
             ChromeMessage::InstallUpdate => self.start_install(),
             ChromeMessage::RestartUpdate => {
-                if let Some(restart) = self.restart.take() {
+                // On garde `restart` en cas d'échec : le bouton reste utilisable.
+                if let Some(restart) = &self.restart {
                     self.persist();
                     match restart.launch() {
                         Ok(()) => std::process::exit(0),
-                        Err(err) => {
-                            self.update = UpdateState::Error {
-                                message: format!("redémarrage impossible : {err}"),
-                            }
-                        }
+                        Err(err) => eprintln!("redémarrage impossible : {err}"),
                     }
                 }
             }
@@ -297,12 +322,8 @@ impl App {
                 }
             }
             ChromeMessage::NewTab => self.open_new_tab(),
-            ChromeMessage::ToggleMute { id } => {
-                if let Some(tab) = self.tabs.get_mut(id) {
-                    tab.muted = !tab.muted;
-                    tab.apply_mute();
-                }
-            }
+            ChromeMessage::ToggleMute { id } => self.handle_shortcut(Some(id), Shortcut::ToggleMute),
+            ChromeMessage::Shortcut { shortcut } => self.handle_shortcut(self.tabs.active_id(), shortcut),
             ChromeMessage::MoveTab { id, index } => self.tabs.move_tab(id, index),
             ChromeMessage::CloseTab { id } => {
                 if let Some(id) = id.or(self.tabs.active_id()) {
@@ -310,9 +331,10 @@ impl App {
                 }
             }
             ChromeMessage::ActivateTab { id } => self.tabs.activate(id, !self.expanded),
-            ChromeMessage::Back => self.with_active(|w| w.go_back()),
-            ChromeMessage::Forward => self.with_active(|w| w.go_forward()),
-            ChromeMessage::Reload => self.with_active(|w| w.reload()),
+            // Mêmes actions que les raccourcis des pages : un seul endroit pour les deux.
+            ChromeMessage::Back => self.handle_shortcut(None, Shortcut::Back),
+            ChromeMessage::Forward => self.handle_shortcut(None, Shortcut::Forward),
+            ChromeMessage::Reload => self.handle_shortcut(None, Shortcut::Reload),
             ChromeMessage::Home => {
                 let url = self.read_settings().start_url();
                 self.load_in_active(&url);
@@ -345,7 +367,7 @@ impl App {
             }
             ChromeMessage::Library { kind, query } => self.send_library(kind, &query),
             ChromeMessage::OpenUrl { url, new_tab } => {
-                if library::is_web(&url) {
+                if network::is_web(&url) {
                     if new_tab {
                         self.open_tab_in_background(&url);
                     } else {
@@ -357,8 +379,9 @@ impl App {
                 if let Ok(mut lib) = self.library.write() {
                     lib.remove_bookmark(&url);
                 }
+                // La liste n'est plus renvoyée ici sans filtre : l'interface la redemande
+                // elle-même avec la recherche en cours.
                 self.reload_home_tabs();
-                self.send_library(LibraryKind::Bookmarks, "");
             }
             ChromeMessage::RemoveVisit { url } => {
                 if let Ok(mut lib) = self.library.write() {
@@ -390,7 +413,8 @@ impl App {
 
     fn handle_page(&mut self, id: TabId, message: PageMessage) {
         if let Some(shortcut) = message.shortcut {
-            self.handle_shortcut(id, shortcut);
+            self.handle_shortcut(Some(id), shortcut);
+            self.push_state();
         }
         if let Some(site) = message.site {
             if let Some(tab) = self.tabs.get_mut(id)
@@ -403,7 +427,8 @@ impl App {
             self.push_state();
         }
         if let Some(url) = message.open_tab
-            && (url.starts_with("https://") || url.starts_with("http://"))
+            && network::is_web(&url)
+            && self.allow_page_tab()
         {
             self.open_tab_in_background(&url);
         }
@@ -430,7 +455,9 @@ impl App {
         }
     }
 
-    fn handle_shortcut(&mut self, id: TabId, shortcut: Shortcut) {
+    /// Action d'un raccourci, venu d'une page ou de l'interface. `id` : l'onglet
+    /// concerné (celui de la page, ou l'onglet actif). L'appelant redessine ensuite.
+    fn handle_shortcut(&mut self, id: Option<TabId>, shortcut: Shortcut) {
         match shortcut {
             Shortcut::FocusBar => self.focus_bar(),
             Shortcut::Back => self.with_active(|w| w.go_back()),
@@ -438,18 +465,42 @@ impl App {
             Shortcut::Reload => self.with_active(|w| w.reload()),
             Shortcut::Settings => self.focus_chrome("navigateur.openSettings()"),
             Shortcut::NewTab => self.open_new_tab(),
-            Shortcut::CloseTab => self.close_tab(id),
+            Shortcut::CloseTab => {
+                if let Some(id) = id {
+                    self.close_tab(id);
+                }
+            }
             Shortcut::ToggleMute => {
-                if let Some(tab) = self.tabs.get_mut(id) {
+                if let Some(tab) = id.and_then(|id| self.tabs.get_mut(id)) {
                     tab.muted = !tab.muted;
                     tab.apply_mute();
                 }
             }
-            Shortcut::ToggleBookmark => self.toggle_bookmark(id),
+            Shortcut::ToggleBookmark => {
+                if let Some(id) = id {
+                    self.toggle_bookmark(id);
+                }
+            }
             Shortcut::NextTab => self.tabs.cycle(1, !self.expanded),
             Shortcut::PreviousTab => self.tabs.cycle(-1, !self.expanded),
         }
-        self.push_state();
+    }
+
+    /// Une page a-t-elle encore le droit d'ouvrir un onglet ? (voir `PAGE_TAB_LIMIT`)
+    fn allow_page_tab(&mut self) -> bool {
+        let now = Instant::now();
+        while self
+            .page_opens
+            .front()
+            .is_some_and(|t| now.duration_since(*t) > PAGE_TAB_WINDOW)
+        {
+            self.page_opens.pop_front();
+        }
+        if self.page_opens.len() >= PAGE_TAB_LIMIT {
+            return false;
+        }
+        self.page_opens.push_back(now);
+        true
     }
 
     /// Un nouvel onglet s'ouvre toujours sur l'accueil Feather (heure et recherche).
@@ -479,6 +530,9 @@ impl App {
         self.open_tab(url);
         if let Some(id) = previous {
             self.tabs.activate(id, !self.expanded);
+            // `open_tab` a donné le focus clavier au nouvel onglet, caché : on le
+            // rend à la page visible, sinon les touches partaient dans l'onglet caché.
+            self.focus_page();
             self.push_state();
         }
     }
@@ -595,10 +649,18 @@ impl App {
         {
             eprintln!("historique ou favoris non enregistrés : {err}");
         }
-        if !self.tabs.is_empty()
-            && let Err(err) = library::save_session(&self.tabs.session())
-        {
-            eprintln!("session non enregistrée : {err}");
+        if self.tabs.is_empty() {
+            return;
+        }
+        // `push_state` prévoit un enregistrement à chaque changement (son, icône…) :
+        // on n'écrit la session que si les onglets ont vraiment changé.
+        let session = self.tabs.session();
+        if self.saved_session.borrow().as_ref() == Some(&session) {
+            return;
+        }
+        match library::save_session(&session) {
+            Ok(()) => *self.saved_session.borrow_mut() = Some(session),
+            Err(err) => eprintln!("session non enregistrée : {err}"),
         }
     }
 

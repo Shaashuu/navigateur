@@ -1,14 +1,15 @@
 //! Paramètres de l'utilisateur, enregistrés en JSON dans le dossier de
 //! configuration du système (par exemple `%APPDATA%\Feather\Feather\config` sur Windows).
 
-use std::fs;
 use std::io;
-use std::path::PathBuf;
 
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
 use crate::network;
+use crate::storage;
+
+/// Nom du fichier des paramètres dans le dossier de configuration.
+const FILE: &str = "parametres.json";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -103,25 +104,14 @@ pub enum Theme {
 impl Settings {
     /// Lit les paramètres ; en cas d'absence ou d'erreur, on repart des valeurs par défaut.
     pub fn load() -> Self {
-        Self::path()
-            .and_then(|p| fs::read_to_string(p).ok())
-            .and_then(|text| serde_json::from_str::<Settings>(&text).ok())
+        storage::read_json::<Settings>(FILE)
             .map(Settings::cleaned)
             .unwrap_or_default()
     }
 
-    /// Écrit d'abord un fichier temporaire puis le renomme, pour ne jamais
-    /// laisser un fichier à moitié écrit si le programme s'arrête.
+    /// Enregistre les paramètres (écriture sûre, voir `storage::write_json`).
     pub fn save(&self) -> io::Result<()> {
-        let path =
-            Self::path().ok_or_else(|| io::Error::other("dossier de configuration introuvable"))?;
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir)?;
-        }
-        let tmp = path.with_extension("json.tmp");
-        let json = serde_json::to_string_pretty(self).map_err(io::Error::other)?;
-        fs::write(&tmp, json)?;
-        fs::rename(tmp, path)
+        storage::write_json(FILE, self, true)
     }
 
     /// Corrige les valeurs reçues de l'interface ou du fichier.
@@ -139,11 +129,6 @@ impl Settings {
         } else {
             self.home_page.clone()
         }
-    }
-
-    fn path() -> Option<PathBuf> {
-        ProjectDirs::from("app", "Feather", "Feather")
-            .map(|d| d.config_dir().join("parametres.json"))
     }
 }
 

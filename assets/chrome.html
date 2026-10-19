@@ -700,14 +700,16 @@
   window.addEventListener('pointermove', (e) => {
     if (!drag) return;
     const top = isTop();
-    const c = top ? e.clientX : e.clientY;
-    if (!drag.moved && Math.abs(c - drag.y) < 6) return;
+    const pos = top ? e.clientX : e.clientY;
+    if (!drag.moved && Math.abs(pos - drag.y) < 6) return;
     if (!drag.moved) { drag.moved = true; drag.el.classList.add('dragging'); drag.el.title = ''; }
     const box = $('pills');
-    const others = [...box.children].filter((c) => c !== drag.el);
-    const before = others.find((c) => {
-      const r = c.getBoundingClientRect();
-      return top ? c < r.left + r.width / 2 : c < r.top + r.height / 2;
+    const others = [...box.children].filter((el) => el !== drag.el);
+    // La position du pointeur s'appelait « c », comme l'onglet comparé : on comparait
+    // donc un élément à un nombre (toujours faux) et l'onglet partait toujours à la fin.
+    const before = others.find((el) => {
+      const r = el.getBoundingClientRect();
+      return top ? pos < r.left + r.width / 2 : pos < r.top + r.height / 2;
     });
     if (before) { if (drag.el.nextSibling !== before) box.insertBefore(drag.el, before); }
     else if (box.lastChild !== drag.el) box.appendChild(drag.el);
@@ -986,7 +988,9 @@
     const acts = document.createElement('span');
     acts.className = 'acts';
     acts.appendChild(actButton('Nouvel onglet', 'Ouvrir dans un nouvel onglet (clic molette)', () => send({ type: 'open_url', url: item.url, new_tab: true })));
-    acts.appendChild(actButton('\u2715', 'Supprimer', () => { remove(); row.remove(); }));
+    // Après suppression, on redemande la liste avec la recherche en cours : une
+    // adresse visitée plusieurs fois avait d'autres lignes, restées affichées.
+    acts.appendChild(actButton('\u2715', 'Supprimer', () => { remove(); row.remove(); requestLibrary(); }));
     row.appendChild(acts);
     row.addEventListener('click', () => { closeLibrary(); send({ type: 'open_url', url: item.url, new_tab: false }); });
     row.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
@@ -1165,11 +1169,9 @@
     else if (k === 't') send({ type: 'new_tab' });
     else if (k === 'w') send({ type: 'close_tab', id: null });
     else if (k === ',') openSettings();
-    else if (k === 'tab') {
-      const i = state.tabs.findIndex((t) => t.active);
-      const n = state.tabs.length;
-      if (n) send({ type: 'activate_tab', id: state.tabs[(i + (e.shiftKey ? n - 1 : 1)) % n].id });
-    } else return;
+    // Même calcul que pour une page : c'est Rust qui choisit l'onglet suivant.
+    else if (k === 'tab') send({ type: 'shortcut', shortcut: e.shiftKey ? 'previous_tab' : 'next_tab' });
+    else return;
     e.preventDefault();
   });
 

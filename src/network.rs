@@ -19,8 +19,27 @@ pub const HOME_URL: &str = "http://navigateur.accueil/";
 pub const HOME_URL: &str = "navigateur://accueil/";
 
 /// Vrai si l'adresse est la page d'accueil intégrée.
+///
+/// On compare l'hôte exact : un simple « commence par » acceptait aussi un vrai
+/// site comme `http://navigateur.accueil.exemple.fr/`, qui recevait alors les
+/// droits de la page d'accueil (barre de recherche, ouverture de la barre).
 pub fn is_home(url: &str) -> bool {
-    url.starts_with("http://navigateur.accueil") || url.starts_with("navigateur://accueil")
+    let Ok(parsed) = Url::parse(url) else {
+        return false;
+    };
+    match (parsed.scheme(), parsed.host_str()) {
+        ("navigateur", Some("accueil")) => true,
+        // Forme traduite par wry sous Windows (voir HOME_URL).
+        ("http", Some("navigateur.accueil")) => parsed.port().is_none(),
+        _ => false,
+    }
+}
+
+/// Vrai pour une vraie page web (http ou https), seule admise dans l'historique,
+/// les favoris et les onglets ouverts par une page. L'accueil intégré n'en est
+/// pas une, même sous Windows où son adresse commence par `http://`.
+pub fn is_web(url: &str) -> bool {
+    (url.starts_with("https://") || url.starts_with("http://")) && !is_home(url)
 }
 
 /// Transforme la saisie de la barre en adresse : soit l'adresse elle-même,
@@ -103,7 +122,11 @@ fn looks_like_domain(host: &str) -> bool {
         return false;
     }
     let tld = labels[labels.len() - 1];
-    tld.chars().count() >= 2 && tld.chars().all(char::is_alphabetic)
+    // Extension en lettres (« fr », « рф »), ou sa forme punycode (« xn--p1ai »).
+    let punycode = tld.len() > 4
+        && tld[..4].eq_ignore_ascii_case("xn--")
+        && tld[4..].chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    punycode || (tld.chars().count() >= 2 && tld.chars().all(char::is_alphabetic))
 }
 
 #[cfg(test)]
@@ -142,6 +165,11 @@ mod tests {
             resolve_input("192.168.1.1", DDG).unwrap(),
             "http://192.168.1.1/"
         );
+        // Extension internationale en punycode.
+        assert_eq!(
+            resolve_input("exemple.xn--p1ai", DDG).unwrap(),
+            "https://exemple.xn--p1ai/"
+        );
     }
 
     #[test]
@@ -167,6 +195,15 @@ mod tests {
     #[test]
     fn accueil() {
         assert!(is_home(HOME_URL));
+        assert!(is_home("navigateur://accueil/"));
+        assert!(is_home("http://navigateur.accueil/"));
+        // Un vrai site dont le nom commence pareil n'est pas l'accueil.
+        assert!(!is_home("http://navigateur.accueil.exemple.fr/"));
+        assert!(!is_home("http://navigateur.accueil-pirate.fr/"));
+        assert!(!is_home("https://exemple.fr/?navigateur://accueil"));
+        assert!(!is_web(HOME_URL));
+        assert!(is_web("https://exemple.fr/"));
+        assert!(!is_web("file:///etc/passwd"));
         assert_eq!(
             resolve_input("navigateur://accueil", DDG).unwrap(),
             HOME_URL

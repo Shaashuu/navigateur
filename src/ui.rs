@@ -188,6 +188,10 @@ pub enum ChromeMessage {
     ActivateTab {
         id: TabId,
     },
+    /// Un raccourci clavier tapé dans l'interface, traité comme ceux des pages.
+    Shortcut {
+        shortcut: Shortcut,
+    },
     Back,
     Forward,
     Reload,
@@ -276,8 +280,7 @@ pub struct SiteInfo {
 /// petite image intégrée, et le nom un texte court sans caractères de contrôle.
 pub fn clean_site(info: SiteInfo) -> (Option<String>, Option<String>) {
     let icon = info.icon.filter(|i| {
-        let web = i.starts_with("https://") || i.starts_with("http://");
-        (web && i.len() <= 2048) || (i.starts_with("data:image/") && i.len() <= 32_768)
+        (crate::network::is_web(i) && i.len() <= 2048) || (i.starts_with("data:image/") && i.len() <= 32_768)
     });
     let name = info
         .name
@@ -338,10 +341,43 @@ pub fn home_page(settings: &Settings, bookmarks: &[Bookmark]) -> String {
         Theme::Light => "light",
         Theme::Dark => "dark",
     };
-    HOME_HTML
-        .replace("{{THEME}}", theme)
-        .replace("{{NAME}}", &escape_html(&settings.name))
-        .replace("{{BOOKMARKS}}", &bookmark_tiles(bookmarks))
+    fill_template(
+        HOME_HTML,
+        &[
+            ("THEME", theme.to_string()),
+            ("NAME", escape_html(&settings.name)),
+            ("BOOKMARKS", bookmark_tiles(bookmarks)),
+        ],
+    )
+}
+
+/// Remplace les `{{CLÉ}}` du modèle en une seule passe. Avec des `replace`
+/// enchaînés, un prénom contenant « {{BOOKMARKS}} » était lui-même remplacé
+/// par les favoris : le texte inséré n'est plus jamais relu ici.
+fn fill_template(template: &str, values: &[(&str, String)]) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(start) = rest.find("{{") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let value = after.find("}}").and_then(|end| {
+            let key = &after[..end];
+            values.iter().find(|(k, _)| *k == key).map(|(_, v)| (v, end))
+        });
+        match value {
+            Some((v, end)) => {
+                out.push_str(v);
+                rest = &after[end + 2..];
+            }
+            None => {
+                // Pas une clé connue : on garde le texte tel quel.
+                out.push_str("{{");
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Les favoris de la page d'accueil : des vignettes avec l'icône du site (ou son initiale).
@@ -427,6 +463,9 @@ mod tests {
         let m: ChromeMessage = serde_json::from_str(r#"{"type":"close_tab","id":null}"#).unwrap();
         assert!(matches!(m, ChromeMessage::CloseTab { id: None }));
         assert!(serde_json::from_str::<ChromeMessage>(r#"{"type":"supprimer_tout"}"#).is_err());
+        let m: ChromeMessage =
+            serde_json::from_str(r#"{"type":"shortcut","shortcut":"next_tab"}"#).unwrap();
+        assert!(matches!(m, ChromeMessage::Shortcut { shortcut: Shortcut::NextTab }));
     }
 
     #[test]
@@ -465,5 +504,20 @@ mod tests {
         let html = home_page(&s, &[]);
         assert!(html.contains("&lt;b&gt;Léa&lt;/b&gt;"));
         assert!(!html.contains("{{NAME}}"));
+    }
+
+    #[test]
+    fn modele_en_une_passe() {
+        // Le prénom n'est pas relu comme un modèle.
+        let s = Settings {
+            name: "{{BOOKMARKS}}".into(),
+            ..Default::default()
+        };
+        let html = home_page(&s, &[]);
+        assert!(html.contains(r#"data-name="{{BOOKMARKS}}""#));
+        assert_eq!(
+            fill_template("a {{X}} b {{Y}} {{", &[("X", "1".into())]),
+            "a 1 b {{Y}} {{"
+        );
     }
 }
