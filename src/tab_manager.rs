@@ -232,7 +232,12 @@ fn build_page(id: TabId, url: &str, ctx: &PageContext) -> wry::Result<WebView> {
         .with_bounds(ctx.bounds)
         .with_url(url)
         .with_devtools(cfg!(debug_assertions))
-        .with_initialization_script(ui::PAGE_SCRIPT)
+        // FEATHER_SANS_SCRIPT=1 : pas de script injecté (pour chercher l'origine d'un défaut).
+        .with_initialization_script(if std::env::var_os("FEATHER_SANS_SCRIPT").is_some() {
+            ""
+        } else {
+            ui::PAGE_SCRIPT
+        })
         // La page d'accueil intégrée est générée à chaque visite avec les paramètres actuels.
         .with_custom_protocol("navigateur".into(), move |_id, _request| {
             let html = match settings.read() {
