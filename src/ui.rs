@@ -1,6 +1,7 @@
 //! L'interface du navigateur (la « chrome ») : une webview HTML/CSS placée
-//! sous les pages, qui dessine les pastilles d'onglets à gauche et la barre
-//! flottante en bas. Ce module définit aussi les messages échangés avec elle.
+//! sous les pages, qui dessine la colonne de gauche (paramètres, pastille de
+//! recherche, onglets) et la barre de recherche qui s'ouvre par-dessus la page.
+//! Ce module définit aussi les messages échangés avec elle.
 
 use serde::Deserialize;
 use tao::dpi::{LogicalPosition, LogicalSize};
@@ -12,8 +13,6 @@ use crate::tab_manager::TabId;
 
 /// Largeur de la colonne des pastilles, à gauche (pixels logiques).
 pub const SIDEBAR_WIDTH: f64 = 56.0;
-/// Hauteur de la bande de la barre flottante, en bas.
-pub const BAR_HEIGHT: f64 = 76.0;
 
 pub const CHROME_HTML: &str = include_str!("../assets/chrome.html");
 const HOME_HTML: &str = include_str!("../assets/home.html");
@@ -24,14 +23,17 @@ pub const PAGE_SCRIPT: &str = r#"
 (() => {
   const send = (shortcut) => window.ipc.postMessage(JSON.stringify({ shortcut }));
   window.addEventListener('keydown', (e) => {
-    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     const k = e.key.toLowerCase();
+    const ctrl = (e.ctrlKey || e.metaKey) && !e.altKey;
     let a = null;
-    if (k === 'l' || k === 'k') a = 'focus_bar';
-    else if (k === 't') a = 'new_tab';
-    else if (k === 'w') a = 'close_tab';
-    else if (k === 'tab') a = e.shiftKey ? 'previous_tab' : 'next_tab';
-    else if (k === ',') a = 'settings';
+    if (e.altKey && !e.ctrlKey && !e.metaKey && k === 'arrowleft') a = 'back';
+    else if (e.altKey && !e.ctrlKey && !e.metaKey && k === 'arrowright') a = 'forward';
+    else if (k === 'f5' || (ctrl && k === 'r')) a = 'reload';
+    else if (ctrl && (k === 'l' || k === 'k')) a = 'focus_bar';
+    else if (ctrl && k === 't') a = 'new_tab';
+    else if (ctrl && k === 'w') a = 'close_tab';
+    else if (ctrl && k === 'tab') a = e.shiftKey ? 'previous_tab' : 'next_tab';
+    else if (ctrl && k === ',') a = 'settings';
     if (a) { e.preventDefault(); e.stopPropagation(); send(a); }
   }, true);
 })();
@@ -62,21 +64,31 @@ pub enum ChromeMessage {
     },
     /// L'utilisateur a quitté la barre : rendre le focus à la page.
     FocusPage,
+    /// Ctrl+L : barre de l'accueil si l'onglet est sur l'accueil, sinon barre par-dessus la page.
+    FocusBar,
     SaveSettings {
         settings: Settings,
     },
 }
 
-/// Message envoyé par une page (uniquement des raccourcis).
-#[derive(Debug, Deserialize)]
+/// Message envoyé par une page : un raccourci clavier, ou (depuis la page
+/// d'accueil seulement, vérifié côté Rust) une saisie de sa barre de recherche.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct PageMessage {
-    pub shortcut: Shortcut,
+    pub shortcut: Option<Shortcut>,
+    pub navigate: Option<String>,
+    /// Texte commençant par « / » : ouvrir la barre des commandes.
+    pub open_bar: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum Shortcut {
     FocusBar,
+    Back,
+    Forward,
+    Reload,
     NewTab,
     CloseTab,
     NextTab,
@@ -84,16 +96,12 @@ pub enum Shortcut {
     Settings,
 }
 
-/// Zone occupée par les pages : tout sauf la colonne de gauche et la bande du bas.
+/// Zone occupée par les pages : tout sauf la colonne de gauche.
 pub fn page_bounds(window: &Window) -> Rect {
     let size = window.inner_size().to_logical::<f64>(window.scale_factor());
     Rect {
         position: LogicalPosition::new(SIDEBAR_WIDTH, 0.0).into(),
-        size: LogicalSize::new(
-            (size.width - SIDEBAR_WIDTH).max(1.0),
-            (size.height - BAR_HEIGHT).max(1.0),
-        )
-        .into(),
+        size: LogicalSize::new((size.width - SIDEBAR_WIDTH).max(1.0), size.height.max(1.0)).into(),
     }
 }
 

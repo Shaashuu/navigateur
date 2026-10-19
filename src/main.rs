@@ -28,8 +28,8 @@ use ui::{ChromeMessage, PageMessage, Shortcut, Surface};
 pub enum UserEvent {
     /// Message JSON venant de l'interface.
     Chrome(String),
-    /// Raccourci clavier tapé dans une page.
-    Shortcut(TabId, String),
+    /// Message JSON venant d'une page (raccourci clavier, barre de l'accueil).
+    Page(TabId, String),
     Title(TabId, String),
     /// Début (`true`) ou fin (`false`) de chargement, avec l'adresse.
     PageLoad(TabId, bool, String),
@@ -113,9 +113,9 @@ impl App {
                 Ok(message) => self.handle_chrome(message),
                 Err(err) => eprintln!("message de l'interface ignoré : {err}"),
             },
-            UserEvent::Shortcut(id, raw) => {
-                if let Ok(PageMessage { shortcut }) = serde_json::from_str(&raw) {
-                    self.handle_shortcut(id, shortcut);
+            UserEvent::Page(id, raw) => {
+                if let Ok(message) = serde_json::from_str::<PageMessage>(&raw) {
+                    self.handle_page(id, message);
                 }
             }
             UserEvent::Title(id, title) => {
@@ -163,6 +163,7 @@ impl App {
                 self.tabs.set_active_visible(!open);
             }
             ChromeMessage::FocusPage => self.focus_page(),
+            ChromeMessage::FocusBar => self.focus_bar(),
             ChromeMessage::SaveSettings { settings } => {
                 let settings = settings.cleaned();
                 if let Err(err) = settings.save() {
@@ -180,9 +181,33 @@ impl App {
         self.push_state();
     }
 
+    fn handle_page(&mut self, id: TabId, message: PageMessage) {
+        if let Some(shortcut) = message.shortcut {
+            self.handle_shortcut(id, shortcut);
+        }
+        // Seule la page d'accueil intégrée a le droit d'utiliser sa barre de recherche.
+        let Some(tab) = self.tabs.get(id) else { return };
+        if !network::is_home(&tab.url) {
+            return;
+        }
+        if let Some(input) = message.navigate {
+            let engine = self.read_settings().search_engine;
+            if let Some(url) = network::resolve_input(&input, engine) {
+                let _ = tab.webview().load_url(&url);
+            }
+        }
+        if let Some(text) = message.open_bar {
+            let text = serde_json::to_string(&text).unwrap_or_default();
+            self.focus_chrome(&format!("navigateur.openBar({text})"));
+        }
+    }
+
     fn handle_shortcut(&mut self, id: TabId, shortcut: Shortcut) {
         match shortcut {
-            Shortcut::FocusBar => self.focus_chrome("navigateur.focusBar()"),
+            Shortcut::FocusBar => self.focus_bar(),
+            Shortcut::Back => self.with_active(|w| w.go_back()),
+            Shortcut::Forward => self.with_active(|w| w.go_forward()),
+            Shortcut::Reload => self.with_active(|w| w.reload()),
             Shortcut::Settings => self.focus_chrome("navigateur.openSettings()"),
             Shortcut::NewTab => self.open_start_tab(),
             Shortcut::CloseTab => self.close_tab(id),
@@ -239,6 +264,20 @@ impl App {
     fn focus_page(&self) {
         if !self.expanded {
             self.with_active(|w| w.focus());
+        }
+    }
+
+    /// Sur l'accueil, la barre est au milieu de la page ; ailleurs, elle
+    /// s'ouvre par-dessus la page.
+    fn focus_bar(&self) {
+        match self.tabs.active() {
+            Some(tab) if network::is_home(&tab.url) && !self.expanded => {
+                let _ = tab.webview().focus();
+                let _ = tab
+                    .webview()
+                    .evaluate_script("window.focusSearch && focusSearch()");
+            }
+            _ => self.focus_chrome("navigateur.openBar('')"),
         }
     }
 

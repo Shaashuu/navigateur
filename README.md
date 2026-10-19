@@ -6,26 +6,29 @@ webview du système (WebView2 sur Windows, WebKit sur macOS et Linux) grâce à
 
 ![Accueil](captures/accueil.png)
 
-Autres captures : [commandes](captures/commandes.png), [paramètres](captures/parametres.png), [une page ouverte](captures/page.png).
+Autres captures : [commandes](captures/commandes.png), [paramètres](captures/parametres.png), [une page ouverte](captures/page.png), [la croix de fermeture](captures/onglets.png).
 
 ## Ce que fait la version 0.1
 
-- **La page prend tout l'écran.** Pas de barre en haut.
-- **Onglets en pastilles à gauche** : la longue pastille est l'onglet actif, un
-  point par autre onglet, `+` pour en ouvrir un. Survolez une pastille pour voir
-  son titre dans la barre du bas. Clic du milieu sur une pastille pour la fermer.
-- **Une seule barre flottante en bas** pour l'adresse, la recherche et les
-  commandes. Tapez une adresse (`wikipedia.org`) ou des mots (recherche avec le
-  moteur choisi), ou `/` pour la liste des commandes :
+- **La page prend tout l'écran**, à côté d'une fine colonne à gauche.
+- **Page d'accueil** : l'heure, la date, « Bonjour » avec votre prénom, et la
+  barre de recherche au milieu. Tapez une adresse (`wikipedia.org`), des mots
+  (recherche avec le moteur choisi), ou `/` pour la liste des commandes :
   `/nouveau`, `/fermer`, `/accueil`, `/retour`, `/suivant`, `/actualiser`, `/parametres`.
-- **Page d'accueil calme** : l'heure, la date et « Bonjour » avec votre prénom.
-- **Paramètres** (engrenage ou `/parametres`) : prénom, moteur de recherche
+- **Pastille de recherche** : dès qu'on quitte l'accueil, la recherche se range
+  dans un ovale avec une loupe, au-dessus des onglets. Un clic (ou `Ctrl+L`)
+  ouvre la barre par-dessus la page ; `Échap` y revient.
+- **Onglets en pastilles à gauche** : la longue pastille est l'onglet actif, un
+  point par autre onglet, `+` pour en ouvrir un. Au survol, le titre s'affiche
+  et une petite croix rouge apparaît en haut de la pastille pour la fermer.
+- **Paramètres** (engrenage en haut à gauche) : prénom, moteur de recherche
   (DuckDuckGo, Qwant, Ecosia, Google, Bing), page d'accueil, thème clair, sombre
   ou automatique. Ils sont enregistrés dans `parametres.json`, dans le dossier
   de configuration du système (`%APPDATA%\Navigateur\Navigateur\config` sur Windows).
 
-Raccourcis : `Ctrl+L` aller à la barre, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
-`Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Ctrl+,` paramètres, `Échap` quitter la barre.
+Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
+`Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
+ou suivante, `F5` ou `Ctrl+R` actualiser, `Ctrl+,` paramètres.
 
 ## Lancer le navigateur
 
@@ -55,13 +58,14 @@ Pour lancer les tests : `cargo test`.
 | `src/main.rs` | Création de la fenêtre, boucle d'événements, réaction aux messages. |
 | `src/tab_manager.rs` | Les onglets : une webview par onglet, ouverture, changement, fermeture. |
 | `src/settings.rs` | Lecture et écriture des paramètres en JSON (serde). |
-| `src/ui.rs` | Messages échangés avec l'interface, placement des zones, page d'accueil. |
+| `src/ui.rs` | Messages échangés avec l'interface et les pages, placement des zones, page d'accueil. |
 | `src/network.rs` | Décide si la saisie est une adresse ou une recherche. |
 | `assets/chrome.html` | L'interface (pastilles, barre, commandes, paramètres) en HTML/CSS. |
 | `assets/home.html` | La page d'accueil. |
 
 L'interface est une webview placée sous les pages : elle dessine la colonne de
-gauche et la bande du bas, et la page de l'onglet actif occupe le reste.
+gauche, et la page de l'onglet actif occupe le reste. Quand la barre de
+recherche ou les paramètres s'ouvrent, la page est masquée le temps de la saisie.
 L'interface et les pages parlent au code Rust par des messages JSON ; Rust
 renvoie l'état (liste des onglets, paramètres) à l'interface.
 

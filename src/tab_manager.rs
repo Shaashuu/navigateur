@@ -200,9 +200,9 @@ fn build_page(id: TabId, url: &str, ctx: &PageContext) -> wry::Result<WebView> {
                 .body(Cow::Owned(html.into_bytes()))
                 .expect("réponse HTTP valide")
         })
-        // Les pages ne peuvent envoyer que des raccourcis clavier (voir ui::PAGE_SCRIPT).
+        // Les pages envoient des raccourcis clavier (voir ui::PAGE_SCRIPT) ; l'accueil, sa barre de recherche.
         .with_ipc_handler(move |request| {
-            let _ = on_ipc.send_event(UserEvent::Shortcut(id, request.into_body()));
+            let _ = on_ipc.send_event(UserEvent::Page(id, request.into_body()));
         })
         .with_document_title_changed_handler(move |title| {
             let _ = on_title.send_event(UserEvent::Title(id, title));
