@@ -8,8 +8,8 @@
   <key>CFBundleIconFile</key><string>Feather</string>
   <key>CFBundleExecutable</key><string>feather</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleVersion</key><string>0.1.5</string>
-  <key>CFBundleShortVersionString</key><string>0.1.5</string>
+  <key>CFBundleVersion</key><string>0.1.6</string>
+  <key>CFBundleShortVersionString</key><string>0.1.6</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
