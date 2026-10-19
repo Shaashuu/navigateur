@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fr" data-theme="{{THEME}}">
+<head>
+<meta charset="utf-8">
+<title>Accueil</title>
+<style>
+  :root { --bg: #f4f3ef; --text: #1d1d1f; --muted: #8a8a8e; }
+  :root[data-theme="dark"] { --bg: #17171a; --text: #ececef; --muted: #7d7d85; }
+  @media (prefers-color-scheme: dark) {
+    :root[data-theme="auto"] { --bg: #17171a; --text: #ececef; --muted: #7d7d85; }
+  }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; user-select: none;
+  }
+  #clock { font-size: clamp(56px, 11vw, 120px); font-weight: 200; letter-spacing: 4px; font-variant-numeric: tabular-nums; }
+  #hello { font-size: 20px; }
+  #date { color: var(--muted); font-size: 14px; }
+  #date::first-letter { text-transform: uppercase; }
+  #hint { position: fixed; bottom: 18px; color: var(--muted); font-size: 12px; opacity: .8; }
+  kbd { font: inherit; border: 1px solid var(--muted); border-radius: 4px; padding: 0 4px; }
+</style>
+</head>
+<body>
+  <div id="clock">--:--</div>
+  <div id="hello" data-name="{{NAME}}"></div>
+  <div id="date"></div>
+  <div id="hint"><kbd>Ctrl</kbd>+<kbd>L</kbd> pour aller quelque part · <kbd>/</kbd> dans la barre pour les commandes</div>
+<script>
+  const hello = document.getElementById('hello');
+  const name = hello.dataset.name;
+  function tick() {
+    const now = new Date();
+    document.getElementById('clock').textContent =
+      now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('date').textContent =
+      now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    const h = now.getHours();
+    const word = h >= 18 || h < 5 ? 'Bonsoir' : 'Bonjour';
+    hello.textContent = name ? `${word} ${name}` : word;
+  }
+  tick();
+  setInterval(tick, 1000);
+</script>
+</body>
+</html>

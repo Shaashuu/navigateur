@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="fr" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<title>Navigateur</title>
+<style>
+  :root {
+    --bg: #f4f3ef;
+    --surface: #ffffff;
+    --text: #1d1d1f;
+    --muted: #8a8a8e;
+    --line: #e2e0da;
+    --accent: #5b5bd6;
+    --accent-soft: #e6e6fb;
+    --shadow: 0 6px 24px rgba(0, 0, 0, .10);
+  }
+  :root[data-theme="dark"] {
+    --bg: #17171a;
+    --surface: #222226;
+    --text: #ececef;
+    --muted: #7d7d85;
+    --line: #34343a;
+    --accent: #8f8ff5;
+    --accent-soft: #2c2c4a;
+    --shadow: 0 6px 24px rgba(0, 0, 0, .45);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root[data-theme="auto"] {
+      --bg: #17171a;
+      --surface: #222226;
+      --text: #ececef;
+      --muted: #7d7d85;
+      --line: #34343a;
+      --accent: #8f8ff5;
+      --accent-soft: #2c2c4a;
+      --shadow: 0 6px 24px rgba(0, 0, 0, .45);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 "Segoe UI", system-ui, -apple-system, sans-serif;
+    user-select: none;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+  /* Pastilles d'onglets, colonne de gauche (56 px, voir ui.rs) */
+  #sidebar {
+    position: fixed; left: 0; top: 0; bottom: 76px; width: 56px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 12px 0;
+  }
+  #pills { display: flex; flex-direction: column; align-items: center; gap: 6px; overflow-y: auto; scrollbar-width: none; }
+  .pill {
+    width: 28px; height: 18px; display: grid; place-items: center; padding: 0;
+  }
+  .pill::before {
+    content: ""; width: 9px; height: 9px; border-radius: 5px;
+    background: var(--muted); opacity: .55; transition: all .18s ease;
+  }
+  .pill:hover::before { opacity: 1; width: 11px; height: 11px; border-radius: 6px; }
+  .pill.active { height: 44px; }
+  .pill.active::before { width: 10px; height: 38px; background: var(--accent); opacity: 1; }
+  .pill.loading::before { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .round {
+    width: 30px; height: 30px; border-radius: 15px; display: grid; place-items: center;
+    color: var(--muted); font-size: 18px;
+  }
+  .round:hover { background: var(--accent-soft); color: var(--text); }
+
+  /* Barre flottante, bande du bas (76 px, voir ui.rs) */
+  #dock {
+    position: fixed; left: 56px; right: 0; bottom: 0; height: 76px;
+    display: flex; align-items: center; justify-content: center; padding: 0 16px;
+  }
+  #bar {
+    width: min(760px, 100%); height: 46px; border-radius: 23px;
+    display: flex; align-items: center; gap: 6px; padding: 0 8px 0 18px;
+    background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
+    transition: width .2s ease;
+  }
+  #bar:focus-within { border-color: var(--accent); }
+  #dot { width: 9px; height: 9px; border-radius: 5px; background: var(--accent); flex: none; }
+  #dot.loading { animation: pulse 1s ease-in-out infinite; }
+  #input {
+    flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent;
+    color: var(--text); font: inherit; font-size: 15px; padding: 0 6px; user-select: text;
+  }
+  #input::placeholder { color: var(--muted); }
+  .icon { width: 32px; height: 32px; border-radius: 16px; color: var(--muted); font-size: 16px; flex: none; }
+  .icon:hover { background: var(--accent-soft); color: var(--text); }
+
+  /* Panneaux qui recouvrent la page (la page est cachée pendant ce temps) */
+  .panel {
+    position: fixed; left: 56px; right: 0; bottom: 76px; display: none;
+    justify-content: center; padding: 0 16px 10px;
+  }
+  body.cmd #commands, body.settings #settings { display: flex; }
+  #commands ul {
+    list-style: none; margin: 0; padding: 6px; width: min(760px, 100%);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
+  }
+  #commands li { display: flex; gap: 12px; padding: 10px 14px; border-radius: 10px; cursor: pointer; }
+  #commands li .name { color: var(--accent); min-width: 110px; font-weight: 600; }
+  #commands li .desc { color: var(--muted); }
+  #commands li.selected { background: var(--accent-soft); }
+  #commands li.selected .desc { color: var(--text); }
+
+  #settings { top: 0; align-items: center; }
+  #settings form {
+    width: min(460px, 100%); max-height: 100%; overflow-y: auto; padding: 24px 26px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
+    user-select: text;
+  }
+  #settings h2 { margin: 0 0 18px; font-size: 20px; font-weight: 600; }
+  #settings label { display: block; margin: 14px 0 6px; color: var(--muted); font-size: 13px; }
+  #settings input[type=text], #settings select {
+    width: 100%; height: 38px; padding: 0 12px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit;
+  }
+  #settings .choices { display: flex; gap: 6px; }
+  #settings .choices button {
+    flex: 1; height: 36px; border-radius: 10px; border: 1px solid var(--line);
+  }
+  #settings .choices button.on { border-color: var(--accent); background: var(--accent-soft); }
+  #settings .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+  #settings .actions button { height: 38px; padding: 0 18px; border-radius: 19px; }
+  #settings .primary { background: var(--accent); color: #fff; }
+  #settings .about { margin-top: 18px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+  <nav id="sidebar" aria-label="Onglets">
+    <div id="pills"></div>
+    <button class="round" id="new-tab" title="Nouvel onglet (Ctrl+T)">+</button>
+  </nav>
+
+  <div class="panel" id="commands"><ul id="command-list"></ul></div>
+
+  <div class="panel" id="settings">
+    <form id="settings-form">
+      <h2>Paramètres</h2>
+      <label for="s-name">Votre prénom (affiché sur l'accueil)</label>
+      <input type="text" id="s-name" maxlength="40" autocomplete="off">
+      <label for="s-engine">Moteur de recherche</label>
+      <select id="s-engine">
+        <option value="duckduckgo">DuckDuckGo</option>
+        <option value="qwant">Qwant</option>
+        <option value="ecosia">Ecosia</option>
+        <option value="google">Google</option>
+        <option value="bing">Bing</option>
+      </select>
+      <label for="s-home">Page d'accueil (laisser vide pour l'heure et la bienvenue)</label>
+      <input type="text" id="s-home" placeholder="exemple.fr" autocomplete="off">
+      <label>Thème</label>
+      <div class="choices" id="s-theme">
+        <button type="button" data-value="auto">Automatique</button>
+        <button type="button" data-value="light">Clair</button>
+        <button type="button" data-value="dark">Sombre</button>
+      </div>
+      <div class="actions">
+        <button type="button" id="s-cancel">Annuler</button>
+        <button type="submit" class="primary">Enregistrer</button>
+      </div>
+      <div class="about">Navigateur 0.1</div>
+    </form>
+  </div>
+
+  <div id="dock">
+    <div id="bar">
+      <span id="dot"></span>
+      <input id="input" spellcheck="false" autocomplete="off"
+             placeholder="Aller à, chercher, ou taper / pour une commande">
+      <button class="icon" id="back" title="Précédent">&#8592;</button>
+      <button class="icon" id="forward" title="Suivant">&#8594;</button>
+      <button class="icon" id="reload" title="Actualiser">&#8635;</button>
+      <button class="icon" id="gear" title="Paramètres (Ctrl+,)">&#9881;</button>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const send = (msg) => window.ipc.postMessage(JSON.stringify(msg));
+
+  const COMMANDS = [
+    { name: '/nouveau', desc: 'Ouvrir un nouvel onglet', run: () => send({ type: 'new_tab' }) },
+    { name: '/fermer', desc: "Fermer l'onglet actuel", run: () => send({ type: 'close_tab', id: null }) },
+    { name: '/accueil', desc: "Revenir à la page d'accueil", run: () => send({ type: 'home' }) },
+    { name: '/retour', desc: 'Page précédente', run: () => send({ type: 'back' }) },
+    { name: '/suivant', desc: 'Page suivante', run: () => send({ type: 'forward' }) },
+    { name: '/actualiser', desc: 'Recharger la page', run: () => send({ type: 'reload' }) },
+    { name: '/parametres', desc: 'Ouvrir les paramètres', run: () => openSettings() },
+  ];
+
+  let state = { tabs: [], settings: {} };
+  let mode = null;          // null, 'cmd' ou 'settings'
+  let matches = [];
+  let selected = 0;
+  let hoverTitle = null;    // titre affiché en survolant une pastille
+  let draftTheme = 'auto';
+
+  const input = $('input');
+  const activeTab = () => state.tabs.find((t) => t.active);
+  const label = (t) => t.home ? 'Accueil' : (t.title || t.url);
+
+  // Un panneau ouvert cache la page (Rust s'en charge).
+  function setMode(next) {
+    if (next === mode) return;
+    const wasOpen = mode !== null;
+    mode = next;
+    document.body.classList.toggle('cmd', mode === 'cmd');
+    document.body.classList.toggle('settings', mode === 'settings');
+    if (wasOpen !== (mode !== null)) send({ type: 'expand', open: mode !== null });
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme || 'auto';
+  }
+
+  function renderPills() {
+    const box = $('pills');
+    box.textContent = '';
+    for (const tab of state.tabs) {
+      const b = document.createElement('button');
+      b.className = 'pill' + (tab.active ? ' active' : '') + (tab.loading ? ' loading' : '');
+      b.setAttribute('aria-label', label(tab));
+      b.addEventListener('click', () => send({ type: 'activate_tab', id: tab.id }));
+      b.addEventListener('auxclick', (e) => { if (e.button === 1) send({ type: 'close_tab', id: tab.id }); });
+      b.addEventListener('mouseenter', () => { hoverTitle = label(tab); renderBar(); });
+      b.addEventListener('mouseleave', () => { hoverTitle = null; renderBar(); });
+      box.appendChild(b);
+    }
+  }
+
+  // Hors saisie, la barre affiche le titre de la page (ou celui de la pastille survolée).
+  function renderBar() {
+    const tab = activeTab();
+    $('dot').classList.toggle('loading', !!(tab && tab.loading));
+    if (document.activeElement === input) return;
+    if (hoverTitle) { input.value = hoverTitle; return; }
+    input.value = tab && !tab.home ? (tab.title || tab.url) : '';
+  }
+
+  function renderCommands() {
+    const q = input.value.trim().toLowerCase();
+    matches = COMMANDS.filter((c) => c.name.startsWith(q) || c.name.slice(1).startsWith(q.slice(1)));
+    if (selected >= matches.length) selected = 0;
+    const ul = $('command-list');
+    ul.textContent = '';
+    matches.forEach((c, i) => {
+      const li = document.createElement('li');
+      if (i === selected) li.className = 'selected';
+      li.innerHTML = '<span class="name"></span><span class="desc"></span>';
+      li.querySelector('.name').textContent = c.name;
+      li.querySelector('.desc').textContent = c.desc;
+      li.addEventListener('mousedown', (e) => { e.preventDefault(); runCommand(c); });
+      ul.appendChild(li);
+    });
+    setMode(matches.length ? 'cmd' : null);
+  }
+
+  function runCommand(c) {
+    input.value = '';
+    setMode(null);
+    if (c.name !== '/parametres') input.blur();
+    c.run();
+  }
+
+  function focusBar() {
+    if (mode === 'settings') setMode(null);
+    input.focus();
+    const tab = activeTab();
+    input.value = tab && !tab.home ? tab.url : '';
+    input.select();
+  }
+
+  function openSettings() {
+    const s = state.settings;
+    $('s-name').value = s.name || '';
+    $('s-engine').value = s.search_engine || 'duckduckgo';
+    $('s-home').value = s.home_page || '';
+    draftTheme = s.theme || 'auto';
+    renderThemeChoices();
+    input.blur();
+    setMode('settings');
+    $('s-name').focus();
+  }
+
+  function closeSettings() {
+    applyTheme(state.settings.theme);
+    setMode(null);
+    send({ type: 'focus_page' });
+  }
+
+  function renderThemeChoices() {
+    for (const b of $('s-theme').children) b.classList.toggle('on', b.dataset.value === draftTheme);
+    applyTheme(draftTheme); // aperçu immédiat
+  }
+
+  // --- Barre ---
+  input.addEventListener('focus', () => {
+    const tab = activeTab();
+    input.value = tab && !tab.home ? tab.url : '';
+    input.select();
+  });
+  input.addEventListener('blur', () => { setTimeout(() => { if (mode === 'cmd') setMode(null); renderBar(); }, 0); });
+  input.addEventListener('input', () => {
+    if (input.value.startsWith('/')) renderCommands(); else setMode(null);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (mode === 'cmd') {
+      if (e.key === 'ArrowDown') { selected = (selected + 1) % matches.length; renderCommands(); e.preventDefault(); return; }
+      if (e.key === 'ArrowUp') { selected = (selected - 1 + matches.length) % matches.length; renderCommands(); e.preventDefault(); return; }
+      if (e.key === 'Enter' && matches[selected]) { runCommand(matches[selected]); e.preventDefault(); return; }
+    }
+    if (e.key === 'Enter') {
+      const text = input.value.trim();
+      if (text) { input.blur(); send({ type: 'navigate', input: text }); }
+      e.preventDefault();
+    } else if (e.key === 'Escape') {
+      setMode(null);
+      input.blur();
+      send({ type: 'focus_page' });
+    }
+  });
+
+  $('back').addEventListener('click', () => send({ type: 'back' }));
+  $('forward').addEventListener('click', () => send({ type: 'forward' }));
+  $('reload').addEventListener('click', () => send({ type: 'reload' }));
+  $('gear').addEventListener('click', () => mode === 'settings' ? closeSettings() : openSettings());
+  $('new-tab').addEventListener('click', () => send({ type: 'new_tab' }));
+
+  // --- Paramètres ---
+  for (const b of $('s-theme').children) {
+    b.addEventListener('click', () => { draftTheme = b.dataset.value; renderThemeChoices(); });
+  }
+  $('s-cancel').addEventListener('click', closeSettings);
+  $('settings-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    send({
+      type: 'save_settings',
+      settings: {
+        name: $('s-name').value,
+        search_engine: $('s-engine').value,
+        home_page: $('s-home').value,
+        theme: draftTheme,
+      },
+    });
+    setMode(null);
+    send({ type: 'focus_page' });
+  });
+
+  // --- Raccourcis quand l'interface a le focus ---
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && mode === 'settings') { closeSettings(); return; }
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === 'l' || k === 'k') focusBar();
+    else if (k === 't') send({ type: 'new_tab' });
+    else if (k === 'w') send({ type: 'close_tab', id: null });
+    else if (k === ',') openSettings();
+    else if (k === 'tab') {
+      const i = state.tabs.findIndex((t) => t.active);
+      const n = state.tabs.length;
+      if (n) send({ type: 'activate_tab', id: state.tabs[(i + (e.shiftKey ? n - 1 : 1)) % n].id });
+    } else return;
+    e.preventDefault();
+  });
+
+  // --- Appelé par Rust ---
+  window.navigateur = {
+    setState(next) {
+      state = next;
+      if (mode !== 'settings') applyTheme(state.settings.theme);
+      renderPills();
+      renderBar();
+    },
+    focusBar,
+    openSettings,
+  };
+
+  send({ type: 'ready' });
+})();
+</script>
+</body>
+</html>
