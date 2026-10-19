@@ -39,6 +39,15 @@ pub const PAGE_SCRIPT: &str = r#"
     if (a) { e.preventDefault(); e.stopPropagation(); send(a); }
   }, true);
 
+  // Boutons latéraux de la souris : précédent et suivant (aussi dans les cadres).
+  for (const type of ['mousedown', 'mouseup', 'auxclick']) {
+    window.addEventListener(type, (e) => {
+      if (e.button !== 3 && e.button !== 4) return;
+      e.preventDefault();
+      if (type === 'mouseup') send(e.button === 3 ? 'back' : 'forward');
+    }, true);
+  }
+
   // Le reste ne concerne que la page elle-même, pas ses cadres (publicités, lecteurs
   // intégrés…) : sous Windows, ce script est injecté dans chacun d'eux.
   if (window.top !== window) return;

@@ -125,15 +125,17 @@
     display: grid; place-items: center; overflow: hidden; box-shadow: 0 0 0 1px rgba(0, 0, 0, .06);
   }
   .favicon img { width: 16px; height: 16px; object-fit: contain; display: block; }
-  /* Menu du clic droit sur un onglet (la page est cachée pendant ce temps) */
-  #ctx { position: fixed; inset: 0; display: none; }
-  body.menu #ctx { display: block; }
-  #ctx ul {
-    position: absolute; left: 62px; margin: 0; padding: 6px; list-style: none; min-width: 190px;
+  /* Menu du clic droit sur un onglet : une petite bulle dans la colonne, la page reste visible */
+  #ctx {
+    position: fixed; left: 3px; width: 50px; display: none; z-index: 20; padding: 4px 0;
     background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
   }
-  #ctx li { padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
-  #ctx li:hover { background: var(--accent-soft); }
+  #ctx.open { display: block; }
+  #ctx button {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%;
+    padding: 6px 0; font-size: 10px; color: var(--muted); border-radius: 8px;
+  }
+  #ctx button:hover { background: var(--accent-soft); color: var(--text); }
   /* Glisser-déposer */
   .tab.dragging { opacity: .6; transform: scale(1.15); cursor: grabbing; z-index: 2; }
   .tab.dragging .close, .tab.dragging .mute { display: none; }
@@ -247,7 +249,7 @@
     <div class="help">Entrée pour valider · Échap pour revenir à la page</div>
   </div>
 
-  <div id="ctx"><ul id="ctx-menu"></ul></div>
+  <div id="ctx"></div>
 
   <div id="settings">
     <form id="settings-form">
@@ -325,28 +327,42 @@
     mode = next;
     document.body.classList.toggle('bar', mode === 'bar');
     document.body.classList.toggle('settings', mode === 'settings');
-    document.body.classList.toggle('menu', mode === 'menu');
     if (wasOpen !== (mode !== null)) send({ type: 'expand', open: mode !== null });
   }
 
+  let ctxTimer = 0;
+  function closeTabMenu() { clearTimeout(ctxTimer); $('ctx').classList.remove('open'); }
   function openTabMenu(tab, y) {
     const items = [];
-    if (!tab.home) items.push([tab.muted ? 'Réactiver le son' : "Couper le son de l'onglet", () => send({ type: 'toggle_mute', id: tab.id })]);
-    items.push(["Fermer l'onglet", () => send({ type: 'close_tab', id: tab.id })]);
-    const ul = $('ctx-menu');
-    ul.textContent = '';
-    for (const [text, run] of items) {
-      const li = document.createElement('li');
-      li.textContent = text;
-      li.addEventListener('click', (e) => { e.stopPropagation(); setMode(null); run(); });
-      ul.appendChild(li);
+    if (!tab.home) items.push([tab.muted ? SPEAKER_OFF : SPEAKER, tab.muted ? 'Son' : 'Muet', () => send({ type: 'toggle_mute', id: tab.id })]);
+    items.push(['<svg width="12" height="12" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg>', 'Fermer', () => send({ type: 'close_tab', id: tab.id })]);
+    const box = $('ctx');
+    box.textContent = '';
+    for (const [icon, text, run] of items) {
+      const b = document.createElement('button');
+      b.innerHTML = icon + '<span>' + text + '</span>';
+      b.title = text === 'Muet' ? "Couper le son de l'onglet" : text === 'Son' ? 'Réactiver le son' : "Fermer l'onglet";
+      b.addEventListener('click', (e) => { e.stopPropagation(); closeTabMenu(); run(); });
+      box.appendChild(b);
     }
-    ul.style.top = Math.max(4, Math.min(y - 10, window.innerHeight - 20 - 40 * items.length)) + 'px';
     if (mode === 'bar') closeBar(false);
-    setMode('menu');
+    box.style.top = Math.max(4, Math.min(y - 20, window.innerHeight - 70 * items.length)) + 'px';
+    box.classList.add('open');
+    clearTimeout(ctxTimer);
+    ctxTimer = setTimeout(closeTabMenu, 4000);
   }
-  $('ctx').addEventListener('click', () => { setMode(null); send({ type: 'focus_page' }); });
-  $('ctx').addEventListener('contextmenu', (e) => { e.preventDefault(); setMode(null); send({ type: 'focus_page' }); });
+  $('ctx').addEventListener('pointerenter', () => clearTimeout(ctxTimer));
+  $('ctx').addEventListener('pointerleave', () => { clearTimeout(ctxTimer); ctxTimer = setTimeout(closeTabMenu, 350); });
+  document.addEventListener('pointerdown', (e) => { if (!$('ctx').contains(e.target)) closeTabMenu(); }, true);
+  window.addEventListener('blur', closeTabMenu);
+  // Boutons latéraux de la souris : précédent et suivant
+  for (const type of ['mousedown', 'mouseup', 'auxclick']) {
+    window.addEventListener(type, (e) => {
+      if (e.button !== 3 && e.button !== 4) return;
+      e.preventDefault();
+      if (type === 'mouseup') send({ type: e.button === 3 ? 'back' : 'forward' });
+    }, true);
+  }
 
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme || 'auto';
@@ -613,7 +629,7 @@
 
   // --- Raccourcis quand l'interface a le focus ---
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && mode === 'menu') { setMode(null); send({ type: 'focus_page' }); return; }
+    if (e.key === 'Escape') closeTabMenu();
     if (e.key === 'Escape' && mode === 'settings') { closeSettings(); return; }
     const k = e.key.toLowerCase();
     if (e.altKey && !e.ctrlKey && !e.metaKey && (k === 'arrowleft' || k === 'arrowright')) {
