@@ -5,6 +5,7 @@
   <key>CFBundleName</key><string>Feather</string>
   <key>CFBundleDisplayName</key><string>Feather</string>
   <key>CFBundleIdentifier</key><string>app.feather.browser</string>
+  <key>CFBundleIconFile</key><string>Feather</string>
   <key>CFBundleExecutable</key><string>feather</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>0.1.0</string>

@@ -16,7 +16,7 @@ use serde_json::json;
 use tao::dpi::LogicalSize;
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
-use tao::window::{Window, WindowBuilder};
+use tao::window::{Icon, Window, WindowBuilder};
 use wry::{WebView, WebViewBuilder};
 
 use settings::Settings;
@@ -53,6 +53,7 @@ fn main() -> wry::Result<()> {
 
     let window = WindowBuilder::new()
         .with_title("Feather")
+        .with_window_icon(window_icon())
         .with_inner_size(LogicalSize::new(1200.0, 800.0))
         .with_min_inner_size(LogicalSize::new(480.0, 360.0))
         .build(&event_loop)
@@ -104,6 +105,12 @@ fn main() -> wry::Result<()> {
             _ => {}
         }
     });
+}
+
+/// Icône de la fenêtre : image 64×64 en RGBA brut (voir packaging/).
+fn window_icon() -> Option<Icon> {
+    const RGBA: &[u8] = include_bytes!("../packaging/feather-64.rgba");
+    Icon::from_rgba(RGBA.to_vec(), 64, 64).ok()
 }
 
 impl App {

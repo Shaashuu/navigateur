@@ -4,6 +4,8 @@ Feather est un navigateur léger écrit en Rust. Il n'embarque pas de moteur : i
 webview du système (WebView2 sur Windows, WebKit sur macOS et Linux) grâce à
 `tao` (la fenêtre) et `wry` (les webviews). L'exécutable fait environ 1 Mo.
 
+<img src="packaging/feather-1024.png" width="96" alt="Icône de Feather">
+
 ![Accueil](captures/accueil.png)
 
 Autres captures : [commandes](captures/commandes.png), [paramètres](captures/parametres.png), [une page ouverte](captures/page.png), [la croix de fermeture](captures/onglets.png).

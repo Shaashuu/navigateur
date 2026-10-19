@@ -49,6 +49,12 @@ jobs:
             target/aarch64-apple-darwin/release/feather \
             target/x86_64-apple-darwin/release/feather
           cp packaging/Info.plist dmg/Feather.app/Contents/Info.plist
+          mkdir -p Feather.iconset dmg/Feather.app/Contents/Resources
+          for s in 16 32 128 256 512; do
+            sips -z $s $s packaging/feather-1024.png --out Feather.iconset/icon_${s}x${s}.png
+            sips -z $((s*2)) $((s*2)) packaging/feather-1024.png --out Feather.iconset/icon_${s}x${s}@2x.png
+          done
+          iconutil -c icns Feather.iconset -o dmg/Feather.app/Contents/Resources/Feather.icns
           codesign --force --deep --sign - dmg/Feather.app
           ln -s /Applications dmg/Applications
           hdiutil create -volname Feather -srcfolder dmg -ov -format UDZO Feather-0.1-macos.dmg
