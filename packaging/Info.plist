@@ -2,10 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Navigateur</string>
-  <key>CFBundleDisplayName</key><string>Navigateur</string>
-  <key>CFBundleIdentifier</key><string>fr.navigateur.app</string>
-  <key>CFBundleExecutable</key><string>navigateur</string>
+  <key>CFBundleName</key><string>Feather</string>
+  <key>CFBundleDisplayName</key><string>Feather</string>
+  <key>CFBundleIdentifier</key><string>app.feather.browser</string>
+  <key>CFBundleExecutable</key><string>feather</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>0.1.0</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>

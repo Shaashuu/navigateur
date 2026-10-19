@@ -1,7 +1,7 @@
 [package]
-name = "navigateur"
+name = "feather"
 version = "0.1.0"
-description = "Navigateur 0.1 : un navigateur léger en Rust (tao + wry)"
+description = "Feather 0.1 : un navigateur léger en Rust (tao + wry)"
 edition = "2024"
 
 [dependencies]

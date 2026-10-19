@@ -23,11 +23,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --release
       - run: cargo build --release
-      - run: Copy-Item target/release/navigateur.exe Navigateur-0.1-windows.exe
+      - run: Copy-Item target/release/feather.exe Feather-0.1-windows.exe
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: Navigateur-0.1-windows.exe
+          path: Feather-0.1-windows.exe
 
   macos:
     runs-on: macos-latest
@@ -44,18 +44,18 @@ jobs:
           cargo build --release --target x86_64-apple-darwin
       - name: Créer l'application et le .dmg
         run: |
-          mkdir -p dmg/Navigateur.app/Contents/MacOS
-          lipo -create -output dmg/Navigateur.app/Contents/MacOS/navigateur \
-            target/aarch64-apple-darwin/release/navigateur \
-            target/x86_64-apple-darwin/release/navigateur
-          cp packaging/Info.plist dmg/Navigateur.app/Contents/Info.plist
-          codesign --force --deep --sign - dmg/Navigateur.app
+          mkdir -p dmg/Feather.app/Contents/MacOS
+          lipo -create -output dmg/Feather.app/Contents/MacOS/feather \
+            target/aarch64-apple-darwin/release/feather \
+            target/x86_64-apple-darwin/release/feather
+          cp packaging/Info.plist dmg/Feather.app/Contents/Info.plist
+          codesign --force --deep --sign - dmg/Feather.app
           ln -s /Applications dmg/Applications
-          hdiutil create -volname Navigateur -srcfolder dmg -ov -format UDZO Navigateur-0.1-macos.dmg
+          hdiutil create -volname Feather -srcfolder dmg -ov -format UDZO Feather-0.1-macos.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: Navigateur-0.1-macos.dmg
+          path: Feather-0.1-macos.dmg
 
   publier:
     if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''

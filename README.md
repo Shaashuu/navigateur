@@ -1,6 +1,6 @@
-# Navigateur 0.1
+# Feather 0.1
 
-Un navigateur léger écrit en Rust. Il n'embarque pas de moteur : il utilise la
+Feather est un navigateur léger écrit en Rust. Il n'embarque pas de moteur : il utilise la
 webview du système (WebView2 sur Windows, WebKit sur macOS et Linux) grâce à
 `tao` (la fenêtre) et `wry` (les webviews). L'exécutable fait environ 1 Mo.
 
@@ -24,7 +24,7 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
 - **Paramètres** (engrenage en haut à gauche) : prénom, moteur de recherche
   (DuckDuckGo, Qwant, Ecosia, Google, Bing), page d'accueil, thème clair, sombre
   ou automatique. Ils sont enregistrés dans `parametres.json`, dans le dossier
-  de configuration du système (`%APPDATA%\Navigateur\Navigateur\config` sur Windows).
+  de configuration du système (`%APPDATA%\Feather\Feather\config` sur Windows).
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
@@ -40,7 +40,7 @@ ou suivante, `F5` ou `Ctrl+R` actualiser, `Ctrl+,` paramètres.
    cargo run --release
    ```
 
-   L'exécutable se trouve ensuite dans `target/release/` (`navigateur.exe` sur Windows).
+   L'exécutable se trouve ensuite dans `target/release/` (`feather.exe` sur Windows).
 
 Selon le système :
 

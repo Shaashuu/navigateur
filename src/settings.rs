@@ -1,5 +1,5 @@
 //! Paramètres de l'utilisateur, enregistrés en JSON dans le dossier de
-//! configuration du système (par exemple `%APPDATA%\Navigateur\config` sur Windows).
+//! configuration du système (par exemple `%APPDATA%\Feather\Feather\config` sur Windows).
 
 use std::fs;
 use std::io;
@@ -106,7 +106,7 @@ impl Settings {
     }
 
     fn path() -> Option<PathBuf> {
-        ProjectDirs::from("fr", "Navigateur", "Navigateur")
+        ProjectDirs::from("app", "Feather", "Feather")
             .map(|d| d.config_dir().join("parametres.json"))
     }
 }

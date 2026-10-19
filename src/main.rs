@@ -1,7 +1,7 @@
 // En mode release sur Windows, pas de console noire derrière la fenêtre.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! Navigateur 0.1 : une fenêtre tao, une webview pour l'interface, et une
+//! Feather 0.1 : une fenêtre tao, une webview pour l'interface, et une
 //! webview par onglet. Tout tourne sur le thread principal ; les webviews
 //! communiquent avec le code Rust par des messages (`UserEvent`).
 
@@ -52,7 +52,7 @@ fn main() -> wry::Result<()> {
     let proxy = event_loop.create_proxy();
 
     let window = WindowBuilder::new()
-        .with_title("Navigateur 0.1")
+        .with_title("Feather")
         .with_inner_size(LogicalSize::new(1200.0, 800.0))
         .with_min_inner_size(LogicalSize::new(480.0, 360.0))
         .build(&event_loop)
