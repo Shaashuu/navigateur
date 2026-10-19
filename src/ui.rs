@@ -51,6 +51,21 @@ pub const PAGE_SCRIPT: &str = r#"
     }, true);
   }
 
+  // Clic de molette sur un lien : ouvre la page dans un nouvel onglet (aussi dans les cadres).
+  const linkOf = (e) => {
+    const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    return a && /^https?:/i.test(a.href) ? a.href : null;
+  };
+  window.addEventListener('mousedown', (e) => { if (e.button === 1 && linkOf(e)) e.preventDefault(); }, true);
+  window.addEventListener('auxclick', (e) => {
+    if (e.button !== 1) return;
+    const url = linkOf(e);
+    if (!url) return;
+    e.preventDefault();
+    e.stopPropagation();
+    post({ open_tab: url });
+  }, true);
+
   // Le reste ne concerne que la page elle-même, pas ses cadres (publicités, lecteurs
   // intégrés…) : sous Windows, ce script est injecté dans chacun d'eux.
   if (window.top !== window) return;
@@ -203,6 +218,8 @@ pub struct PageMessage {
     pub open_bar: Option<String>,
     /// La page joue du son (ou vient d'arrêter).
     pub audible: Option<bool>,
+    /// Clic de molette sur un lien : adresse à ouvrir dans un nouvel onglet.
+    pub open_tab: Option<String>,
     /// Icône et nom du site (voir `clean_site`).
     pub site: Option<SiteInfo>,
 }

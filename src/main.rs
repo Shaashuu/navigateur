@@ -289,6 +289,11 @@ impl App {
             }
             self.push_state();
         }
+        if let Some(url) = message.open_tab
+            && (url.starts_with("https://") || url.starts_with("http://"))
+        {
+            self.open_tab_in_background(&url);
+        }
         if let Some(audible) = message.audible {
             if let Some(tab) = self.tabs.get_mut(id) {
                 tab.audible = audible;
@@ -351,6 +356,16 @@ impl App {
             Err(err) => eprintln!("impossible d'ouvrir l'onglet : {err}"),
         }
         self.push_state();
+    }
+
+    /// Ouvre un onglet sans le montrer : on reste sur la page en cours (clic de molette).
+    fn open_tab_in_background(&mut self, url: &str) {
+        let previous = self.tabs.active().map(|t| t.id);
+        self.open_tab(url);
+        if let Some(id) = previous {
+            self.tabs.activate(id, !self.expanded);
+            self.push_state();
+        }
     }
 
     /// Ferme un onglet ; on garde toujours au moins un onglet ouvert.
