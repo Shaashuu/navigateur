@@ -237,6 +237,12 @@ impl App {
             Shortcut::Settings => self.focus_chrome("navigateur.openSettings()"),
             Shortcut::NewTab => self.open_new_tab(),
             Shortcut::CloseTab => self.close_tab(id),
+            Shortcut::ToggleMute => {
+                if let Some(tab) = self.tabs.get_mut(id) {
+                    tab.muted = !tab.muted;
+                    tab.apply_mute();
+                }
+            }
             Shortcut::NextTab => self.tabs.cycle(1, !self.expanded),
             Shortcut::PreviousTab => self.tabs.cycle(-1, !self.expanded),
         }

@@ -26,8 +26,11 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   point par autre onglet, `+` pour en ouvrir un. Au survol, le titre s'affiche
   et une petite croix rouge apparaît en haut de la pastille pour la fermer.
   Maintenez le clic sur un onglet pour le monter ou le descendre.
-- **Son** : la pastille d'un onglet qui joue une vidéo ou une musique devient
-  un haut-parleur ; un clic dessus coupe ou remet le son de cet onglet.
+- **Son** : la pastille d'un onglet qui joue une vidéo ou une musique porte un
+  petit haut-parleur (barré quand le son est coupé). Un clic sur la pastille
+  change toujours d'onglet ; pour couper ou remettre le son, utilisez le petit
+  bouton discret qui apparaît en bas de l'onglet au survol, le clic droit sur
+  l'onglet, ou `Ctrl+M`.
 - **Paramètres** (engrenage en haut à gauche) : prénom, moteur de recherche
   (DuckDuckGo, Qwant, Ecosia, Google, Bing), adresse du bouton maison (ouverte
   aussi au démarrage ; les nouveaux onglets ouvrent l'accueil Feather), thème clair, sombre
@@ -36,7 +39,8 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
-ou suivante, `F5` ou `Ctrl+R` actualiser, `Ctrl+,` paramètres.
+ou suivante, `F5` ou `Ctrl+R` actualiser, `Ctrl+M` couper le son de l'onglet,
+`Ctrl+,` paramètres.
 
 ## Lancer le navigateur
 

@@ -33,6 +33,7 @@ pub const PAGE_SCRIPT: &str = r#"
     else if (ctrl && (k === 'l' || k === 'k')) a = 'focus_bar';
     else if (ctrl && k === 't') a = 'new_tab';
     else if (ctrl && k === 'w') a = 'close_tab';
+    else if (e.ctrlKey && !e.metaKey && !e.altKey && k === 'm') a = 'toggle_mute';
     else if (ctrl && k === 'tab') a = e.shiftKey ? 'previous_tab' : 'next_tab';
     else if (ctrl && k === ',') a = 'settings';
     if (a) { e.preventDefault(); e.stopPropagation(); send(a); }
@@ -127,6 +128,7 @@ pub enum Shortcut {
     Reload,
     NewTab,
     CloseTab,
+    ToggleMute,
     NextTab,
     PreviousTab,
     Settings,

@@ -98,19 +98,29 @@
   }
   .tab:hover .close { opacity: 1; transform: scale(1); pointer-events: auto; }
   .close:hover { filter: brightness(1.1); }
-  /* Onglet qui joue du son : la pastille grandit et porte le haut-parleur ; un clic dessus coupe le son */
+  /* Onglet qui joue du son : la pastille porte un petit haut-parleur (simple repère) ;
+     un clic sur la pastille change toujours d'onglet. Le son se coupe avec le petit
+     bouton discret qui apparaît au survol, par un clic droit ou avec Ctrl+M. */
   .tab.sound { height: 32px; }
   .tab.sound.active { height: 56px; }
   .tab.sound .dot, .tab.sound:hover .dot {
-    width: 26px; height: 26px; border-radius: 13px; opacity: 1; padding: 0;
-    display: grid; place-items: center; color: #fff; background: var(--muted); cursor: pointer;
+    width: 22px; height: 22px; border-radius: 11px; opacity: 1;
+    display: grid; place-items: center; color: #fff;
   }
-  .tab.sound.active .dot, .tab.sound.active:hover .dot { width: 26px; height: 48px; background: var(--accent); }
-  .tab.sound.muted .dot { opacity: .7; }
-  .tab.sound .dot:hover { filter: brightness(1.12); }
+  .tab.sound.active .dot, .tab.sound.active:hover .dot { width: 20px; height: 48px; border-radius: 10px; }
+  .tab.sound.muted .dot { opacity: .6; }
+  .mute {
+    position: absolute; bottom: -3px; right: 3px; width: 16px; height: 16px; border-radius: 8px;
+    display: grid; place-items: center; color: var(--muted);
+    background: color-mix(in srgb, var(--surface) 80%, transparent);
+    border: 1px solid var(--line);
+    opacity: 0; transform: scale(.6); pointer-events: none; transition: all .12s ease;
+  }
+  .tab:hover .mute { opacity: .9; transform: scale(1); pointer-events: auto; }
+  .mute:hover { opacity: 1; color: var(--text); background: var(--accent-soft); border-color: var(--accent); }
   /* Glisser-déposer */
   .tab.dragging { opacity: .6; transform: scale(1.15); cursor: grabbing; z-index: 2; }
-  .tab.dragging .close { display: none; }
+  .tab.dragging .close, .tab.dragging .mute { display: none; }
 
   /* Barre de recherche ouverte par-dessus la page (la page est cachée pendant ce temps) */
   #overlay, #settings {
@@ -228,7 +238,7 @@
         <button type="button" id="s-cancel">Annuler</button>
         <button type="submit" class="primary">Enregistrer</button>
       </div>
-      <div class="about">Feather 0.1.3</div>
+      <div class="about">Feather 0.1.4</div>
     </form>
   </div>
 
@@ -272,9 +282,9 @@
     document.documentElement.dataset.theme = theme || 'auto';
   }
 
-  const SPEAKER = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/>' +
+  const SPEAKER = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/>' +
     '<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
-  const SPEAKER_OFF = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/>' +
+  const SPEAKER_OFF = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/>' +
     '<path d="m16 9 6 6m0-6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
 
   function renderSidebar() {
@@ -298,17 +308,25 @@
       el.setAttribute('role', 'button');
       el.setAttribute('aria-label', label(tab));
       el.title = label(tab); // bulle native : elle peut dépasser sur la page
-      el.innerHTML = (sound ? '<button class="dot"></button>' : '<span class="dot"></span>') +
+      el.innerHTML = '<span class="dot"></span>' +
         '<button class="close" aria-label="Fermer l\'onglet">' +
         '<svg width="8" height="8" viewBox="0 0 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg></button>';
       if (sound) {
-        const dot = el.querySelector('.dot');
-        dot.innerHTML = tab.muted ? SPEAKER_OFF : SPEAKER;
-        dot.title = tab.muted ? 'Remettre le son' : "Couper le son de l'onglet";
-        dot.setAttribute('aria-label', dot.title);
-        dot.addEventListener('pointerdown', (e) => e.stopPropagation());
-        dot.addEventListener('click', (e) => { e.stopPropagation(); send({ type: 'toggle_mute', id: tab.id }); });
+        el.querySelector('.dot').innerHTML = tab.muted ? SPEAKER_OFF : SPEAKER;
+        const mute = document.createElement('button');
+        mute.className = 'mute';
+        mute.title = tab.muted ? 'Remettre le son' : "Couper le son de l'onglet";
+        mute.setAttribute('aria-label', mute.title);
+        mute.innerHTML = tab.muted ? SPEAKER_OFF : SPEAKER;
+        mute.addEventListener('pointerdown', (e) => e.stopPropagation());
+        mute.addEventListener('click', (e) => { e.stopPropagation(); send({ type: 'toggle_mute', id: tab.id }); });
+        el.appendChild(mute);
       }
+      // Clic droit : couper ou remettre le son (seulement si l'onglet joue du son)
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        if (sound) send({ type: 'toggle_mute', id: tab.id });
+      });
       el.querySelector('.close').addEventListener('pointerdown', (e) => e.stopPropagation());
       el.querySelector('.close').addEventListener('click', (e) => {
         e.stopPropagation();
@@ -487,7 +505,8 @@
     }
     if (k === 'f5') { send({ type: 'reload' }); e.preventDefault(); return; }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-    if (k === 'l' || k === 'k') send({ type: 'focus_bar' });
+    if (k === 'm' && e.ctrlKey && !e.metaKey) { const t = activeTab(); if (t) send({ type: 'toggle_mute', id: t.id }); }
+    else if (k === 'l' || k === 'k') send({ type: 'focus_bar' });
     else if (k === 'r') send({ type: 'reload' });
     else if (k === 't') send({ type: 'new_tab' });
     else if (k === 'w') send({ type: 'close_tab', id: null });
