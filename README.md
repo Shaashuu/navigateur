@@ -49,7 +49,7 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   Historique, favoris et onglets sont enregistrés dans `historique.json`,
   `favoris.json` et `session.json`, à côté de `parametres.json`, et restent sur
   l'ordinateur.
-- **Nouveautés (prochaine version)** :
+- **Nouveau en 0.3** :
   - **Chercher dans la page** (`Ctrl+F`) : un bandeau en bas de la fenêtre,
     `Entrée` / `Maj+Entrée` pour l'occurrence suivante ou précédente.
   - **Zoom retenu par site** (`Ctrl++`, `Ctrl+-`, `Ctrl+0`), rangé dans `sites.json`.
