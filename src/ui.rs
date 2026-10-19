@@ -8,11 +8,13 @@ use tao::dpi::{LogicalPosition, LogicalSize};
 use tao::window::Window;
 use wry::{Rect, WebView, WebViewBuilder};
 
-use crate::settings::{Settings, Theme};
+use crate::settings::{BarPosition, Settings, Theme};
 use crate::tab_manager::TabId;
 
 /// Largeur de la colonne des pastilles, à gauche (pixels logiques).
 pub const SIDEBAR_WIDTH: f64 = 56.0;
+/// Hauteur de la barre quand elle est placée en haut.
+pub const TOP_BAR_HEIGHT: f64 = 44.0;
 
 pub const CHROME_HTML: &str = include_str!("../assets/chrome.html");
 const HOME_HTML: &str = include_str!("../assets/home.html");
@@ -248,12 +250,17 @@ pub enum Shortcut {
     Settings,
 }
 
-/// Zone occupée par les pages : tout sauf la colonne de gauche.
-pub fn page_bounds(window: &Window) -> Rect {
+/// Zone occupée par les pages : tout sauf la barre (à gauche, à droite ou en haut).
+pub fn page_bounds(window: &Window, bar: BarPosition) -> Rect {
     let size = window.inner_size().to_logical::<f64>(window.scale_factor());
+    let (x, y, w, h) = match bar {
+        BarPosition::Left => (SIDEBAR_WIDTH, 0.0, size.width - SIDEBAR_WIDTH, size.height),
+        BarPosition::Right => (0.0, 0.0, size.width - SIDEBAR_WIDTH, size.height),
+        BarPosition::Top => (0.0, TOP_BAR_HEIGHT, size.width, size.height - TOP_BAR_HEIGHT),
+    };
     Rect {
-        position: LogicalPosition::new(SIDEBAR_WIDTH, 0.0).into(),
-        size: LogicalSize::new((size.width - SIDEBAR_WIDTH).max(1.0), size.height.max(1.0)).into(),
+        position: LogicalPosition::new(x, y).into(),
+        size: LogicalSize::new(w.max(1.0), h.max(1.0)).into(),
     }
 }
 

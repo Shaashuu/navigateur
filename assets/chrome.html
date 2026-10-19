@@ -136,6 +136,46 @@
     padding: 6px 0; font-size: 10px; color: var(--muted); border-radius: 8px;
   }
   #ctx button:hover { background: var(--accent-soft); color: var(--text); }
+  /* Barre à droite ou en haut (réglage « Position de la barre ») */
+  body[data-pos="right"] #sidebar { left: auto; right: 0; }
+  body[data-pos="right"] #overlay, body[data-pos="right"] #settings { left: 0; right: 56px; }
+  body[data-pos="right"] #ctx { left: auto; right: 3px; }
+  body[data-pos="top"] #sidebar {
+    left: 0; right: 0; bottom: auto; width: auto; height: 44px; flex-direction: row;
+    padding: 0 10px; gap: 6px; border-bottom: 1px solid var(--line);
+  }
+  body[data-pos="top"] #top, body[data-pos="top"] #middle { display: contents; }
+  body[data-pos="top"] #nav { flex-direction: row; order: 1; gap: 2px; }
+  body[data-pos="top"] #pills {
+    flex-direction: row; order: 2; overflow-x: auto; overflow-y: hidden; padding: 5px 4px; gap: 4px;
+    min-width: 0; flex: 0 1 auto; align-items: center;
+  }
+  body[data-pos="top"] #new-tab { order: 3; }
+  body[data-pos="top"] #gear { order: 5; margin-left: auto; }
+  body[data-pos="top"] #search-pill { display: none; }
+  body[data-pos="top"] #overlay, body[data-pos="top"] #settings { left: 0; right: 0; top: 44px; }
+  body[data-pos="top"] .tab, body[data-pos="top"] .tab.has-icon,
+  body[data-pos="top"] .tab.active, body[data-pos="top"] .tab.has-icon.active { width: 34px; height: 34px; flex: none; }
+  body[data-pos="top"] .tab.active, body[data-pos="top"] .tab.has-icon.active {
+    width: auto; min-width: 150px; max-width: 340px; flex: 0 1 340px; display: flex; align-items: center;
+    gap: 8px; padding: 0 12px 0 2px; border-radius: 17px; background: var(--accent-soft);
+  }
+  body[data-pos="top"] .tab.active .dot, body[data-pos="top"] .tab.active:hover .dot,
+  body[data-pos="top"] .tab.has-icon.active .dot, body[data-pos="top"] .tab.has-icon.active:hover .dot {
+    width: 28px; height: 28px; border-radius: 14px; background: var(--line); opacity: 1; flex: none;
+    display: grid; place-items: center;
+  }
+  body[data-pos="top"] .tab.active:not(.has-icon) .dot { background: var(--accent); width: 12px; height: 12px; border-radius: 6px; margin: 0 8px 0 10px; }
+  body[data-pos="top"] .tab.has-icon .dot, body[data-pos="top"] .tab.has-icon:hover .dot { width: 30px; height: 30px; }
+  body[data-pos="top"] .tab .mute { bottom: -3px; right: -1px; }
+  body[data-pos="top"] .tab.active .mute { position: static; margin-left: 2px; flex: none; }
+  .ttl, .urlinput { flex: 1; min-width: 0; font-size: 13px; }
+  .ttl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
+  .urlinput { border: 0; outline: none; background: transparent; color: var(--text); font-family: inherit; user-select: text; }
+  .tab.editing { background: var(--surface) !important; box-shadow: 0 0 0 1.5px var(--accent); }
+  body[data-pos="top"] #ctx { top: 4px; width: auto; height: 36px; padding: 0 4px; }
+  body[data-pos="top"] #ctx.open { display: flex; }
+  body[data-pos="top"] #ctx button { flex-direction: row; gap: 6px; width: auto; height: 100%; padding: 0 10px; font-size: 12px; }
   /* Glisser-déposer */
   .tab.dragging { opacity: .6; transform: scale(1.15); cursor: grabbing; z-index: 2; }
   .tab.dragging .close, .tab.dragging .mute { display: none; }
@@ -211,7 +251,7 @@
   #settings .about { margin-top: 18px; color: var(--muted); font-size: 12px; }
 </style>
 </head>
-<body>
+<body data-pos="left">
   <nav id="sidebar" aria-label="Navigation">
     <div id="top">
       <button class="round" id="gear" title="Paramètres (Ctrl+,)" aria-label="Paramètres">
@@ -272,6 +312,12 @@
         <button type="button" data-value="light">Clair</button>
         <button type="button" data-value="dark">Sombre</button>
       </div>
+      <label>Position de la barre</label>
+      <div class="choices" id="s-pos">
+        <button type="button" data-value="left">Gauche</button>
+        <button type="button" data-value="right">Droite</button>
+        <button type="button" data-value="top">Haut</button>
+      </div>
       <div class="update">
         <h3>Mise à jour</h3>
         <div class="row"><span>Version actuelle</span><b id="u-current"></b></div>
@@ -315,6 +361,10 @@
   let matches = [];
   let selected = 0;
   let draftTheme = 'auto';
+  let draftPos = 'left';
+  let editing = false;      // adresse de l'onglet actif en cours de modification (barre en haut)
+  const isTop = () => (state.settings.bar_position || 'left') === 'top';
+  const applyPos = (pos) => { document.body.dataset.pos = pos || 'left'; };
 
   const input = $('input');
   const activeTab = () => state.tabs.find((t) => t.active);
@@ -332,7 +382,8 @@
 
   let ctxTimer = 0;
   function closeTabMenu() { clearTimeout(ctxTimer); $('ctx').classList.remove('open'); }
-  function openTabMenu(tab, y) {
+  function openTabMenu(tab, ev) {
+    const y = ev.clientY;
     const items = [];
     if (!tab.home) items.push([tab.muted ? SPEAKER_OFF : SPEAKER, tab.muted ? 'Son' : 'Muet', () => send({ type: 'toggle_mute', id: tab.id })]);
     items.push(['<svg width="12" height="12" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg>', 'Fermer', () => send({ type: 'close_tab', id: tab.id })]);
@@ -346,7 +397,13 @@
       box.appendChild(b);
     }
     if (mode === 'bar') closeBar(false);
-    box.style.top = Math.max(4, Math.min(y - 20, window.innerHeight - 70 * items.length)) + 'px';
+    if (isTop()) {
+      box.style.top = '';
+      box.style.left = Math.max(4, Math.min(ev.clientX - 20, window.innerWidth - 150)) + 'px';
+    } else {
+      box.style.left = '';
+      box.style.top = Math.max(4, Math.min(y - 20, window.innerHeight - 70 * items.length)) + 'px';
+    }
     box.classList.add('open');
     clearTimeout(ctxTimer);
     ctxTimer = setTimeout(closeTabMenu, 4000);
@@ -381,7 +438,7 @@
     const pill = $('search-pill');
     pill.hidden = !tab || tab.home;
     pill.classList.toggle('loading', !!(tab && tab.loading));
-    if (drag) return; // on redessine les onglets à la fin du glisser-déposer
+    if (drag || (editing && document.querySelector('.urlinput'))) return; // on redessine les onglets à la fin du glisser-déposer
 
     const box = $('pills');
     box.textContent = '';
@@ -410,6 +467,37 @@
         box.appendChild(img);
         el.querySelector('.dot').appendChild(box);
       }
+      if (tab.active && isTop()) {
+        el.classList.toggle('editing', editing);
+        if (editing) {
+          const inp = document.createElement('input');
+          inp.className = 'urlinput';
+          inp.spellcheck = false;
+          inp.autocomplete = 'off';
+          inp.placeholder = 'Aller à, chercher, ou taper / pour une commande';
+          inp.addEventListener('pointerdown', (e) => e.stopPropagation());
+          inp.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              const text = inp.value.trim();
+              stopEdit();
+              const c = COMMANDS.find((c) => c.name === text.toLowerCase());
+              if (c) c.run(); else if (text) send({ type: 'navigate', input: text });
+              e.preventDefault();
+            } else if (e.key === 'Escape') {
+              stopEdit();
+              send({ type: 'focus_page' });
+              e.preventDefault();
+            }
+          });
+          inp.addEventListener('blur', () => setTimeout(() => { if (editing) stopEdit(); }, 0));
+          el.appendChild(inp);
+        } else {
+          const ttl = document.createElement('span');
+          ttl.className = 'ttl';
+          ttl.textContent = label(tab);
+          el.appendChild(ttl);
+        }
+      }
       if (sound) {
         const mute = document.createElement('button');
         mute.className = 'mute';
@@ -421,7 +509,7 @@
         el.appendChild(mute);
       }
       // Clic droit : menu de l'onglet
-      el.addEventListener('contextmenu', (e) => { e.preventDefault(); openTabMenu(tab, e.clientY); });
+      el.addEventListener('contextmenu', (e) => { e.preventDefault(); openTabMenu(tab, e); });
       el.querySelector('.close').addEventListener('pointerdown', (e) => e.stopPropagation());
       el.querySelector('.close').addEventListener('click', (e) => {
         e.stopPropagation();
@@ -432,32 +520,56 @@
     }
   }
 
-  // Glisser-déposer : maintenir le clic sur un onglet et le monter ou le descendre.
+  // Barre en haut : l'adresse de l'onglet actif se modifie directement dans sa pastille.
+  function startEdit(text) {
+    const tab = activeTab();
+    if (!isTop() || !tab) return false;
+    editing = true;
+    renderSidebar();
+    const inp = document.querySelector('.tab.active .urlinput');
+    if (!inp) { editing = false; return false; }
+    inp.value = text || (tab.home ? '' : tab.url);
+    inp.focus();
+    if (!text) inp.select();
+    return true;
+  }
+  function stopEdit() {
+    if (!editing) return;
+    editing = false;
+    renderSidebar();
+  }
+
+  // Glisser-déposer : maintenir le clic sur un onglet pour le déplacer.
   function startDrag(e, el, tab) {
     if (e.button !== 0) return;
-    drag = { el, tab, y: e.clientY, moved: false };
+    drag = { el, tab, y: isTop() ? e.clientX : e.clientY, moved: false, onTitle: !!e.target.closest('.ttl') };
     el.setPointerCapture(e.pointerId);
   }
   window.addEventListener('pointermove', (e) => {
     if (!drag) return;
-    if (!drag.moved && Math.abs(e.clientY - drag.y) < 6) return;
+    const top = isTop();
+    const c = top ? e.clientX : e.clientY;
+    if (!drag.moved && Math.abs(c - drag.y) < 6) return;
     if (!drag.moved) { drag.moved = true; drag.el.classList.add('dragging'); drag.el.title = ''; }
     const box = $('pills');
     const others = [...box.children].filter((c) => c !== drag.el);
     const before = others.find((c) => {
       const r = c.getBoundingClientRect();
-      return e.clientY < r.top + r.height / 2;
+      return top ? c < r.left + r.width / 2 : c < r.top + r.height / 2;
     });
     if (before) { if (drag.el.nextSibling !== before) box.insertBefore(drag.el, before); }
     else if (box.lastChild !== drag.el) box.appendChild(drag.el);
   });
   const endDrag = () => {
     if (!drag) return;
-    const { el, tab, moved } = drag;
+    const { el, tab, moved, onTitle } = drag;
     drag = null;
     if (moved) {
       const index = [...$('pills').children].indexOf(el);
       send({ type: 'move_tab', id: tab.id, index });
+    } else if (tab.active && onTitle && isTop()) {
+      startEdit();
+      return;
     } else {
       send({ type: 'activate_tab', id: tab.id });
     }
@@ -485,6 +597,7 @@
 
   // Ouvre la barre par-dessus la page, avec l'adresse actuelle (ou un texte donné).
   function openBar(text) {
+    if (isTop() && startEdit(text)) return;
     setMode('bar');
     const tab = activeTab();
     input.value = text || (tab && !tab.home ? tab.url : '');
@@ -513,8 +626,10 @@
     $('s-engine').value = s.search_engine || 'duckduckgo';
     $('s-home').value = s.home_page || '';
     draftTheme = s.theme || 'auto';
+    draftPos = s.bar_position || 'left';
     $('s-autoupdate').checked = s.auto_update_check !== false;
     renderThemeChoices();
+    renderPosChoices();
     renderUpdate();
     if (mode === 'bar') closeBar(false);
     setMode('settings');
@@ -523,6 +638,7 @@
 
   function closeSettings() {
     applyTheme(state.settings.theme);
+    applyPos(state.settings.bar_position);
     setMode(null);
     send({ type: 'focus_page' });
   }
@@ -530,6 +646,11 @@
   function renderThemeChoices() {
     for (const b of $('s-theme').children) b.classList.toggle('on', b.dataset.value === draftTheme);
     applyTheme(draftTheme); // aperçu immédiat
+  }
+
+  function renderPosChoices() {
+    for (const b of $('s-pos').children) b.classList.toggle('on', b.dataset.value === draftPos);
+    applyPos(draftPos); // aperçu immédiat
   }
 
   // --- Barre ---
@@ -574,6 +695,9 @@
   for (const b of $('s-theme').children) {
     b.addEventListener('click', () => { draftTheme = b.dataset.value; renderThemeChoices(); });
   }
+  for (const b of $('s-pos').children) {
+    b.addEventListener('click', () => { draftPos = b.dataset.value; renderPosChoices(); });
+  }
   $('s-cancel').addEventListener('click', closeSettings);
   $('settings-form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -584,6 +708,7 @@
         search_engine: $('s-engine').value,
         home_page: $('s-home').value,
         theme: draftTheme,
+        bar_position: draftPos,
         auto_update_check: $('s-autoupdate').checked,
       },
     });
@@ -633,7 +758,7 @@
     if (e.key === 'Escape' && mode === 'settings') { closeSettings(); return; }
     const k = e.key.toLowerCase();
     if (e.altKey && !e.ctrlKey && !e.metaKey && (k === 'arrowleft' || k === 'arrowright')) {
-      if (document.activeElement === input) return;
+      if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
       send({ type: k === 'arrowleft' ? 'back' : 'forward' });
       e.preventDefault();
       return;
@@ -663,7 +788,7 @@
   window.navigateur = {
     setState(next) {
       state = next;
-      if (mode !== 'settings') applyTheme(state.settings.theme);
+      if (mode !== 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
       renderSidebar();
       renderUpdate();
     },

@@ -265,6 +265,7 @@ impl App {
                 if let Ok(mut current) = self.settings.write() {
                     *current = settings;
                 }
+                self.relayout();
                 // Les pages d'accueil ouvertes reprennent le nouveau prénom et thème.
                 for tab in self.tabs.home_tabs() {
                     let _ = tab.webview().reload();
@@ -343,7 +344,7 @@ impl App {
             surface: &self.surface,
             proxy: &self.proxy,
             settings: &self.settings,
-            bounds: ui::page_bounds(&self.window),
+            bounds: ui::page_bounds(&self.window, self.read_settings().bar_position),
         };
         match self.tabs.open(url, &ctx, !self.expanded) {
             Ok(_) => self.focus_page(),
@@ -414,7 +415,7 @@ impl App {
 
     fn relayout(&self) {
         let _ = self.chrome.set_bounds(ui::chrome_bounds(&self.window));
-        self.tabs.set_bounds(ui::page_bounds(&self.window));
+        self.tabs.set_bounds(ui::page_bounds(&self.window, self.read_settings().bar_position));
     }
 
     fn start_check(&mut self, manual: bool) {

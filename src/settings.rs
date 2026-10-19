@@ -22,6 +22,8 @@ pub struct Settings {
     pub theme: Theme,
     /// Chercher une nouvelle version à chaque démarrage.
     pub auto_update_check: bool,
+    /// Où se trouve la barre des onglets : à gauche, à droite ou en haut.
+    pub bar_position: BarPosition,
 }
 
 impl Default for Settings {
@@ -32,8 +34,18 @@ impl Default for Settings {
             home_page: String::new(),
             theme: Theme::Auto,
             auto_update_check: true,
+            bar_position: BarPosition::Left,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BarPosition {
+    #[default]
+    Left,
+    Right,
+    Top,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
