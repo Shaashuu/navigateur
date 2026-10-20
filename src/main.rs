@@ -20,6 +20,7 @@ mod mac_mouse;
 mod network;
 mod settings;
 mod sitedata;
+mod softsleep;
 mod storage;
 mod tab_manager;
 mod trackers;
@@ -225,7 +226,15 @@ fn main() -> wry::Result<()> {
         ticks: 0,
     };
     let session = library::load_session();
-    if restore && !session.urls.is_empty() {
+    // Adresses données au lancement (« Ouvrir avec Feather », banc de mesure de la
+    // mémoire `outils/banc-memoire`) : une par onglet, la première affichée.
+    let launch = network::launch_urls(std::env::args().skip(1));
+    if let Some((first, others)) = launch.split_first() {
+        app.open_tab(first, false);
+        for url in others {
+            app.open_tab_in_background(url);
+        }
+    } else if restore && !session.urls.is_empty() {
         // Les onglets restaurés restent en veille : seul celui affiché est chargé.
         for url in &session.urls {
             app.tabs.add_asleep(url, "", false);

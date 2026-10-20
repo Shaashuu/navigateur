@@ -5,6 +5,8 @@
 //! `contenu.json` à côté de l'historique, et la Bibliothèque peut retrouver une
 //! page par ce qu'elle contenait. Les onglets privés ne sont jamais indexés.
 
+use std::sync::OnceLock;
+
 use serde::{Deserialize, Serialize};
 
 use crate::library::now;
@@ -23,9 +25,22 @@ struct Page {
     title: String,
     text: String,
     time: u64,
-    /// Titre et texte normalisés (minuscules, sans accents), calculés au chargement.
+    /// Titre et texte normalisés (minuscules, sans accents), calculés à la
+    /// première recherche seulement : tant qu'on ne cherche rien, ils ne
+    /// prennent aucune place en mémoire. Rangés en `String` (1 octet par
+    /// lettre courante) et non en `Vec<char>` (4 octets par lettre).
     #[serde(skip)]
-    norm: Vec<char>,
+    norm: OnceLock<String>,
+}
+
+impl Page {
+    fn new(url: &str, title: &str, text: String) -> Self {
+        Self { url: url.into(), title: title.into(), text, time: now(), norm: OnceLock::new() }
+    }
+
+    fn norm(&self) -> &str {
+        self.norm.get_or_init(|| normaliser(&format!("{}\n{}", self.title, self.text)))
+    }
 }
 
 /// Une page trouvée, avec l'extrait où apparaît le texte cherché.
@@ -45,10 +60,7 @@ pub struct FullText {
 
 impl FullText {
     pub fn load() -> Self {
-        let mut pages: Vec<Page> = storage::read_json(FICHIER).unwrap_or_default();
-        for p in &mut pages {
-            p.norm = normaliser(&format!("{}\n{}", p.title, p.text));
-        }
+        let pages: Vec<Page> = storage::read_json(FICHIER).unwrap_or_default();
         Self { pages, changed: false }
     }
 
@@ -71,8 +83,7 @@ impl FullText {
             return;
         }
         self.pages.retain(|p| p.url != url);
-        let norm = normaliser(&format!("{title}\n{text}"));
-        self.pages.push(Page { url: url.into(), title: title.into(), text, time: now(), norm });
+        self.pages.push(Page::new(url, title, text));
         if self.pages.len() > MAX_PAGES {
             let trop = self.pages.len() - MAX_PAGES;
             self.pages.drain(..trop);
@@ -87,7 +98,7 @@ impl FullText {
             && !title.is_empty()
         {
             p.title = title.into();
-            p.norm = normaliser(&format!("{}\n{}", p.title, p.text));
+            p.norm = OnceLock::new();
             self.changed = true;
         }
     }
@@ -117,10 +128,10 @@ impl FullText {
 
     /// Pages contenant tous les mots cherchés, les plus pertinentes d'abord.
     pub fn search(&self, query: &str, limit: usize) -> Vec<Trouve> {
-        let mots: Vec<Vec<char>> = query
+        let mots: Vec<String> = query
             .split_whitespace()
             .map(normaliser)
-            .filter(|m| m.len() >= 2)
+            .filter(|m| m.chars().count() >= 2)
             .collect();
         if mots.is_empty() {
             return Vec::new();
@@ -132,12 +143,12 @@ impl FullText {
                 let mut score = 0;
                 let mut premier = usize::MAX;
                 for mot in &mots {
-                    let positions = occurrences(&p.norm, mot);
-                    if positions.is_empty() {
-                        return None;
-                    }
-                    score += positions.len();
-                    premier = premier.min(positions[0]);
+                    let norm = p.norm();
+                    let mut positions = norm.match_indices(mot.as_str()).map(|(i, _)| i);
+                    let first = positions.next()?;
+                    score += 1 + positions.count();
+                    // Position en caractères (et non en octets) pour l'extrait.
+                    premier = premier.min(norm[..first].chars().count());
                 }
                 Some((score, p, premier))
             })
@@ -174,16 +185,9 @@ fn extrait(p: &Page, position: usize) -> String {
     s
 }
 
-fn occurrences(texte: &[char], mot: &[char]) -> Vec<usize> {
-    if mot.len() > texte.len() {
-        return Vec::new();
-    }
-    (0..=texte.len() - mot.len()).filter(|&i| texte[i..i + mot.len()] == *mot).collect()
-}
-
 /// Minuscules et sans accents, un caractère pour un caractère (pour que les
 /// positions trouvées restent valables dans le texte d'origine).
-fn normaliser(texte: &str) -> Vec<char> {
+fn normaliser(texte: &str) -> String {
     texte
         .chars()
         .map(|c| {
@@ -225,6 +229,21 @@ mod tests {
         assert!(index.search("crevaison", 10).is_empty());
         index.remove("https://velo.fr/");
         assert!(index.search("chaine", 10).is_empty());
+    }
+
+    #[test]
+    fn rien_en_memoire_avant_la_premiere_recherche() {
+        let mut index = FullText::default();
+        index.add("https://a.fr/", "Été", "Une journée à la plage.");
+        assert!(index.pages[0].norm.get().is_none());
+        // L'extrait reste juste après des lettres accentuées (positions en caractères).
+        let r = index.search("plage", 1);
+        assert!(r[0].snippet.contains("à la plage"), "{}", r[0].snippet);
+        assert_eq!(index.pages[0].norm.get().map(String::as_str), Some("ete\nune journee a la plage."));
+        // Un nouveau titre oublie la version normalisée, recalculée à la recherche suivante.
+        index.set_title("https://a.fr/", "Vacances");
+        assert!(index.pages[0].norm.get().is_none());
+        assert_eq!(index.search("vacances", 1).len(), 1);
     }
 
     #[test]

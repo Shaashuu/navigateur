@@ -83,6 +83,18 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     à côté des pastilles. Double-clic sur le bord : taille d'origine.
   - **Recherche dans le texte des pages** : l'historique retrouve une page par
     un mot de son contenu, avec un extrait (`contenu.json`, désactivable).
+- **Nouveau en 0.3.4** (mémoire) :
+  - **Veille douce** (Windows) : un onglet caché depuis 2 minutes demande au
+    moteur de libérer sa mémoire, et il est gelé après 10 minutes. Il revient
+    tout de suite, sans recharger la page (position et formulaires gardés).
+    Les onglets privés en profitent aussi. La veille complète (page détruite)
+    reste réglable dans les paramètres.
+  - **Recherche dans le texte des pages plus sobre** : la version normalisée
+    du texte n'est calculée qu'à la première recherche, et prend quatre fois
+    moins de place (jusqu'à environ 30 Mo économisés avec 2 000 pages).
+  - **Adresses au lancement** : `feather https://exemple.fr https://autre.fr`
+    ouvre chaque adresse dans un onglet.
+  - **Banc de mesure de la mémoire** : voir « Mesurer la mémoire » plus bas.
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
@@ -129,6 +141,8 @@ Pour lancer les tests : `cargo test`.
 | `src/sitedata.rs` | Zoom et autorisations retenus par site (`sites.json`). |
 | `src/trackers.rs` | Liste des traqueurs et blocage (WebKit sous macOS, WebView2 sous Windows). |
 | `src/weight.rs` | Poids d'un onglet (mémoire, processeur, page ralentie). |
+| `src/softsleep.rs` | Veille douce des onglets cachés (Windows : mémoire réduite, puis page gelée). |
+| `outils/banc-memoire.*` | Banc de mesure de la mémoire (macOS et Windows). |
 | `src/layers.rs` | Panneaux par-dessus la page : l'interface passe devant, découpée à leur forme. |
 | `assets/page.js` | Script injecté dans chaque page : raccourcis, son, recherche, menu des liens, autorisations. |
 | `assets/chrome.html` | L'interface (pastilles, barre, commandes, paramètres) en HTML/CSS. |
@@ -171,6 +185,20 @@ leur onglet et envoient des messages.
 - Sur Linux, seul X11 a été essayé (pas Wayland).
 - L'icône de son repère les balises vidéo et audio de la page, pas les sons
   produits par Web Audio ni ceux des vidéos intégrées dans un cadre (iframe).
+
+## Mesurer la mémoire
+
+Le banc de mesure lance Feather deux fois (accueil seul, puis cinq sites
+ouverts) et additionne la mémoire de Feather et des processus du moteur :
+
+- macOS : `outils/banc-memoire.sh target/release/feather` (sans Safari ni Mail
+  ouverts, qui partagent les processus WebKit) ;
+- Windows : `outils\banc-memoire.ps1 -Programme target\release\feather.exe`.
+
+Le workflow GitHub le lance après chaque compilation et affiche le tableau dans
+le résumé de l'exécution, pour repérer une version qui consomme plus que la
+précédente. Les chiffres varient d'une exécution à l'autre selon le contenu des
+sites : comparez des ordres de grandeur, pas des mégaoctets près.
 
 ## Télécharger sans installer Rust
 

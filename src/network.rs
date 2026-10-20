@@ -47,6 +47,16 @@ pub fn is_web(url: &str) -> bool {
     (url.starts_with("https://") || url.starts_with("http://")) && !is_home(url)
 }
 
+/// Adresses données au lancement (`feather https://exemple.fr …`). Seules les
+/// vraies pages web sont gardées : macOS ajoute parfois ses propres arguments
+/// (`-psn_…`), et une adresse locale (`file://`) ne doit pas s'ouvrir ainsi.
+pub fn launch_urls(args: impl IntoIterator<Item = String>) -> Vec<String> {
+    args.into_iter()
+        .map(|a| a.trim().to_string())
+        .filter(|a| is_web(a) && Url::parse(a).is_ok())
+        .collect()
+}
+
 /// Transforme la saisie de la barre en adresse : soit l'adresse elle-même,
 /// soit une recherche avec le moteur choisi. `None` si la saisie est vide.
 pub fn resolve_input(input: &str, engine: SearchEngine) -> Option<String> {
@@ -137,6 +147,15 @@ fn looks_like_domain(host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adresses_du_lancement() {
+        let args = ["-psn_0_12345", "https://fr.wikipedia.org/", "file:///etc/passwd", " http://a.fr ", "mots"];
+        assert_eq!(
+            launch_urls(args.map(String::from)),
+            vec!["https://fr.wikipedia.org/".to_string(), "http://a.fr".to_string()]
+        );
+    }
 
     const DDG: SearchEngine = SearchEngine::DuckDuckGo;
 

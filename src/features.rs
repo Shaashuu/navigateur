@@ -11,6 +11,7 @@ use crate::commands::{self, Contexte, Resultat};
 use crate::downloads::{self, Download, State};
 use crate::network;
 use crate::sitedata::Permission;
+use crate::softsleep;
 use crate::tab_manager::TabId;
 use crate::ui::{PageMetrics, PermissionRequest};
 use crate::{App, UserEvent};
@@ -271,6 +272,7 @@ impl App {
         }
         if self.ticks.is_multiple_of(5) {
             changed |= self.sample_weights();
+            self.soft_sleep();
             changed |= self.auto_sleep();
         }
         if changed {
@@ -290,6 +292,22 @@ impl App {
             changed |= tab.weight.level != before.level;
         }
         changed
+    }
+
+    /// Veille douce (Windows) : allège puis gèle les onglets cachés, sans
+    /// détruire leur page (voir `softsleep.rs`). Un onglet qui joue du son n'est
+    /// pas touché. Les onglets privés en profitent aussi : la vraie veille les
+    /// épargne, puisqu'elle effacerait leur session.
+    fn soft_sleep(&mut self) {
+        let active = self.tabs.active_id();
+        for tab in self.tabs.iter_mut().filter(|t| Some(t.id) != active && !t.audible) {
+            let vise = softsleep::palier(tab.last_active.elapsed());
+            let actuel = tab.repos;
+            if let Some(w) = tab.webview() {
+                let atteint = softsleep::reposer(w, actuel, vise);
+                tab.repos = atteint;
+            }
+        }
     }
 
     /// Met en veille les onglets cachés depuis longtemps (réglage « veille »),

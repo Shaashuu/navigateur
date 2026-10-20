@@ -24,6 +24,7 @@ use crate::library::{Library, Session};
 use crate::network;
 use crate::settings::Settings;
 use crate::sitedata::SiteData;
+use crate::softsleep::{self, Repos};
 use crate::trackers;
 use crate::ui::{self, Surface};
 use crate::weight::Weight;
@@ -51,6 +52,8 @@ pub struct Tab {
     pub last_active: Instant,
     /// Mémoire et processeur de la page (voir `weight.rs`).
     pub weight: Weight,
+    /// Veille douce de la page cachée (voir `softsleep.rs`).
+    pub repos: Repos,
     /// Hôte de la page, partagé avec les rappels de la webview (autorisations, traqueurs).
     host: Arc<RwLock<String>>,
     /// `None` : l'onglet est en veille.
@@ -165,6 +168,7 @@ impl TabManager {
             private,
             last_active: Instant::now(),
             weight: Weight::default(),
+            repos: Repos::Eveille,
             host: Arc::default(),
             webview: None,
         };
@@ -186,6 +190,7 @@ impl TabManager {
         tab.webview = Some(webview);
         tab.loading = true;
         tab.weight = Weight::default();
+        tab.repos = Repos::Eveille;
         Ok(())
     }
 
@@ -205,6 +210,7 @@ impl TabManager {
         };
         tab.loading = false;
         tab.weight = Weight::default();
+        tab.repos = Repos::Eveille;
         stop_page(&webview);
         self.closing.push((Instant::now(), webview));
         true
@@ -267,6 +273,11 @@ impl TabManager {
                 tab.last_active = now;
             }
             if let Some(w) = &tab.webview {
+                // L'onglet qui revient retrouve sa mémoire normale et se dégèle.
+                if tab.id == id {
+                    softsleep::reveiller(w, tab.repos);
+                    tab.repos = Repos::Eveille;
+                }
                 let _ = w.set_visible(visible && tab.id == id);
             }
         }
