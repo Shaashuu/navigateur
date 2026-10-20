@@ -162,7 +162,7 @@ mod platform {
         NSView, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
         NSWindowOrderingMode,
     };
-    use objc2_foundation::{NSPoint, NSRect, NSSize};
+    use objc2_foundation::{NSObjectProtocol, NSPoint, NSRect, NSSize};
     use wry::{WebView, WebViewExtMacOS};
 
     use super::ShapeRect;
@@ -171,8 +171,21 @@ mod platform {
         let webview = chrome.webview();
         let view: &NSView = &webview;
         let Some(parent) = (unsafe { view.superview() }) else { return };
-        let order = if top { NSWindowOrderingMode::Above } else { NSWindowOrderingMode::Below };
-        parent.addSubview_positioned_relativeTo(view, order, None);
+        if top {
+            parent.addSubview_positioned_relativeTo(view, NSWindowOrderingMode::Above, None);
+            return;
+        }
+        // Pas tout en bas : la vue de flou de l'effet de verre (window-vibrancy)
+        // y est, et elle recouvrait alors la barre. On se place juste sous la
+        // plus basse des pages (des webviews de la même classe que l'interface).
+        let class = view.class();
+        let lowest_page = parent
+            .subviews()
+            .iter()
+            .find(|v| !std::ptr::eq(&**v, view) && v.isKindOfClass(class));
+        if let Some(page) = lowest_page {
+            parent.addSubview_positioned_relativeTo(view, NSWindowOrderingMode::Below, Some(&page));
+        }
     }
 
     /// Une vue de flou sous chaque panneau en verre, juste sous l'interface.
