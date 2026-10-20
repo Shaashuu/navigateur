@@ -201,6 +201,62 @@
   });
   window.addEventListener('load', reportSite);
 
+  // Bloqueur de publicités : la page envoie ses #id et .classes, Feather répond par
+  // les encarts à masquer (voir adblock.rs). Une règle par sélecteur : celui que le
+  // moteur ne comprend pas est écarté seul. `null` : rien à masquer sur ce site.
+  if (location.protocol === 'http:' || location.protocol === 'https:') {
+    const seen = new Set();
+    let sheet = null;
+    let active = true;
+    let first = true;
+    let pending = [];
+    let adTimer = 0;
+    const take = (el, out) => {
+      if (el.id && !seen.has('#' + el.id)) { seen.add('#' + el.id); out.push('#' + el.id); }
+      for (const c of el.classList || []) {
+        if (!seen.has('.' + c)) { seen.add('.' + c); out.push('.' + c); }
+      }
+    };
+    const collect = (root, out) => {
+      if (root.nodeType !== 1) return;
+      take(root, out);
+      for (const el of root.querySelectorAll('[id],[class]')) take(el, out);
+    };
+    const sendTokens = (tokens) => {
+      if (!active || (!tokens.length && !first)) return;
+      post({ cosmetic: { tokens, first } });
+      first = false;
+    };
+    const observer = new MutationObserver((records) => {
+      for (const r of records) for (const n of r.addedNodes) pending.push(n);
+      clearTimeout(adTimer);
+      adTimer = setTimeout(() => {
+        const tokens = [];
+        for (const n of pending) if (n.isConnected) collect(n, tokens);
+        pending = [];
+        sendTokens(tokens);
+      }, 400);
+    });
+    window.__featherHide = (list) => {
+      if (list === null) { active = false; observer.disconnect(); pending = []; return; }
+      if (!list.length) return;
+      if (!sheet || !sheet.ownerNode || !sheet.ownerNode.isConnected) {
+        const style = document.createElement('style');
+        (document.head || document.documentElement).appendChild(style);
+        sheet = style.sheet;
+      }
+      for (const sel of list) {
+        try { sheet.insertRule(sel + '{display:none!important}', sheet.cssRules.length); } catch (_) {}
+      }
+    };
+    document.addEventListener('DOMContentLoaded', () => {
+      const tokens = [];
+      collect(document.documentElement, tokens);
+      sendTokens(tokens);
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+    });
+  }
+
   window.__featherSetMuted = (on) => {
     muted = on;
     for (const m of media()) {

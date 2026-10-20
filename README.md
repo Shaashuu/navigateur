@@ -142,7 +142,13 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   - Menu du clic droit sur un onglet plus grand, ouvert à droite du curseur,
     avec « Réglages du site web ».
   - Barre latérale élargie : 300 px au plus.
-- **Depuis la 0.3.7** (pas encore publié) :
+- **Nouveau en 0.3.8** :
+  - **Bloqueur de publicités** (Paramètres → Vie privée et sites) : les listes
+    publiques EasyList, EasyPrivacy et Liste FR, téléchargées au premier
+    lancement puis chaque semaine (« Mettre à jour » pour le faire tout de
+    suite). Les requêtes vers environ 100 000 domaines de publicité et de suivi
+    sont refusées, et les encarts publicitaires masqués. La fiche du site
+    permet de couper le bloqueur sur un site (la page se recharge).
   - **Paramètres rangés par catégories** (Général, Apparence, Recherche,
     Onglets et mémoire, Vie privée et sites, Historique et données,
     Téléchargements, Raccourcis clavier, À propos et mise à jour), avec une
@@ -195,6 +201,7 @@ Pour lancer les tests : `cargo test`.
 | `src/fulltext.rs` | Texte des pages visitées, pour chercher dans l'historique. |
 | `src/sitedata.rs` | Zoom et autorisations retenus par site (`sites.json`). |
 | `src/trackers.rs` | Liste des traqueurs et blocage (WebKit sous macOS, WebView2 sous Windows). |
+| `src/adblock.rs` | Bloqueur de publicités : téléchargement et lecture des listes EasyList, domaines bloqués, encarts masqués. |
 | `src/weight.rs` | Poids d'un onglet (mémoire, processeur, page ralentie). |
 | `src/softsleep.rs` | Veille douce des onglets cachés (Windows : mémoire réduite, puis page gelée). |
 | `src/errorpage.rs` | Pages d'erreur Feather et détection des chargements en échec. |
@@ -234,6 +241,12 @@ leur onglet et envoient des messages.
   vide au redémarrage.
 - Blocage des traqueurs : pas sous Linux. Sous Windows, les requêtes bloquées
   reçoivent une réponse 403.
+- Bloqueur de publicités : seules les règles sur des domaines entiers et les
+  encarts simples (`##.pub`) sont appliqués ; les règles sur un chemin, les
+  scripts de remplacement et les pseudo-classes propres aux bloqueurs sont
+  ignorés. Pas d'effet dans les cadres (iframe) pour le masquage, ni sous
+  Linux. Les listes ne sont pas incluses dans Feather : elles sont téléchargées
+  depuis le dépôt GitHub d'EasyList (licence GPLv3 ou CC BY-SA 3.0, au choix).
 - Poids des onglets : mémoire et processeur mesurés par le système sous macOS
   seulement ; ailleurs, mémoire du JavaScript (Windows) et lenteur de la page.
 - Autorisations : Feather répond avant le moteur pour les fonctions que la page

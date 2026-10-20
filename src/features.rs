@@ -9,6 +9,7 @@ use std::time::Duration;
 use serde_json::json;
 
 use crate::commands::{self, Contexte, Resultat};
+use crate::adblock;
 use crate::capture::{self, Target};
 use crate::downloads::{self, Download, State};
 use crate::import;
@@ -19,7 +20,7 @@ use crate::siteclear;
 use crate::sitedata::Permission;
 use crate::softsleep;
 use crate::tab_manager::TabId;
-use crate::ui::{PageMetrics, PermissionRequest};
+use crate::ui::{CosmeticRequest, PageMetrics, PermissionRequest};
 use crate::{App, UserEvent};
 
 /// Niveaux de zoom proposés (Ctrl+plus / Ctrl+moins).
@@ -571,6 +572,59 @@ impl App {
         }
     }
 
+    // --- Bloqueur de publicités ----------------------------------------------
+
+    /// Listes lues (ou seul leur état a changé).
+    pub(crate) fn ad_filters(&mut self, filters: Option<Box<adblock::Filters>>, status: adblock::Status) {
+        match filters {
+            Some(filters) => {
+                adblock::install(*filters, self.proxy.clone());
+                self.adblock = status;
+            }
+            None => {
+                self.adblock.updating = status.updating;
+                self.adblock.error = status.error;
+            }
+        }
+        self.push_state();
+    }
+
+    /// Pose de nouveau le bloqueur sur toutes les pages (réglage changé, listes neuves).
+    pub(crate) fn reapply_ads(&mut self) {
+        for tab in self.tabs.iter_mut() {
+            let host = tab.host();
+            if let Some(w) = tab.webview() {
+                adblock::apply(w, &host);
+                tab.ads = Some(adblock::active_on(&host));
+            }
+        }
+    }
+
+    /// Fiche du site : bloqueur coupé ou rétabli sur ce site, puis les pages du site rechargées.
+    pub(crate) fn set_site_ads(&mut self, host: &str, on: bool) {
+        if let Ok(mut sites) = self.sites.write() {
+            sites.set_ads(host, on);
+            adblock::set_sites_off(sites.ads_off());
+        }
+        self.reapply_ads();
+        for tab in self.tabs.iter().filter(|t| t.host() == host) {
+            if let Some(w) = tab.webview() {
+                let _ = w.reload();
+            }
+        }
+        self.schedule_persist();
+        self.push_state();
+    }
+
+    /// La page envoie ses `#id` et `.classes` : on répond par les encarts à masquer.
+    pub(crate) fn hide_ads(&self, id: TabId, request: CosmeticRequest) {
+        let Some(tab) = self.tabs.get(id) else { return };
+        // Une page très chargée n'envoie que ses premiers éléments.
+        let tokens = &request.tokens[..request.tokens.len().min(20_000)];
+        let answer = adblock::hide(&tab.host(), tokens, request.first);
+        tab.eval(&format!("window.__featherHide && __featherHide({})", json!(answer)));
+    }
+
     // --- Fiche du site --------------------------------------------------------
 
     /// Ce que la fiche du site montre pour l'onglet actif (les autorisations
@@ -586,6 +640,9 @@ impl App {
             "host": host,
             "zoom": (zoom * 100.0).round(),
             "trackers": self.read_settings().blocks_trackers(),
+            // Bloqueur de publicités : réglage général, et choix pour ce site.
+            "ads": self.read_settings().blocks_ads(),
+            "ads_site": self.sites.read().is_ok_and(|s| !s.ads_off().contains(&host)),
             "error": tab.failed.is_some(),
         })
     }

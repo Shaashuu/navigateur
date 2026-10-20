@@ -35,6 +35,8 @@ pub struct Settings {
     pub download_dir: String,
     /// Bloquer les traqueurs connus (mesure d'audience, régies publicitaires).
     pub block_trackers: bool,
+    /// Bloquer les publicités (listes EasyList, voir `adblock.rs`).
+    pub block_ads: bool,
     /// Mettre en veille un onglet resté caché ce nombre de minutes (0 : jamais).
     pub sleep_minutes: u32,
     /// Garder le texte des pages visitées pour les retrouver par leur contenu.
@@ -68,6 +70,7 @@ impl Default for Settings {
             bookmarks_on_home: true,
             download_dir: String::new(),
             block_trackers: true,
+            block_ads: true,
             sleep_minutes: 30,
             index_pages: true,
             sidebar_width: SIDEBAR_MIN,
@@ -161,6 +164,11 @@ impl Settings {
     /// Les traqueurs sont bloqués : réglage choisi, ou mode économie.
     pub fn blocks_trackers(&self) -> bool {
         self.block_trackers || self.economy
+    }
+
+    /// Les publicités sont bloquées : réglage choisi, ou mode économie.
+    pub fn blocks_ads(&self) -> bool {
+        self.block_ads || self.economy
     }
 
     /// Adresse du bouton maison et du démarrage.

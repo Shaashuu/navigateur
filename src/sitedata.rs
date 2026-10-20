@@ -1,7 +1,7 @@
 //! Réglages retenus par site : niveau de zoom et autorisations (caméra,
 //! micro, position, notifications…). Rangés dans `sites.json`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use wry::{PermissionKind, PermissionResponse};
@@ -62,6 +62,8 @@ pub struct Decision {
 pub struct SiteData {
     zoom: BTreeMap<String, f64>,
     permissions: BTreeMap<String, BTreeMap<Permission, bool>>,
+    /// Sites où le bloqueur de publicités est coupé.
+    ads_off: BTreeSet<String>,
     /// Réponses « pour cette fois » : valables jusqu'à la fermeture de Feather.
     #[serde(skip)]
     temporary: BTreeMap<(String, Permission), bool>,
@@ -99,6 +101,21 @@ impl SiteData {
             self.zoom.insert(host.to_string(), zoom);
         }
         self.changed = true;
+    }
+
+    // --- Bloqueur de publicités ---
+
+    pub fn ads_off(&self) -> Vec<String> {
+        self.ads_off.iter().cloned().collect()
+    }
+
+    /// Active (`true`) ou coupe le bloqueur sur ce site.
+    pub fn set_ads(&mut self, host: &str, on: bool) {
+        if host.is_empty() {
+            return;
+        }
+        let changed = if on { self.ads_off.remove(host) } else { self.ads_off.insert(host.to_string()) };
+        self.changed |= changed;
     }
 
     // --- Autorisations ---

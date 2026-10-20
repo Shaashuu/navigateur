@@ -549,7 +549,7 @@
   #site h3 { margin: 18px 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
   #site .line { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   #site .line:last-child { border-bottom: 0; }
-  #site .line > span:first-child { flex: 1; min-width: 0; }
+  #site .line > span:first-child, #site .line > label:first-child { flex: 1; min-width: 0; }
   #site .line .v { color: var(--muted); font-variant-numeric: tabular-nums; }
   #site .seg { display: flex; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; flex: none; }
   #site .seg button { height: 26px; padding: 0 10px; font-size: 12px; color: var(--muted); }
@@ -723,6 +723,8 @@
         <button type="button" class="small" id="site-zoom-in" title="Agrandir (Ctrl+plus)">+</button>
       </div>
       <div class="line"><span>Blocage des traqueurs</span><span class="v" id="site-trackers"></span></div>
+      <div class="line"><label for="site-ads">Bloqueur de publicités</label><span class="v" id="site-ads-v"></span>
+        <input type="checkbox" class="tg" id="site-ads"></div>
       <button type="button" id="site-clear">Effacer les données de ce site</button>
     </div>
   </div>
@@ -845,6 +847,10 @@
           <p class="desc">Ce que les sites peuvent savoir de vous, et ce que vous leur avez permis.</p>
           <div class="srow"><label class="lab" for="s-trackers">Bloquer les traqueurs<small>Mesure d'audience et publicité</small></label>
             <input type="checkbox" class="tg" id="s-trackers"></div>
+          <div class="srow"><label class="lab" for="s-ads">Bloquer les publicités<small>Bandeaux, encarts et vidéos publicitaires ; désactivable site par site depuis la fiche du site</small></label>
+            <input type="checkbox" class="tg" id="s-ads"></div>
+          <div class="srow"><span class="lab">Listes de blocage<small id="s-ads-info"></small></span>
+            <button type="button" class="plain" id="s-ads-update">Mettre à jour</button></div>
           <div class="srow col"><span class="lab">Autorisations retenues<small>Caméra, micro, position, notifications… site par site</small></span>
             <div id="s-perms"></div></div>
         </section>
@@ -1550,6 +1556,8 @@
     $('s-bmhome').checked = s.bookmarks_on_home !== false;
     set('s-dldir', s.download_dir || '');
     $('s-trackers').checked = s.block_trackers !== false;
+    $('s-ads').checked = s.block_ads !== false;
+    renderAdLists();
     $('s-index').checked = s.index_pages !== false;
     $('s-sleep').value = String(s.sleep_minutes ?? 30);
     if (!$('s-sleep').value) $('s-sleep').value = '30';
@@ -1593,6 +1601,20 @@
     if (!words.length) showCat(setCat);
     else for (const b of document.querySelectorAll('.navbtn')) b.classList.remove('on');
   }
+  // Listes du bloqueur de publicités : ce qu'elles contiennent, et leur date.
+  function renderAdLists() {
+    const a = state.adblock || {};
+    const n = (x) => Number(x || 0).toLocaleString('fr-FR');
+    let text;
+    if (a.updating) text = 'Téléchargement des listes…';
+    else if (a.updated) {
+      const day = new Date(a.updated * 1000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+      text = `EasyList, EasyPrivacy et Liste FR : ${n(a.domains)} domaines et ${n(a.hidden)} encarts, mises à jour le ${day}`;
+    } else text = 'Listes pas encore téléchargées';
+    if (a.error) text += ` · Échec du téléchargement (${a.error})`;
+    $('s-ads-info').textContent = text;
+    $('s-ads-update').disabled = !!a.updating;
+  }
   let savedTimer = 0;
   function saveSettings() {
     const settings = {
@@ -1607,6 +1629,7 @@
       bookmarks_on_home: $('s-bmhome').checked,
       download_dir: $('s-dldir').value,
       block_trackers: $('s-trackers').checked,
+      block_ads: $('s-ads').checked,
       sleep_minutes: Number($('s-sleep').value),
       index_pages: $('s-index').checked,
       sidebar_width: state.settings.sidebar_width,
@@ -1872,7 +1895,7 @@
   for (const id of ['s-theme', 's-pos', 's-startup']) {
     for (const b of $(id).children) b.addEventListener('click', () => { choose(id, b.dataset.value); saveSettings(); });
   }
-  for (const id of ['s-engine', 's-history', 's-sleep', 's-bmhome', 's-trackers', 's-index', 's-economy', 's-autoupdate']) {
+  for (const id of ['s-engine', 's-history', 's-sleep', 's-bmhome', 's-trackers', 's-ads', 's-index', 's-economy', 's-autoupdate']) {
     $(id).addEventListener('change', saveSettings);
   }
   // Champs de texte : enregistrés en quittant le champ ou avec Entrée.
@@ -1887,6 +1910,14 @@
   $('s-search').addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('s-search').value) { e.stopPropagation(); $('s-search').value = ''; filterSettings(); } });
   $('s-close').addEventListener('click', closeSettings);
   $('site-all').addEventListener('click', () => openSettings('vieprivee'));
+  $('s-ads-update').addEventListener('click', () => {
+    state.adblock = Object.assign({}, state.adblock, { updating: true, error: null });
+    renderAdLists();
+    send({ type: 'update_ad_lists' });
+  });
+  $('site-ads').addEventListener('change', () => {
+    if (state.site) send({ type: 'set_site_ads', host: state.site.host, on: $('site-ads').checked });
+  });
   $('s-clear').dataset.label = "Effacer l'historique";
   $('s-clear').addEventListener('click', () => {
     const b = $('s-clear');
@@ -2252,6 +2283,10 @@
     $('site-zoom-reset').disabled = site.zoom === 100;
     const eco = !!state.settings.economy && !state.settings.block_trackers;
     $('site-trackers').textContent = site.trackers ? (eco ? 'Activé (mode économie)' : 'Activé') : 'Désactivé';
+    // Coupé dans les paramètres : l'interrupteur du site n'a plus d'effet.
+    $('site-ads').checked = !!site.ads && site.ads_site !== false;
+    $('site-ads').disabled = !site.ads;
+    $('site-ads-v').textContent = !site.ads ? 'Désactivé dans les paramètres' : site.ads_site === false ? 'Désactivé sur ce site' : '';
   }
   $('lock').addEventListener('mousedown', (e) => e.preventDefault());
   $('lock').addEventListener('click', () => openSite());

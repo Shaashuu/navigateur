@@ -180,6 +180,13 @@ pub enum ChromeMessage {
     },
     /// Efface les cookies et le stockage du site de l'onglet actif (fiche du site).
     ClearSiteData,
+    /// Active ou coupe le bloqueur de publicités sur un site (fiche du site).
+    SetSiteAds {
+        host: String,
+        on: bool,
+    },
+    /// Télécharge de nouveau les listes du bloqueur (paramètres).
+    UpdateAdLists,
     /// Épingle un onglet, ou le détache.
     PinTab {
         id: TabId,
@@ -284,6 +291,16 @@ pub struct PageMessage {
     pub reader: Option<crate::reader::Article>,
     /// L'extraction n'a trouvé aucun article.
     pub reader_failed: bool,
+    /// `#id` et `.classes` présents dans la page, pour le masquage des publicités.
+    pub cosmetic: Option<CosmeticRequest>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct CosmeticRequest {
+    pub tokens: Vec<String>,
+    /// Premier envoi de la page (elle reçoit aussi les règles propres au site).
+    pub first: bool,
 }
 
 #[derive(Debug, Default, Deserialize, serde::Serialize, Clone, Copy)]

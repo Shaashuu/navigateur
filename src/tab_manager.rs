@@ -28,6 +28,7 @@ use crate::settings::Settings;
 use crate::sitedata::SiteData;
 use crate::softsleep::{self, Repos};
 use crate::trackers;
+use crate::adblock;
 use crate::ui::{self, Surface};
 use crate::weight::Weight;
 
@@ -70,6 +71,8 @@ pub struct Tab {
     /// Échec du dernier chargement, affiché par une page d'erreur Feather :
     /// la cause et l'adresse en échec (voir `errorpage.rs`).
     pub failed: Option<(ErrorKind, String)>,
+    /// Bloqueur de publicités posé sur la page (`None` : pas encore ; voir `adblock::apply`).
+    pub ads: Option<bool>,
     /// Hôte de la page, partagé avec les rappels de la webview (autorisations, traqueurs).
     host: Arc<RwLock<String>>,
     /// `None` : l'onglet est en veille.
@@ -208,6 +211,7 @@ impl TabManager {
             pinned: false,
             group: None,
             failed: None,
+            ads: None,
             host: Arc::default(),
             webview: None,
         };
@@ -225,6 +229,9 @@ impl TabManager {
             return Ok(());
         }
         let webview = build_page(id, &tab.url, ctx, tab.private, Arc::clone(&tab.host))?;
+        let host = tab.host();
+        adblock::apply(&webview, &host);
+        tab.ads = Some(adblock::active_on(&host));
         let _ = webview.set_visible(visible);
         tab.webview = Some(webview);
         tab.loading = true;
