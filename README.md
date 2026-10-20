@@ -78,17 +78,6 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   - **Poids des onglets** : un anneau orange (chargé) ou rouge (lourd) autour de
     la pastille ; la bulle donne la mémoire et le processeur. Un onglet caché et
     lourd s'endort au bout de cinq minutes.
-  - **Transparence (effet de verre, macOS et Windows)** : dans les paramètres,
-    « Aucune », « Barre », « Pages » ou « Tout », et un curseur d'intensité. Le
-    bureau, flouté, se voit à travers la barre et le fond des sites ; le texte,
-    les images et les vidéos ne changent pas. Un bouton dans la barre de
-    recherche (ou le menu de l'onglet) retire la transparence d'un site.
-    Pour le fond des sites, Feather reprend les styles écrits site par site
-    pour l'extension Zen Internet du navigateur Zen (projet
-    [my-internet](https://github.com/sameerasw/my-internet), licence MIT) :
-    plus de 600 sites, téléchargés une fois par jour dans `styles-sites.json`
-    tant que la transparence des pages est activée. Ailleurs, seul le fond de
-    la page devient transparent.
   - **Barre latérale à la largeur voulue** : à gauche ou à droite, on tire sur
     son bord (côté page) pour l'élargir ; le titre des pages apparaît peu à peu
     à côté des pastilles. Double-clic sur le bord : taille d'origine.
@@ -140,8 +129,6 @@ Pour lancer les tests : `cargo test`.
 | `src/sitedata.rs` | Zoom et autorisations retenus par site (`sites.json`). |
 | `src/trackers.rs` | Liste des traqueurs et blocage (WebKit sous macOS, WebView2 sous Windows). |
 | `src/weight.rs` | Poids d'un onglet (mémoire, processeur, page ralentie). |
-| `src/glass.rs` | Effet de verre derrière la fenêtre (macOS, Windows). |
-| `src/sitestyles.rs` | Styles de transparence site par site (Zen Internet), téléchargés et gardés. |
 | `src/layers.rs` | Panneaux par-dessus la page : l'interface passe devant, découpée à leur forme. |
 | `assets/page.js` | Script injecté dans chaque page : raccourcis, son, recherche, menu des liens, autorisations. |
 | `assets/chrome.html` | L'interface (pastilles, barre, commandes, paramètres) en HTML/CSS. |
@@ -175,12 +162,9 @@ leur onglet et envoient des messages.
 - Autorisations : Feather répond avant le moteur pour les fonctions que la page
   appelle directement ; une demande faite depuis un cadre (iframe) reste
   traitée par le moteur.
-- Transparence : pas sous Linux. Un site absent des styles de Zen Internet ne
-  rend transparent que le fond de sa page ; ses blocs gardent leur couleur.
 - Suggestions sous la barre : seulement avec la barre à gauche ou à droite.
-- Panneaux par-dessus la page : la page est floutée derrière eux sous macOS
-  seulement ; sous Windows, ils restent opaques ; sous Linux, la page est
-  cachée pendant qu'un panneau est ouvert.
+- Panneaux par-dessus la page : pas sous Linux, où la page est cachée pendant
+  qu'un panneau est ouvert.
 - Icônes : Feather télécharge l'icône que le site indique lui-même (ou
   `/favicon.ico`), jamais via un service tiers, sans envoyer l'adresse de la
   page d'origine. Elle n'est gardée que pour les onglets ouverts.
