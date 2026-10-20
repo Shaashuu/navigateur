@@ -21,6 +21,7 @@ mod mac_mouse;
 mod network;
 mod settings;
 mod sitedata;
+mod sitestyles;
 mod storage;
 mod tab_manager;
 mod trackers;
@@ -82,6 +83,8 @@ pub enum UserEvent {
     Persist,
     /// Chaque seconde : progression des téléchargements, poids et veille des onglets.
     Tick,
+    /// Les styles des sites (transparence, Zen Internet) sont téléchargés.
+    SiteStyles(Result<sitestyles::SiteStyles, String>),
     /// Un minuteur (`/minuteur`) est arrivé à son terme.
     TimerDone { seconds: u64, label: String },
 }
@@ -126,6 +129,10 @@ struct App {
     library: Arc<RwLock<Library>>,
     /// Zoom et autorisations retenus par site.
     sites: Arc<RwLock<SiteData>>,
+    /// Styles de transparence site par site (voir `sitestyles.rs`).
+    site_styles: Option<sitestyles::SiteStyles>,
+    /// Ces styles sont en cours de téléchargement.
+    styles_loading: bool,
     /// Texte des pages visitées (recherche dans l'historique).
     fulltext: FullText,
     /// Notes de la commande `/note`.
@@ -215,6 +222,8 @@ fn main() -> wry::Result<()> {
         restart: None,
         library: Arc::new(RwLock::new(library)),
         sites: Arc::new(RwLock::new(SiteData::load())),
+        site_styles: sitestyles::SiteStyles::load(),
+        styles_loading: false,
         fulltext,
         notes: Notes::load(),
         downloads: Vec::new(),
@@ -240,6 +249,7 @@ fn main() -> wry::Result<()> {
         app.open_tab(&start_url, false);
     }
     app.apply_window_glass();
+    app.refresh_site_styles();
     if check_update {
         app.start_check(false);
     }
@@ -348,6 +358,7 @@ impl App {
             }
             UserEvent::Tick => self.tick(),
             UserEvent::TimerDone { seconds, label } => self.timer_done(seconds, &label),
+            UserEvent::SiteStyles(result) => self.site_styles_ready(result),
         }
         // L'onglet affiché a pu changer : s'il était en veille, on recharge sa page.
         self.wake_active();
@@ -835,6 +846,7 @@ impl App {
         if glass_changed {
             self.apply_window_glass();
             self.apply_page_glass_all();
+            self.refresh_site_styles();
         }
         self.relayout();
         // Les pages d'accueil ouvertes reprennent le nouveau prénom et thème.

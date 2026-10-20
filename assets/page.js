@@ -392,61 +392,19 @@
     }
   }
 
-  // Effet de verre sur le fond de la page : le fond de la page devient transparent
-  // et chaque bloc de couleur unie devient translucide. Le texte, les images, les
-  // vidéos et les dessins (canvas) ne changent pas. `alpha` : opacité des blocs
-  // (0 à 1) ; `null` : on remet la page comme elle était.
-  const glass = { alpha: null, style: null, observer: null, timer: 0, touched: new Set() };
-  const SKIP = /^(IMG|VIDEO|CANVAS|IFRAME|SVG|PICTURE|OBJECT|EMBED|INPUT|SELECT|TEXTAREA|BUTTON|FEATHER-MENU|FEATHER-TOAST)$/;
-  const glassify = (root) => {
-    if (glass.alpha == null || !root || root.nodeType !== 1) return;
-    const all = [root, ...root.querySelectorAll('*')];
-    for (const el of all) {
-      if (SKIP.test(el.tagName) || el === document.documentElement || el === document.body) continue;
-      if (el.__featherGlass !== undefined) continue;
-      const cs = getComputedStyle(el);
-      const m = cs.backgroundColor.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/);
-      if (!m) continue;
-      const a = m[4] === undefined ? 1 : Number(m[4]);
-      // Seuls les fonds pleins deviennent du verre : les fonds déjà translucides
-      // (survols, ombres) gardent leur aspect.
-      if (a < 0.9) continue;
-      el.__featherGlass = el.style.getPropertyValue('background-color');
-      el.__featherGlassPriority = el.style.getPropertyPriority('background-color');
-      el.style.setProperty('background-color', `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${glass.alpha})`, 'important');
-      glass.touched.add(el);
-    }
-  };
-  const unglass = () => {
-    for (const el of glass.touched) {
-      if (el.__featherGlass) el.style.setProperty('background-color', el.__featherGlass, el.__featherGlassPriority);
-      else el.style.removeProperty('background-color');
-      delete el.__featherGlass;
-      delete el.__featherGlassPriority;
-    }
-    glass.touched.clear();
-  };
-  window.__featherGlass = (alpha) => {
-    unglass();
-    if (glass.observer) { glass.observer.disconnect(); glass.observer = null; }
-    if (glass.style) { glass.style.remove(); glass.style = null; }
-    glass.alpha = typeof alpha === 'number' ? alpha : null;
-    if (glass.alpha == null) return;
-    glass.style = document.createElement('style');
-    glass.style.textContent = 'html,body{background-color:transparent!important}';
-    (document.head || document.documentElement).appendChild(glass.style);
-    glassify(document.body);
-    // Blocs ajoutés plus tard (menus, articles chargés en défilant), regroupés.
-    const pending = new Set();
-    glass.observer = new MutationObserver((list) => {
-      for (const r of list) for (const n of r.addedNodes) if (n.nodeType === 1) pending.add(n);
-      clearTimeout(glass.timer);
-      glass.timer = setTimeout(() => {
-        for (const n of pending) if (n.isConnected) glassify(n);
-        pending.clear();
-      }, 150);
-    });
-    glass.observer.observe(document.documentElement, { childList: true, subtree: true });
+  // Effet de verre sur le fond de la page : Feather envoie la feuille de style
+  // qui rend transparents le fond et les grands blocs de ce site (styles de Zen
+  // Internet), ou seulement le fond pour un site inconnu. Le texte, les images
+  // et les vidéos ne changent pas. `null` : on remet la page comme elle était.
+  let glassStyle = null;
+  window.__featherGlass = (css) => {
+    if (glassStyle) { glassStyle.remove(); glassStyle = null; }
+    if (typeof css !== 'string' || !css) return;
+    glassStyle = document.createElement('style');
+    glassStyle.textContent = css;
+    // Ajoutée au document lui-même : elle passe après les styles du site et
+    // survit aux sites qui remplacent leur <head>.
+    document.documentElement.appendChild(glassStyle);
   };
   // La page est prête : Feather répond avec son réglage de verre.
   const askGlass = () => post({ glass: true });
