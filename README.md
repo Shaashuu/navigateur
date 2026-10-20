@@ -135,6 +135,13 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   - **Capture de la page** (`Ctrl+Maj+S` ou `/capture`) : une image PNG de la
     partie visible, rangée dans le dossier des téléchargements et ajoutée à leur
     liste. `/capture copier` la met dans le presse-papiers.
+- **Nouveau en 0.3.7** :
+  - Un onglet mis en veille se recharge bien quand on y revient (il
+    s'ouvrait sur une page blanche).
+  - Bouton « Actualiser » entre les flèches et l'accueil.
+  - Menu du clic droit sur un onglet plus grand, ouvert à droite du curseur,
+    avec « Réglages du site web ».
+  - Barre latérale élargie : 300 px au plus.
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente

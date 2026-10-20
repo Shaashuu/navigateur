@@ -52,7 +52,7 @@ pub const ECONOMY_SLEEP_MINUTES: u32 = 5;
 /// Largeur la plus étroite de la barre latérale : les pastilles seules.
 pub const SIDEBAR_MIN: u32 = 56;
 /// Largeur la plus grande : les pastilles et le titre des pages.
-pub const SIDEBAR_MAX: u32 = 320;
+pub const SIDEBAR_MAX: u32 = 300;
 
 impl Default for Settings {
     fn default() -> Self {

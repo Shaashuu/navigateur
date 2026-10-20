@@ -119,19 +119,20 @@
   .favicon img { width: 16px; height: 16px; object-fit: contain; display: block; }
   /* Menu du clic droit sur un onglet : une petite bulle dans la colonne, la page reste visible */
   #ctx {
-    position: fixed; left: 3px; width: 50px; display: none; z-index: 20; padding: 4px 0;
-    background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+    position: fixed; display: none; z-index: 40; padding: 5px; min-width: 200px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
   }
   #ctx.open { display: block; }
   #ctx button {
-    display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%;
-    padding: 6px 0; font-size: 10px; color: var(--muted); border-radius: 8px;
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 9px 12px; font-size: 14px; color: var(--text); border-radius: 9px; text-align: left; white-space: nowrap;
   }
-  #ctx button:hover { background: var(--accent-soft); color: var(--text); }
+  #ctx button svg { width: 15px; height: 15px; flex: none; color: var(--muted); }
+  #ctx button:hover { background: var(--accent-soft); }
+  #ctx button:hover svg { color: var(--accent); }
   /* Barre à droite ou en haut (réglage « Position de la barre ») */
   body[data-pos="right"] #sidebar { left: auto; right: 0; }
   body[data-pos="right"] #overlay, body[data-pos="right"] #settings { left: 0; right: var(--side); }
-  body[data-pos="right"] #ctx { left: auto; right: 3px; }
   body[data-pos="top"] #sidebar {
     left: 0; right: 0; bottom: auto; width: auto; height: 44px; flex-direction: row;
     padding: 0 10px; gap: 6px; border-bottom: 1px solid var(--line);
@@ -174,9 +175,6 @@
   .ttl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
   .urlinput { border: 0; outline: none; background: transparent; color: var(--text); font-family: inherit; user-select: text; }
   .tab.editing { background: var(--surface) !important; box-shadow: 0 0 0 1.5px var(--accent); }
-  body[data-pos="top"] #ctx { top: 4px; width: auto; height: 36px; padding: 0 4px; }
-  body[data-pos="top"] #ctx.open { display: flex; }
-  body[data-pos="top"] #ctx button { flex-direction: row; gap: 6px; width: auto; height: 100%; padding: 0 10px; font-size: 12px; }
   /* Glisser-déposer */
   .tab.dragging { opacity: .6; transform: scale(1.15); cursor: grabbing; z-index: 2; }
   .tab.dragging .close, .tab.dragging .mute { display: none; }
@@ -584,6 +582,9 @@
         <button class="round" id="forward" title="Page suivante (Alt+→)" aria-label="Page suivante">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>
+        <button class="round" id="nav-reload" title="Actualiser (F5)" aria-label="Actualiser">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4v4.5H15"/></svg>
+        </button>
         <button class="round" id="home" title="Accueil" aria-label="Accueil">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z"/></svg>
         </button>
@@ -629,7 +630,7 @@
     <div class="help">Entrée pour valider · Échap pour revenir à la page</div>
   </div>
 
-  <div id="ctx"></div>
+  <div id="ctx" class="card"></div>
 
   <div id="strip" role="region" aria-label="Bandeau">
     <div id="st-find">
@@ -914,10 +915,18 @@
     else if (mode === 'library') closeLibrary();
     else if (mode === 'site') closeSite();
     else if (mode === 'group' || mode === 'import') closeSheet();
+    else if (mode === 'menu') closeTabMenu();
   }
 
   let ctxTimer = 0;
-  function closeTabMenu() { clearTimeout(ctxTimer); $('ctx').classList.remove('open'); }
+  // Le menu déborde sur la page : il passe par-dessus comme un panneau (mode 'menu').
+  function closeTabMenu(keep) {
+    clearTimeout(ctxTimer);
+    const box = $('ctx');
+    if (!box.classList.contains('open')) return;
+    box.classList.remove('open');
+    if (!keep && mode === 'menu') setMode(null);
+  }
   const PIN = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v7"/></svg>';
   const GROUP = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/></svg>';
   const BOOK = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5c-3.5-.5-6.5 0-8.5 1.5zM12 6.5v13"/></svg>';
@@ -931,7 +940,7 @@
     }
     // Fiche du site (onglet affiché seulement : elle décrit la page visible).
     if (tab.active && state.site) {
-      items.push(['<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.5"/></svg>', 'Site', 'Fiche du site : autorisations, zoom, données', () => openSite()]);
+      items.push(['<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.5"/></svg>', 'Réglages du site web', 'Autorisations, zoom et données de ce site', () => openSite()]);
     }
     if (tab.active && (tab.readable || tab.reading)) {
       items.push([BOOK, 'Lecture', tab.reading ? 'Quitter le mode lecture' : "Afficher l'article en mode lecture", () => send({ type: 'reader' })]);
@@ -951,24 +960,35 @@
     ], ev);
   }
   function showMenu(items, ev) {
-    const y = ev.clientY;
     const box = $('ctx');
     box.textContent = '';
     for (const [icon, text, title, run] of items) {
       const b = document.createElement('button');
       b.innerHTML = icon + '<span>' + text + '</span>';
       b.title = title;
-      b.addEventListener('click', (e) => { e.stopPropagation(); closeTabMenu(); run(); });
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeTabMenu(true);
+        run();
+        if (mode === 'menu') { setMode(null); send({ type: 'focus_page' }); }
+      });
       box.appendChild(b);
     }
     if (mode === 'bar') closeBar(false);
-    if (isTop()) {
-      box.style.top = '';
-      box.style.left = Math.max(4, Math.min(ev.clientX - 20, window.innerWidth - 150)) + 'px';
-    } else {
-      box.style.left = '';
-      box.style.top = Math.max(4, Math.min(y - 20, window.innerHeight - 8 - 44 * items.length)) + 'px';
-    }
+    if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
+    stopEdit();
+    // Juste à droite du curseur (à gauche s'il n'y a pas la place), sans sortir de la fenêtre.
+    box.style.visibility = 'hidden';
+    box.classList.add('open');
+    const w = box.offsetWidth;
+    const h = box.offsetHeight;
+    let x = ev.clientX + 12;
+    if (x + w > window.innerWidth - 6) x = Math.max(6, ev.clientX - 12 - w);
+    const y = Math.max(6, Math.min(ev.clientY - 8, window.innerHeight - h - 6));
+    box.style.left = x + 'px';
+    box.style.top = y + 'px';
+    box.style.visibility = '';
+    setMode('menu');
     box.classList.add('open');
     clearTimeout(ctxTimer);
     ctxTimer = setTimeout(closeTabMenu, 4000);
@@ -1220,10 +1240,10 @@
   }
 
   // Barre à gauche ou à droite : on l'élargit en tirant sur son bord, du côté
-  // de la page. Au moins la largeur d'origine, au plus 320 px (et la moitié de
+  // de la page. Au moins la largeur d'origine, au plus 300 px (et la moitié de
   // la fenêtre). Rust redimensionne la page à chaque image, enregistre au relâché.
   const SIDE_MIN = 56;
-  const SIDE_MAX = 320;
+  const SIDE_MAX = 300;
   let resize = null;
   let sideFrame = 0;
   function applySide(width) {
@@ -1535,6 +1555,13 @@
   // Les boutons de la barre ne doivent pas lui faire perdre le focus.
   $('reload').addEventListener('mousedown', (e) => e.preventDefault());
   $('reload').addEventListener('click', () => { closeBar(true); send({ type: 'reload' }); });
+  $('nav-reload').addEventListener('click', () => {
+    if (mode === 'bar') closeBar(false);
+    if (mode === 'settings') closeSettings();
+    if (isSheet()) setMode(null);
+    send({ type: 'reload' });
+    send({ type: 'focus_page' });
+  });
   for (const id of ['back', 'forward', 'home']) {
     $(id).addEventListener('click', () => {
       if (mode === 'bar') closeBar(false);
