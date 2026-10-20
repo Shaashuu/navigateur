@@ -1,6 +1,6 @@
 [package]
 name = "feather"
-version = "0.3.1"
+version = "0.3.2"
 description = "Feather : un navigateur léger en Rust (tao + wry)"
 edition = "2024"
 
