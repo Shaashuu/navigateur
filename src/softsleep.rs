@@ -14,6 +14,7 @@
 
 use std::time::Duration;
 
+use serde::Serialize;
 use wry::WebView;
 
 /// Un onglet caché depuis ce délai demande au moteur de libérer sa mémoire.
@@ -21,8 +22,9 @@ pub const ALLEGER_APRES: Duration = Duration::from_secs(2 * 60);
 /// Un onglet caché depuis ce délai est gelé.
 pub const GELER_APRES: Duration = Duration::from_secs(10 * 60);
 
-/// Où en est la veille douce d'un onglet.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+/// Où en est la veille douce d'un onglet (montré dans le gestionnaire des onglets).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Repos {
     #[default]
     Eveille,

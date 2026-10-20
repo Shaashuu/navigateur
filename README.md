@@ -95,13 +95,30 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   - **Adresses au lancement** : `feather https://exemple.fr https://autre.fr`
     ouvre chaque adresse dans un onglet.
   - **Banc de mesure de la mémoire** : voir « Mesurer la mémoire » plus bas.
+- **Prochaine version** :
+  - **Mémoire des onglets** (bouton sous les téléchargements, `Maj+Échap` ou
+    `/memoire`) : chaque onglet avec sa mémoire, son processeur et son état
+    (affiché, allégé, gelé, en veille), le total, et des boutons pour réveiller,
+    mettre en veille ou fermer. En bas : « Endormir les onglets cachés ».
+  - **Mode économie** (paramètres, ou `/economie`) : veille après 5 minutes au
+    plus, vidéos muettes des onglets cachés en pause (le son qu'on écoute
+    continue), vidéos qui démarrent seules bloquées jusqu'au premier clic sur la
+    page, traqueurs bloqués. Une petite feuille verte le signale.
+  - **Pages d'erreur Feather** (Windows, macOS) : pas de connexion, adresse
+    introuvable (avec une recherche proposée), site qui ne répond pas,
+    certificat invalide, site trop lent. « Réessayer », et rechargement tout
+    seul quand la connexion revient.
+  - **Fiche du site** (clic sur le cadenas de la barre, menu de l'onglet ou
+    `/site`) : connexion chiffrée ou non, autorisations retenues pour ce site
+    (à changer ou oublier), zoom, blocage des traqueurs, et « Effacer les
+    données de ce site » (cookies et stockage).
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
 ou suivante, `F5` ou `Ctrl+R` actualiser, `Ctrl+M` couper le son de l'onglet,
 `Ctrl+D` ajouter aux favoris, `Ctrl+,` paramètres, `Ctrl+F` chercher dans la
 page, `Ctrl++` / `Ctrl+-` / `Ctrl+0` zoom, `Ctrl+Maj+T` rouvrir l'onglet fermé,
-`Ctrl+Maj+N` onglet privé, `Ctrl+P` imprimer.
+`Ctrl+Maj+N` onglet privé, `Ctrl+P` imprimer, `Maj+Échap` mémoire des onglets.
 
 ## Lancer le navigateur
 
@@ -142,11 +159,14 @@ Pour lancer les tests : `cargo test`.
 | `src/trackers.rs` | Liste des traqueurs et blocage (WebKit sous macOS, WebView2 sous Windows). |
 | `src/weight.rs` | Poids d'un onglet (mémoire, processeur, page ralentie). |
 | `src/softsleep.rs` | Veille douce des onglets cachés (Windows : mémoire réduite, puis page gelée). |
+| `src/errorpage.rs` | Pages d'erreur Feather et détection des chargements en échec. |
+| `src/siteclear.rs` | « Effacer les données de ce site » (fiche du site). |
 | `outils/banc-memoire.*` | Banc de mesure de la mémoire (macOS et Windows). |
 | `src/layers.rs` | Panneaux par-dessus la page : l'interface passe devant, découpée à leur forme. |
 | `assets/page.js` | Script injecté dans chaque page : raccourcis, son, recherche, menu des liens, autorisations. |
 | `assets/chrome.html` | L'interface (pastilles, barre, commandes, paramètres) en HTML/CSS. |
 | `assets/home.html` | La page d'accueil. |
+| `assets/error.html` | Le modèle des pages d'erreur. |
 
 L'interface est une webview placée sous les pages : elle dessine la colonne de
 gauche, et la page de l'onglet actif occupe le reste. Quand un panneau s'ouvre
@@ -182,7 +202,11 @@ leur onglet et envoient des messages.
 - Icônes : Feather télécharge l'icône que le site indique lui-même (ou
   `/favicon.ico`), jamais via un service tiers, sans envoyer l'adresse de la
   page d'origine. Elle n'est gardée que pour les onglets ouverts.
-- Sur Linux, seul X11 a été essayé (pas Wayland).
+- Sur Linux, seul X11 a été essayé (pas Wayland). Pas de pages d'erreur Feather
+  ni d'effacement des données d'un site sous Linux.
+- Pages d'erreur : pas de « Continuer quand même » sur un certificat invalide.
+  Sous Windows, « Précédent » depuis une page d'erreur recule de deux pages
+  (le moteur garde la page en échec juste avant).
 - L'icône de son repère les balises vidéo et audio de la page, pas les sons
   produits par Web Audio ni ceux des vidéos intégrées dans un cadre (iframe).
 

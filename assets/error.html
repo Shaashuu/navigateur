@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="fr" data-theme="{{THEME}}">
+<head>
+<meta charset="utf-8">
+<title>{{TITLE}}</title>
+<style>
+  /* Mêmes couleurs et même typographie que l'accueil (home.html). */
+  :root { --bg: #f4f3ef; --surface: #ffffff; --text: #1d1d1f; --muted: #8a8a8e; --line: #e2e0da; --accent: #5b5bd6; --danger: #e5484d; --shadow: 0 6px 24px rgba(0,0,0,.08); }
+  :root[data-mode="dark"] { --bg: #17171a; --surface: #222226; --text: #ececef; --muted: #7d7d85; --line: #34343a; --accent: #8f8ff5; --shadow: 0 6px 24px rgba(0,0,0,.45); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  main {
+    width: min(520px, 100%); padding: 32px 34px; border-radius: 20px;
+    background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
+  }
+  .ico { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--bg); color: var(--accent); }
+  .certificate .ico { color: var(--danger); }
+  h1 { margin: 18px 0 8px; font-size: 22px; font-weight: 600; }
+  .certificate h1 { color: var(--danger); }
+  p { margin: 0 0 10px; line-height: 1.5; }
+  .muted { color: var(--muted); font-size: 14px; }
+  b { font-weight: 600; word-break: break-all; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  button, a.b {
+    height: 38px; padding: 0 18px; border-radius: 19px; border: 1px solid var(--line);
+    background: none; color: var(--text); font: inherit; font-size: 14px; cursor: pointer;
+    display: inline-flex; align-items: center; text-decoration: none;
+  }
+  button:hover, a.b:hover { border-color: var(--accent); }
+  .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  code { display: block; margin-top: 22px; font-size: 12px; color: var(--muted); }
+  [hidden] { display: none !important; }
+</style>
+<script>
+  (() => {
+    const root = document.documentElement;
+    const dark = matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      const t = root.dataset.theme;
+      root.dataset.mode = t === 'dark' || (t !== 'light' && dark.matches) ? 'dark' : 'light';
+    };
+    apply();
+    if (dark.addEventListener) dark.addEventListener('change', apply); else dark.addListener(apply);
+  })();
+</script>
+</head>
+<body>
+  <main class="{{KIND}}" data-url="{{URL}}">
+    <div class="ico">{{ICON}}</div>
+    <h1>{{TITLE}}</h1>
+    <p>{{MESSAGE}}</p>
+    <p class="muted">{{ADVICE}}</p>
+    <div class="buttons">
+      <button type="button" class="primary" id="retry">Réessayer</button>
+      <a class="b" id="search" href="{{SEARCH}}" {{SEARCH_HIDDEN}}>Chercher « {{HOST}} » sur le web</a>
+    </div>
+    <code>{{CODE}}</code>
+  </main>
+<script>
+  // L'adresse en échec remplace cette page dans l'historique : « Précédent »
+  // ne revient pas sur l'erreur.
+  (() => {
+    const url = document.querySelector('main').dataset.url;
+    const retry = () => { if (/^https?:\/\//.test(url)) location.replace(url); };
+    document.getElementById('retry').addEventListener('click', retry);
+    const search = document.getElementById('search');
+    search.addEventListener('click', (e) => { e.preventDefault(); location.replace(search.href); });
+    // La connexion revient : on recharge seul.
+    window.addEventListener('online', () => setTimeout(retry, 500));
+  })();
+</script>
+</body>
+</html>

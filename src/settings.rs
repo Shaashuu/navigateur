@@ -41,7 +41,13 @@ pub struct Settings {
     pub index_pages: bool,
     /// Largeur de la barre à gauche ou à droite, en pixels (voir `SIDEBAR_MIN`).
     pub sidebar_width: u32,
+    /// Mode économie : veille plus tôt, vidéos cachées en pause, lecture
+    /// automatique bloquée, traqueurs bloqués (voir `sleep_after` et `assets/page.js`).
+    pub economy: bool,
 }
+
+/// En mode économie, un onglet caché passe en veille au plus tard après ce délai.
+pub const ECONOMY_SLEEP_MINUTES: u32 = 5;
 
 /// Largeur la plus étroite de la barre latérale : les pastilles seules.
 pub const SIDEBAR_MIN: u32 = 56;
@@ -65,6 +71,7 @@ impl Default for Settings {
             sleep_minutes: 30,
             index_pages: true,
             sidebar_width: SIDEBAR_MIN,
+            economy: false,
         }
     }
 }
@@ -141,6 +148,21 @@ impl Settings {
         self
     }
 
+    /// Délai de mise en veille d'un onglet caché, en minutes (0 : jamais),
+    /// raccourci par le mode économie.
+    pub fn sleep_after(&self) -> u32 {
+        match (self.economy, self.sleep_minutes) {
+            (false, minutes) => minutes,
+            (true, 0) => ECONOMY_SLEEP_MINUTES,
+            (true, minutes) => minutes.min(ECONOMY_SLEEP_MINUTES),
+        }
+    }
+
+    /// Les traqueurs sont bloqués : réglage choisi, ou mode économie.
+    pub fn blocks_trackers(&self) -> bool {
+        self.block_trackers || self.economy
+    }
+
     /// Adresse du bouton maison et du démarrage.
     pub fn start_url(&self) -> String {
         if self.home_page.is_empty() {
@@ -179,5 +201,18 @@ mod tests {
         assert_eq!(narrow.sidebar_width, SIDEBAR_MIN);
         let wide = Settings { sidebar_width: 5000, ..Default::default() }.cleaned();
         assert_eq!(wide.sidebar_width, SIDEBAR_MAX);
+    }
+
+    #[test]
+    fn mode_economie() {
+        let normal = Settings { sleep_minutes: 30, block_trackers: false, ..Default::default() };
+        assert_eq!(normal.sleep_after(), 30);
+        assert!(!normal.blocks_trackers());
+        let eco = Settings { economy: true, ..normal.clone() };
+        assert_eq!(eco.sleep_after(), ECONOMY_SLEEP_MINUTES);
+        assert!(eco.blocks_trackers());
+        // « Jamais » devient 5 minutes ; un délai plus court est gardé.
+        assert_eq!(Settings { sleep_minutes: 0, ..eco.clone() }.sleep_after(), ECONOMY_SLEEP_MINUTES);
+        assert_eq!(Settings { sleep_minutes: 2, ..eco }.sleep_after(), 2);
     }
 }

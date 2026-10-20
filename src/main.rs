@@ -11,6 +11,7 @@
 
 mod commands;
 mod downloads;
+mod errorpage;
 mod features;
 mod fulltext;
 mod layers;
@@ -19,6 +20,7 @@ mod library;
 mod mac_mouse;
 mod network;
 mod settings;
+mod siteclear;
 mod sitedata;
 mod softsleep;
 mod storage;
@@ -68,6 +70,8 @@ pub enum UserEvent {
     Title(TabId, String),
     /// Début (`true`) ou fin (`false`) de chargement, avec l'adresse.
     PageLoad(TabId, bool, String),
+    /// Le chargement de cette adresse a échoué : on affiche une page d'erreur Feather.
+    LoadFailed { id: TabId, url: String, kind: errorpage::ErrorKind },
     /// `window.open` ; `private` : la page qui l'a demandé est privée.
     OpenInNewTab { url: String, private: bool },
     Update(UpdateEvent),
@@ -289,7 +293,8 @@ impl App {
             }
             UserEvent::Title(id, title) => {
                 if let Some(tab) = self.tabs.get_mut(id) {
-                    if !tab.private {
+                    // Le titre d'une page d'erreur ne remplace pas celui de la page dans l'historique.
+                    if !tab.private && tab.failed.is_none() {
                         if let Ok(mut lib) = self.library.write() {
                             lib.set_title(tab.url(), &title);
                         }
@@ -301,6 +306,16 @@ impl App {
             }
             UserEvent::PageLoad(id, loading, url) => {
                 if let Some(tab) = self.tabs.get_mut(id) {
+                    // Page d'erreur demandée par Feather : l'onglet garde l'adresse en
+                    // échec (barre, « Réessayer », session). Une page d'erreur ouverte
+                    // autrement (lien d'un site) garde la sienne : rien à usurper.
+                    let url = match errorpage::parse(&url) {
+                        Some(failed) if tab.failed.as_ref() == Some(&failed) => failed.1,
+                        _ => {
+                            tab.failed = None;
+                            url
+                        }
+                    };
                     // Autre site : on efface l'icône de l'ancien en attendant celle du nouveau.
                     if loading && network::host_of(tab.url()) != network::host_of(&url) {
                         tab.icon = None;
@@ -311,6 +326,7 @@ impl App {
                     // Un onglet privé ne laisse aucune trace dans l'historique.
                     if !loading
                         && !tab.private
+                        && tab.failed.is_none()
                         && let Ok(mut lib) = self.library.write()
                     {
                         lib.record_visit(tab.url(), &tab.title);
@@ -325,8 +341,10 @@ impl App {
                     }
                 }
                 self.apply_zoom(id);
+                self.apply_economy(id);
                 self.push_state();
             }
+            UserEvent::LoadFailed { id, url, kind } => self.load_failed(id, url, kind),
             // window.open : seules les pages web sont acceptées. Avant, une page
             // pouvait ouvrir ainsi un onglet sur file:// (fichiers de l'ordinateur).
             UserEvent::OpenInNewTab { url, private } => {
@@ -499,8 +517,22 @@ impl App {
                 }
             }
             ChromeMessage::SleepTab { id } => {
-                self.tabs.sleep(id);
+                if self.tabs.sleep(id) {
+                    self.schedule_reap();
+                }
             }
+            ChromeMessage::SleepHidden => {
+                if self.tabs.sleep_hidden() {
+                    self.schedule_reap();
+                }
+            }
+            ChromeMessage::SetPermission { host, permission, allow } => {
+                if let Ok(mut sites) = self.sites.write() {
+                    sites.set_permission(&host, permission, allow);
+                }
+                self.schedule_persist();
+            }
+            ChromeMessage::ClearSiteData => self.clear_site_data(),
         }
         self.push_state();
     }
@@ -513,6 +545,7 @@ impl App {
         if let Some(site) = message.site {
             if let Some(tab) = self.tabs.get_mut(id)
                 && !network::is_home(tab.url())
+                && tab.failed.is_none()
             {
                 let (icon, name) = ui::clean_site(site);
                 tab.icon = icon;
@@ -584,9 +617,9 @@ impl App {
     fn handle_shortcut(&mut self, id: Option<TabId>, shortcut: Shortcut) {
         match shortcut {
             Shortcut::FocusBar => self.focus_bar(),
-            Shortcut::Back => self.with_active(|w| w.go_back()),
+            Shortcut::Back => self.go_back(),
             Shortcut::Forward => self.with_active(|w| w.go_forward()),
-            Shortcut::Reload => self.with_active(|w| w.reload()),
+            Shortcut::Reload => self.reload(),
             Shortcut::Settings => self.focus_chrome("navigateur.openSettings()"),
             Shortcut::NewTab => self.open_new_tab(),
             Shortcut::CloseTab => {
@@ -618,6 +651,7 @@ impl App {
             }
             Shortcut::Print => self.with_active(|w| w.print()),
             Shortcut::NewPrivateTab => self.open_tab(network::HOME_URL, true),
+            Shortcut::TaskManager => self.focus_chrome("navigateur.openMemory()"),
         }
     }
 
@@ -815,13 +849,20 @@ impl App {
         if before.index_pages && !settings.index_pages {
             self.fulltext.clear();
         }
-        if before.block_trackers != settings.block_trackers {
+        if before.blocks_trackers() != settings.blocks_trackers() {
             for w in self.tabs.iter().filter_map(|t| t.webview()) {
-                trackers::set_enabled(w, settings.block_trackers);
+                trackers::set_enabled(w, settings.blocks_trackers());
             }
         }
+        let economy_changed = before.economy != settings.economy;
         if let Ok(mut current) = self.settings.write() {
             *current = settings;
+        }
+        if economy_changed {
+            let ids: Vec<TabId> = self.tabs.iter().map(|t| t.id).collect();
+            for id in ids {
+                self.apply_economy(id);
+            }
         }
         self.relayout();
         // Les pages d'accueil ouvertes reprennent le nouveau prénom et thème.
@@ -975,6 +1016,7 @@ impl App {
             "permission_prompt": self.permission_prompt(),
             "native_commands": commands,
             "overlay": layers::SUPPORTED,
+            "site": self.site_info(),
         });
         drop(lib);
         self.chrome_call(&format!("navigateur.setState({state})"));

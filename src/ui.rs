@@ -166,10 +166,20 @@ pub enum ChromeMessage {
         host: String,
         permission: Permission,
     },
-    /// Met un onglet en veille (menu de l'onglet).
+    /// Met un onglet en veille (menu de l'onglet, gestionnaire des onglets).
     SleepTab {
         id: TabId,
     },
+    /// Met en veille tous les onglets cachés (gestionnaire des onglets).
+    SleepHidden,
+    /// Change une autorisation retenue pour un site (fiche du site).
+    SetPermission {
+        host: String,
+        permission: Permission,
+        allow: bool,
+    },
+    /// Efface les cookies et le stockage du site de l'onglet actif (fiche du site).
+    ClearSiteData,
     /// Annule un téléchargement en cours.
     CancelDownload {
         id: u32,
@@ -313,6 +323,8 @@ pub enum Shortcut {
     ReopenTab,
     Print,
     NewPrivateTab,
+    /// Maj+Échap : gestionnaire des onglets (mémoire et processeur).
+    TaskManager,
 }
 
 /// Zone occupée par les pages : tout sauf la barre (à gauche, à droite ou en
@@ -363,7 +375,7 @@ pub fn home_page(settings: &Settings, bookmarks: &[Bookmark]) -> String {
 /// Remplace les `{{CLÉ}}` du modèle en une seule passe. Avec des `replace`
 /// enchaînés, un prénom contenant « {{BOOKMARKS}} » était lui-même remplacé
 /// par les favoris : le texte inséré n'est plus jamais relu ici.
-fn fill_template(template: &str, values: &[(&str, String)]) -> String {
+pub(crate) fn fill_template(template: &str, values: &[(&str, String)]) -> String {
     let mut out = String::with_capacity(template.len());
     let mut rest = template;
     while let Some(start) = rest.find("{{") {
@@ -412,7 +424,7 @@ fn bookmark_tiles(bookmarks: &[Bookmark]) -> String {
     }
 }
 
-fn escape_html(text: &str) -> String {
+pub(crate) fn escape_html(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -475,6 +487,15 @@ mod tests {
         let m: ChromeMessage =
             serde_json::from_str(r#"{"type":"shortcut","shortcut":"next_tab"}"#).unwrap();
         assert!(matches!(m, ChromeMessage::Shortcut { shortcut: Shortcut::NextTab }));
+        let m: ChromeMessage = serde_json::from_str(
+            r#"{"type":"set_permission","host":"meet.jit.si","permission":"camera","allow":true}"#,
+        )
+        .unwrap();
+        assert!(matches!(m, ChromeMessage::SetPermission { allow: true, .. }));
+        assert!(matches!(
+            serde_json::from_str::<ChromeMessage>(r#"{"type":"sleep_hidden"}"#).unwrap(),
+            ChromeMessage::SleepHidden
+        ));
     }
 
     #[test]

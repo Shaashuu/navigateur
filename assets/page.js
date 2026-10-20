@@ -24,6 +24,7 @@
     else if (ctrl && k === 'tab') a = e.shiftKey ? 'previous_tab' : 'next_tab';
     else if (ctrl && k === ',') a = 'settings';
     else if (ctrl && k === 'd') a = 'toggle_bookmark';
+    else if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && k === 'escape') a = 'task_manager';
     if (a) { e.preventDefault(); e.stopPropagation(); send(a); }
   }, true);
 
@@ -144,6 +145,34 @@
       report();
     }, true);
   }
+  // Mode économie (réglage de Feather, prévenu par __featherSetEconomy) :
+  // - une vidéo qui démarre seule, avant tout clic ou touche sur la page, est mise en pause ;
+  // - quand l'onglet est caché, les vidéos muettes ou silencieuses sont mises en
+  //   pause, puis reprennent au retour. Le son qu'on écoute continue.
+  let economy = window.__featherEconomy === true;
+  let acted = false;
+  for (const type of ['pointerdown', 'keydown']) {
+    window.addEventListener(type, (e) => { if (e.isTrusted) acted = true; }, true);
+  }
+  const userActed = () => acted || !!(navigator.userActivation && navigator.userActivation.hasBeenActive);
+  document.addEventListener('play', (e) => {
+    const m = e.target;
+    if (economy && m instanceof HTMLVideoElement && !userActed()) m.pause();
+  }, true);
+  const pausedHidden = new Set();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      if (!economy) return;
+      for (const m of document.querySelectorAll('video')) {
+        if (!m.paused && !m.ended && !audible(m)) { m.pause(); pausedHidden.add(m); }
+      }
+    } else {
+      for (const m of pausedHidden) if (m.isConnected) m.play().catch(() => {});
+      pausedHidden.clear();
+    }
+  });
+  window.__featherSetEconomy = (on) => { economy = on === true; };
+
   // Icône et nom du site, pour la pastille de l'onglet. On passe par l'icône que le
   // site indique lui-même (ou /favicon.ico), jamais par un service tiers.
   let lastSite = '';
