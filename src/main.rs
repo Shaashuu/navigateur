@@ -9,6 +9,7 @@
 //! `features.rs` ajoute la recherche dans la page, le zoom, les autorisations,
 //! les commandes natives, la mise en veille et le suivi des téléchargements.
 
+mod adblock;
 mod capture;
 mod commands;
 mod downloads;
@@ -93,6 +94,10 @@ pub enum UserEvent {
     TimerDone { seconds: u64, label: String },
     /// Fin d'une capture de page : le fichier écrit (`None` : copiée), ou l'erreur.
     Captured(Result<Option<PathBuf>, String>),
+    /// Listes du bloqueur lues (ou leur état seul : téléchargement, erreur).
+    AdFilters(Option<Box<adblock::Filters>>, adblock::Status),
+    /// macOS : les listes compilées par WebKit sont prêtes à être posées sur les pages.
+    AdRulesReady,
 }
 
 /// Résultat d'un travail de mise à jour fait en arrière-plan.
@@ -158,6 +163,8 @@ struct App {
     reader: reader::Store,
     /// Secondes écoulées (pour ne mesurer le poids des onglets que toutes les 5 s).
     ticks: u64,
+    /// Listes du bloqueur de publicités (affiché dans les paramètres).
+    adblock: adblock::Status,
 }
 
 fn main() -> wry::Result<()> {
@@ -236,7 +243,11 @@ fn main() -> wry::Result<()> {
         sampler: Sampler::default(),
         reader: reader::Store::default(),
         ticks: 0,
+        adblock: adblock::Status::default(),
     };
+    adblock::set_enabled(app.read_settings().blocks_ads());
+    adblock::set_sites_off(app.sites.read().map(|s| s.ads_off()).unwrap_or_default());
+    adblock::load(app.proxy.clone(), false);
     let session = library::load_session();
     // Adresses données au lancement (« Ouvrir avec Feather », banc de mesure de la
     // mémoire `outils/banc-memoire`) : une par onglet, la première affichée.
@@ -372,6 +383,15 @@ impl App {
                     }
                     tab.loading = loading;
                     tab.set_url(url);
+                    // Bloqueur posé ou retiré selon le site (macOS ; voir `adblock::apply`).
+                    let host = tab.host();
+                    let ads = adblock::active_on(&host);
+                    if tab.ads != Some(ads)
+                        && let Some(w) = tab.webview()
+                    {
+                        adblock::apply(w, &host);
+                        tab.ads = Some(ads);
+                    }
                     // Un onglet privé ne laisse aucune trace dans l'historique.
                     if !loading
                         && !tab.private
@@ -418,6 +438,11 @@ impl App {
             UserEvent::Tick => self.tick(),
             UserEvent::TimerDone { seconds, label } => self.timer_done(seconds, &label),
             UserEvent::Captured(result) => self.captured(result),
+            UserEvent::AdFilters(filters, status) => self.ad_filters(filters, status),
+            UserEvent::AdRulesReady => {
+                self.reapply_ads();
+                adblock::applied_everywhere();
+            }
         }
         // L'onglet affiché a pu changer : s'il était en veille, on recharge sa page.
         self.wake_active();
@@ -586,6 +611,11 @@ impl App {
                 self.schedule_persist();
             }
             ChromeMessage::ClearSiteData => self.clear_site_data(),
+            ChromeMessage::SetSiteAds { host, on } => self.set_site_ads(&host, on),
+            ChromeMessage::UpdateAdLists => {
+                self.adblock.updating = true;
+                adblock::load(self.proxy.clone(), true);
+            }
             ChromeMessage::PinTab { id, pinned } => self.tabs.set_pinned(id, pinned),
             ChromeMessage::GroupTab { id, group } => self.tabs.set_group(id, group),
             ChromeMessage::NewGroup { id, name } => {
@@ -679,6 +709,9 @@ impl App {
         }
         if let Some(request) = message.permission {
             self.ask_permission(id, request);
+        }
+        if let Some(request) = message.cosmetic {
+            self.hide_ads(id, request);
         }
         // Seule la page d'accueil intégrée a le droit d'utiliser sa barre de recherche.
         let Some(tab) = self.tabs.get(id) else { return };
@@ -947,6 +980,8 @@ impl App {
                 trackers::set_enabled(w, settings.blocks_trackers());
             }
         }
+        let ads_changed = before.blocks_ads() != settings.blocks_ads();
+        adblock::set_enabled(settings.blocks_ads());
         let economy_changed = before.economy != settings.economy;
         if let Ok(mut current) = self.settings.write() {
             *current = settings;
@@ -956,6 +991,9 @@ impl App {
             for id in ids {
                 self.apply_economy(id);
             }
+        }
+        if ads_changed {
+            self.reapply_ads();
         }
         self.relayout();
         // Les pages d'accueil ouvertes reprennent le nouveau prénom et thème.
@@ -1117,6 +1155,7 @@ impl App {
             "overlay": layers::SUPPORTED,
             "site": self.site_info(),
             "groups": self.tabs.groups(),
+            "adblock": self.adblock,
         });
         drop(lib);
         self.chrome_call(&format!("navigateur.setState({state})"));

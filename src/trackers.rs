@@ -5,6 +5,8 @@
 //! - macOS : une liste de règles WebKit (`WKContentRuleList`), compilée une fois ;
 //! - Windows : l'événement `WebResourceRequested` de WebView2, qui répond 403 ;
 //! - Linux : pas encore pris en charge (Feather n'y est pas distribué).
+//!
+//! Sous Windows, le même événement sert au bloqueur de publicités (`adblock.rs`).
 
 // Le filtrage requête par requête ne sert que sous Windows (WebKit applique
 // ses propres règles) ; ailleurs, il n'est utilisé que par les tests.
@@ -212,14 +214,14 @@ mod platform {
             }
             let handler = WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
                 let Some(args) = args else { return Ok(()) };
-                if !ENABLED.load(Ordering::Relaxed) {
-                    return Ok(());
-                }
                 let mut uri = PWSTR::null();
                 args.Request()?.Uri(&mut uri)?;
                 let uri = take_pwstr(uri);
                 let page = page_host.read().map(|h| h.clone()).unwrap_or_default();
-                if super::should_block(&uri, &page) {
+                // Traqueurs (liste courte de Feather), puis publicités (voir adblock.rs).
+                let blocked = (ENABLED.load(Ordering::Relaxed) && super::should_block(&uri, &page))
+                    || crate::adblock::should_block(super::host_of(&uri), &page);
+                if blocked {
                     let response = env.CreateWebResourceResponse(
                         None,
                         403,
