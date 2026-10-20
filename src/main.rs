@@ -318,7 +318,9 @@ impl App {
                 }
             }
             UserEvent::Title(id, title) => {
-                if let Some(tab) = self.tabs.get_mut(id) {
+                // Une page qu'on vient d'endormir passe par about:blank (voir `stop_page`) :
+                // son titre ne remplace pas celui de l'onglet.
+                if let Some(tab) = self.tabs.get_mut(id).filter(|t| !t.is_asleep()) {
                     // Le titre d'une page d'erreur ne remplace pas celui de la page dans l'historique.
                     if !tab.private && !tab.on_internal_page() {
                         if let Ok(mut lib) = self.library.write() {
@@ -331,7 +333,11 @@ impl App {
                 self.push_state();
             }
             UserEvent::PageLoad(id, loading, url) => {
-                if let Some(tab) = self.tabs.get_mut(id) {
+                // La page d'un onglet mis en veille charge about:blank avant d'être
+                // détruite : sans ce filtre, l'onglet retenait cette adresse et se
+                // réveillait sur une page blanche.
+                let tab = self.tabs.get_mut(id).filter(|t| !t.is_asleep() && url != "about:blank");
+                if let Some(tab) = tab {
                     // Page d'erreur demandée par Feather : l'onglet garde l'adresse en
                     // échec (barre, « Réessayer », session). Une page d'erreur ouverte
                     // autrement (lien d'un site) garde la sienne : rien à usurper.
