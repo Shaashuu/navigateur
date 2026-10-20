@@ -387,6 +387,65 @@
   #s-perms .perm em { font-style: normal; color: var(--muted); }
   #s-perms button { height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid var(--line); }
   #s-perms .none { color: var(--muted); }
+  /* Gestionnaire des onglets : mémoire et processeur de chaque onglet */
+  .row .u.w1 { color: #c98a0b; }
+  .row .u.w2 { color: var(--danger); }
+  .row .mem { flex: none; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .row .mem.w1 { color: #c98a0b; }
+  .row .mem.w2 { color: var(--danger); font-weight: 600; }
+  .row:hover .mem { display: none; }
+  #lib-list .total { display: flex; justify-content: space-between; margin: 4px 10px 8px; font-size: 13px; color: var(--muted); }
+  #lib-list .total b { color: var(--text); font-variant-numeric: tabular-nums; }
+  #library .foot button.plain { border-color: var(--accent); color: var(--accent); white-space: nowrap; flex: none; margin-left: 10px; }
+
+  /* Mode économie : une petite feuille sur la pastille de recherche (ou sur
+     l'engrenage quand la barre est en haut) */
+  .leaf {
+    position: absolute; right: -5px; bottom: -5px; width: 15px; height: 15px; border-radius: 50%;
+    display: none; place-items: center; background: #2f9e5b; color: #fff; border: 1.5px solid var(--bg);
+  }
+  #search-pill, #gear { position: relative; }
+  body.eco:not([data-pos="top"]) #search-pill .leaf { display: grid; }
+  body.eco[data-pos="top"] #gear .leaf { display: grid; right: 2px; bottom: 2px; }
+  #settings .hint { margin: 4px 0 0 26px; font-size: 12px; color: var(--muted); }
+
+  /* Fiche du site : sous la barre de recherche, ouverte par le cadenas */
+  #lock.clickable { cursor: pointer; width: 30px; height: 30px; border-radius: 15px; margin-left: -8px; }
+  #lock.clickable:hover { background: var(--accent-soft); }
+  #site {
+    position: fixed; left: var(--side); right: 0; top: 0; bottom: 0; display: none;
+    justify-content: center; align-items: flex-start; padding: calc(22vh + 64px) 24px 12px; pointer-events: none;
+  }
+  body.site #site { display: flex; }
+  body[data-pos="right"] #site { left: 0; right: var(--side); }
+  body[data-pos="top"] #site { left: 0; top: 44px; padding-top: 12px; }
+  #site .panel {
+    width: min(420px, 100%); max-height: 100%; overflow-y: auto; pointer-events: auto; padding: 18px 20px 20px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
+  }
+  #site .head { display: flex; align-items: center; gap: 10px; }
+  #site .head .ic { flex: none; color: var(--accent); }
+  #site .head .ic.insecure { color: var(--danger); }
+  #site-host { flex: 1; min-width: 0; margin: 0; font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #site-close { width: 30px; height: 30px; border-radius: 15px; color: var(--muted); font-size: 18px; flex: none; }
+  #site-close:hover { background: var(--accent-soft); color: var(--text); }
+  #site-conn { margin: 4px 0 0 26px; font-size: 13px; color: var(--muted); }
+  #site-conn.insecure { color: var(--danger); }
+  #site h3 { margin: 18px 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  #site .line { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  #site .line:last-child { border-bottom: 0; }
+  #site .line > span:first-child { flex: 1; min-width: 0; }
+  #site .line .v { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #site .seg { display: flex; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; flex: none; }
+  #site .seg button { height: 26px; padding: 0 10px; font-size: 12px; color: var(--muted); }
+  #site .seg button.on { background: var(--accent-soft); color: var(--text); }
+  #site .seg button + button { border-left: 1px solid var(--line); }
+  #site .small { height: 26px; min-width: 26px; padding: 0 9px; border-radius: 13px; border: 1px solid var(--line); font-size: 12px; flex: none; }
+  #site .small:hover { border-color: var(--accent); }
+  #site .none { font-size: 13px; color: var(--muted); padding: 4px 0; }
+  #site-clear { margin-top: 18px; width: 100%; height: 36px; border-radius: 18px; border: 1px solid var(--line); color: var(--danger); }
+  #site-clear.confirm { background: var(--danger); border-color: var(--danger); color: #fff; }
+
   /* Panneaux par-dessus la page (macOS et Windows, voir layers.rs) : l'interface
      passe devant la page, qui reste visible autour des panneaux. Tout élément
      .card visible pendant qu'un panneau est ouvert fait partie de la forme
@@ -431,6 +490,7 @@
     <div id="top">
       <button class="round" id="gear" title="Paramètres (Ctrl+,)" aria-label="Paramètres">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        <span class="leaf" aria-hidden="true"><svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4C10 4 4 9 4 16c0 1.4.3 2.7.8 3.8C6 15 9 11.5 14 9.5 10 12 7.6 15.4 6.6 20.4 8 21.4 9.6 22 11.4 22 18 22 21 15 20 4z"/></svg></span>
       </button>
       <div id="nav">
         <button class="round" id="back" title="Page précédente (Alt+←)" aria-label="Page précédente">
@@ -453,11 +513,15 @@
         <button class="round" id="lib-downloads" title="Téléchargements" aria-label="Téléchargements">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>
         </button>
+        <button class="round" id="lib-memory" title="Mémoire des onglets (Maj+Échap)" aria-label="Mémoire des onglets">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M10 10h4v4h-4zM9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></svg>
+        </button>
       </div>
     </div>
     <div id="middle">
       <button id="search-pill" hidden aria-label="Rechercher ou aller à une adresse (Ctrl+L)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span class="leaf" aria-hidden="true"><svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4C10 4 4 9 4 16c0 1.4.3 2.7.8 3.8C6 15 9 11.5 14 9.5 10 12 7.6 15.4 6.6 20.4 8 21.4 9.6 22 11.4 22 18 22 21 15 20 4z"/></svg></span>
       </button>
       <div id="pills"></div>
       <button class="round" id="new-tab" aria-label="Nouvel onglet (Ctrl+T)">+</button>
@@ -466,7 +530,7 @@
 
   <div id="overlay">
     <div id="bar" class="card">
-      <span id="lock" hidden></span>
+      <span id="lock" hidden role="button" tabindex="-1"></span>
       <svg id="loupe" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="input" spellcheck="false" autocomplete="off"
              placeholder="Aller à, chercher, ou taper / pour une commande">
@@ -513,6 +577,27 @@
         <span id="lib-hint"></span>
         <button type="button" id="lib-clear" hidden></button>
       </div>
+    </div>
+  </div>
+
+  <div id="site">
+    <div class="panel card" role="dialog" aria-labelledby="site-host">
+      <div class="head">
+        <span class="ic" id="site-ic"></span>
+        <h2 id="site-host"></h2>
+        <button type="button" id="site-close" title="Fermer (Échap)" aria-label="Fermer">&times;</button>
+      </div>
+      <div id="site-conn"></div>
+      <h3>Autorisations retenues</h3>
+      <div id="site-perms"></div>
+      <h3>Affichage et vie privée</h3>
+      <div class="line"><span>Zoom</span><span class="v" id="site-zoom"></span>
+        <button type="button" class="small" id="site-zoom-out" title="Réduire (Ctrl+moins)">&minus;</button>
+        <button type="button" class="small" id="site-zoom-reset" title="Taille d'origine (Ctrl+0)">100 %</button>
+        <button type="button" class="small" id="site-zoom-in" title="Agrandir (Ctrl+plus)">+</button>
+      </div>
+      <div class="line"><span>Blocage des traqueurs</span><span class="v" id="site-trackers"></span></div>
+      <button type="button" id="site-clear">Effacer les données de ce site</button>
     </div>
   </div>
 
@@ -573,6 +658,8 @@
         <option value="60">1 heure</option>
         <option value="120">2 heures</option>
       </select>
+      <label class="check"><input type="checkbox" id="s-economy"> Mode économie</label>
+      <div class="hint">Moins de mémoire et de batterie : veille après 5 minutes, vidéos des onglets cachés en pause, lecture automatique des vidéos bloquée, traqueurs bloqués.</div>
       <h3 class="sec">Téléchargements</h3>
       <label for="s-dldir">Dossier (vide = dossier Téléchargements de l'ordinateur)</label>
       <input type="text" id="s-dldir" placeholder="Téléchargements" autocomplete="off" spellcheck="false">
@@ -614,6 +701,9 @@
     { name: '/rouvrir', desc: 'Rouvrir le dernier onglet fermé (Ctrl+Maj+T)', run: () => shortcut('reopen_tab') },
     { name: '/chercher', desc: 'Chercher dans la page (Ctrl+F)', run: () => openFind() },
     { name: '/imprimer', desc: 'Imprimer la page (Ctrl+P)', run: () => shortcut('print') },
+    { name: '/memoire', desc: 'Mémoire des onglets (Maj+Échap)', run: () => openLibrary('memory') },
+    { name: '/economie', desc: 'Activer ou couper le mode économie', run: () => toggleEconomy() },
+    { name: '/site', desc: 'Fiche du site : autorisations, zoom, données', run: () => openSite() },
   ];
   const shortcut = (name) => send({ type: 'shortcut', shortcut: name });
 
@@ -623,12 +713,13 @@
   let lastActive = null;    // onglet actif au dernier dessin
   let drag = null;          // onglet en cours de déplacement
   const badIcons = new Set(); // icônes introuvables : on garde le point gris
-  let mode = null;          // null, 'bar', 'settings' ou 'library'
+  let mode = null;          // null, 'bar', 'settings', 'library' ou 'site'
   let matches = [];
   let selected = 0;
   let draftTheme = 'auto';
   let draftPos = 'left';
   let draftStartup = 'home';
+  const LIB_KINDS = ['bookmarks', 'history', 'downloads', 'memory'];
   let libKind = 'history';   // onglet ouvert dans la bibliothèque
   let libItems = [];
   let seenDownloads = 0;     // téléchargements terminés déjà vus dans la bibliothèque
@@ -653,7 +744,8 @@
     document.body.classList.toggle('bar', mode === 'bar');
     document.body.classList.toggle('settings', mode === 'settings');
     document.body.classList.toggle('library', mode === 'library');
-    for (const k of ['bookmarks', 'history', 'downloads']) $('lib-' + k).classList.toggle('on', mode === 'library' && libKind === k);
+    document.body.classList.toggle('site', mode === 'site');
+    for (const k of LIB_KINDS) $('lib-' + k).classList.toggle('on', mode === 'library' && libKind === k);
     if (mode !== null) reportShape();
     if (wasOpen !== (mode !== null)) send({ type: 'expand', open: mode !== null });
   }
@@ -692,6 +784,7 @@
     if (mode === 'bar') closeBar(false);
     else if (mode === 'settings') closeSettings();
     else if (mode === 'library') closeLibrary();
+    else if (mode === 'site') closeSite();
   }
 
   let ctxTimer = 0;
@@ -703,6 +796,10 @@
     // Veille : libère la mémoire d'un onglet caché ; sa page revient au clic.
     if (!tab.active && !tab.asleep && !tab.private && !tab.audible) {
       items.push(['<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>', 'Veille', "Mettre l'onglet en veille (libère la mémoire)", () => send({ type: 'sleep_tab', id: tab.id })]);
+    }
+    // Fiche du site (onglet affiché seulement : elle décrit la page visible).
+    if (tab.active && state.site) {
+      items.push(['<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.5"/></svg>', 'Site', 'Fiche du site : autorisations, zoom, données', () => openSite()]);
     }
     items.push(['<svg width="12" height="12" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg>', 'Fermer', "Fermer l'onglet", () => send({ type: 'close_tab', id: tab.id })]);
     const box = $('ctx');
@@ -879,6 +976,7 @@
     const parts = [label(tab)];
     if (tab.private) parts.push('Onglet privé');
     if (tab.asleep) parts.push('En veille (rechargé au clic)');
+    if (tab.error) parts.push('La page n\'a pas pu être chargée');
     const w = tab.weight || {};
     if (w.level) {
       const m = [];
@@ -900,8 +998,10 @@
     $('loupe').style.display = show ? 'none' : '';
     if (!show) return;
     lock.classList.toggle('insecure', !tab.secure);
+    lock.classList.toggle('clickable', !!state.site);
     lock.innerHTML = tab.secure ? LOCK : WARN;
-    lock.title = tab.secure ? 'Connexion chiffrée (https)' : 'Connexion non sécurisée : ce que vous tapez ici peut être lu en chemin';
+    lock.title = (tab.secure ? 'Connexion chiffrée (https)' : 'Connexion non sécurisée : ce que vous tapez ici peut être lu en chemin') +
+      (state.site ? '\nCliquer pour la fiche du site' : '');
   }
 
   // Barre en haut : l'adresse de l'onglet actif se modifie directement dans sa pastille.
@@ -1134,6 +1234,7 @@
     $('s-index').checked = s.index_pages !== false;
     $('s-sleep').value = String(s.sleep_minutes ?? 30);
     if (!$('s-sleep').value) $('s-sleep').value = '30';
+    $('s-economy').checked = !!s.economy;
     renderPermissions();
     disarm($('s-clear'), "Effacer l'historique");
     renderStartupChoices();
@@ -1141,7 +1242,7 @@
     renderPosChoices();
     renderUpdate();
     if (mode === 'bar') closeBar(false);
-    if (mode === 'library') setMode(null);
+    if (mode === 'library' || mode === 'site') setMode(null);
     setMode('settings');
     $('s-name').focus();
   }
@@ -1173,7 +1274,7 @@
   }
 
   function closeSettings() {
-(state.settings.theme);
+    applyTheme(state.settings.theme);
     applyPos(state.settings.bar_position);
     setMode(null);
     send({ type: 'focus_page' });
@@ -1239,7 +1340,7 @@
     $(id).addEventListener('click', () => {
       if (mode === 'bar') closeBar(false);
       if (mode === 'settings') closeSettings();
-      if (mode === 'library') setMode(null);
+      if (mode === 'library' || mode === 'site') setMode(null);
       send({ type: id });
       send({ type: 'focus_page' });
     });
@@ -1291,6 +1392,7 @@
         sleep_minutes: Number($('s-sleep').value),
         index_pages: $('s-index').checked,
         sidebar_width: state.settings.sidebar_width,
+        economy: $('s-economy').checked,
       },
     });
     setMode(null);
@@ -1302,11 +1404,15 @@
     bookmarks: { title: 'Favoris', search: 'Rechercher dans les favoris' },
     history: { title: 'Historique', search: "Rechercher dans l'historique" },
     downloads: { title: 'Téléchargements', search: 'Rechercher un téléchargement' },
+    memory: { title: 'Mémoire des onglets', search: 'Rechercher un onglet' },
   };
+  // Listes tenues à jour par l'état envoyé par Rust (pas de demande à part).
+  const LOCAL_KINDS = ['downloads', 'memory'];
   function openLibrary(kind) {
     if (mode === 'library' && libKind === kind) { closeLibrary(); return; }
     if (mode === 'bar') closeBar(false);
     if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
+    if (mode === 'site') setMode(null);
     stopEdit();
     libKind = kind;
     const info = LIB_PANELS[kind];
@@ -1316,7 +1422,7 @@
     $('lib-search').value = '';
     libItems = kind === 'downloads' ? (state.downloads || []) : [];
     setMode('library');
-    for (const k of ['bookmarks', 'history', 'downloads']) $('lib-' + k).classList.toggle('on', libKind === k);
+    for (const k of LIB_KINDS) $('lib-' + k).classList.toggle('on', libKind === k);
     renderLibrary();
     requestLibrary();
     $('lib-search').focus();
@@ -1329,7 +1435,7 @@
   let libTimer = 0;
   function requestLibrary() {
     clearTimeout(libTimer);
-    if (libKind === 'downloads') { renderLibrary(); return; }
+    if (LOCAL_KINDS.includes(libKind)) { renderLibrary(); return; }
     libTimer = setTimeout(() => send({ type: 'library', kind: libKind, query: $('lib-search').value }), 80);
   }
   const host = (url) => { try { return new URL(url).host.replace(/^www\./, ''); } catch { return url; } };
@@ -1443,10 +1549,79 @@
     if (d.speed) t += ' · ' + size(d.speed) + '/s';
     return t;
   }
+  // Gestionnaire des onglets : une ligne par onglet, avec sa mémoire, son
+  // processeur et son état (affiché, allégé, gelé, en veille).
+  const REPOS = { allege: 'Allégé', gele: 'Gelé' };
+  function memoryRow(tab) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.title = tab.home ? 'Accueil' : tab.url;
+    row.appendChild(icoFor({ icon: tab.icon, title: label(tab), url: tab.url }));
+    const w = tab.weight || {};
+    const level = tab.asleep ? 0 : (w.level || 0);
+    const txt = document.createElement('span');
+    txt.className = 'txt';
+    txt.innerHTML = '<span class="t"></span><span class="u"></span>';
+    txt.firstChild.textContent = label(tab);
+    const facts = [];
+    if (tab.asleep) facts.push('En veille');
+    else {
+      if (tab.active) facts.push('Affiché');
+      else if (REPOS[tab.repos]) facts.push(REPOS[tab.repos]);
+      if (w.cpu != null) facts.push(w.cpu + ' % processeur');
+      if (w.lag_ms != null && w.lag_ms >= 100) facts.push('page ralentie');
+    }
+    if (tab.audible) facts.push('joue du son');
+    if (tab.private) facts.push('privé');
+    txt.lastChild.textContent = facts.join(' · ');
+    if (level) txt.lastChild.classList.add('w' + level);
+    row.appendChild(txt);
+    const mem = document.createElement('span');
+    mem.className = 'mem' + (level ? ' w' + level : '');
+    mem.textContent = tab.asleep ? '0 Mo' : w.memory_mb != null ? w.memory_mb + ' Mo' : '—';
+    row.appendChild(mem);
+    const acts = document.createElement('span');
+    acts.className = 'acts';
+    if (tab.asleep) acts.appendChild(actButton('Réveiller', 'Recharger la page de cet onglet', () => { closeLibrary(); send({ type: 'activate_tab', id: tab.id }); }));
+    else if (!tab.active && !tab.private && !tab.audible) acts.appendChild(actButton('Veille', 'Mettre en veille (libère la mémoire)', () => send({ type: 'sleep_tab', id: tab.id })));
+    acts.appendChild(actButton('Fermer', "Fermer l'onglet", () => send({ type: 'close_tab', id: tab.id })));
+    row.appendChild(acts);
+    row.addEventListener('click', () => { closeLibrary(); send({ type: 'activate_tab', id: tab.id }); });
+    return row;
+  }
+  function renderMemory(list, q) {
+    const tabs = state.tabs.filter((t) => !q || label(t).toLowerCase().includes(q) || (t.url || '').toLowerCase().includes(q));
+    const known = state.tabs.filter((t) => !t.asleep && t.weight && t.weight.memory_mb != null);
+    const total = known.reduce((n, t) => n + t.weight.memory_mb, 0);
+    const sum = document.createElement('div');
+    sum.className = 'total';
+    const awake = state.tabs.filter((t) => !t.asleep).length;
+    sum.innerHTML = '<span></span><b></b>';
+    sum.firstChild.textContent = state.tabs.length + ' onglet' + (state.tabs.length > 1 ? 's' : '') + ', ' + awake + ' éveillé' + (awake > 1 ? 's' : '');
+    sum.lastChild.textContent = 'Total ' + (known.length ? total + ' Mo' : '—');
+    list.appendChild(sum);
+    for (const t of tabs) list.appendChild(memoryRow(t));
+    if (!tabs.length) {
+      const p = document.createElement('div');
+      p.className = 'empty';
+      p.textContent = 'Aucun onglet trouvé.';
+      list.appendChild(p);
+    }
+    // Sous Windows, seule la mémoire du JavaScript de chaque page est connue.
+    $('lib-hint').textContent = isMac ? 'Mémoire de chaque page, mesurée par le système' : 'Mémoire du JavaScript des pages (estimation)';
+    const b = $('lib-clear');
+    const sleepy = state.tabs.some((t) => !t.active && !t.asleep && !t.private && !t.audible);
+    b.hidden = !sleepy;
+    b.classList.add('plain');
+    b.textContent = 'Endormir les onglets cachés';
+  }
+
   function renderLibrary() {
     const list = $('lib-list');
     list.textContent = '';
     const q = $('lib-search').value.trim().toLowerCase();
+    $('lib-clear').classList.remove('plain');
+    if (libKind === 'memory') { renderMemory(list, q); return; }
     let items = libItems;
     if (libKind === 'downloads') {
       items = (state.downloads || []).slice().reverse().filter((d) => !q || d.name.toLowerCase().includes(q) || d.url.toLowerCase().includes(q));
@@ -1502,15 +1677,17 @@
     b.classList.toggle('fresh', !busy && dls.filter((d) => d.state !== 'progress').length > seenDownloads);
     b.title = busy ? 'Téléchargements (en cours)' : 'Téléchargements';
   }
-  for (const k of ['bookmarks', 'history', 'downloads']) {
+  for (const k of LIB_KINDS) {
     $('lib-' + k).addEventListener('click', () => openLibrary(k));
   }
-  $('lib-search').addEventListener('input', () => { if (libKind === 'downloads') renderLibrary(); else requestLibrary(); });
+  $('lib-search').addEventListener('input', () => { if (LOCAL_KINDS.includes(libKind)) renderLibrary(); else requestLibrary(); });
   $('lib-search').addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeLibrary(); e.preventDefault(); } });
   $('lib-close').addEventListener('click', closeLibrary);
   $('library').addEventListener('mousedown', (e) => { if (e.target === $('library')) closeLibrary(); });
   $('lib-clear').addEventListener('click', () => {
     const b = $('lib-clear');
+    // Mettre en veille ne perd rien : pas de confirmation.
+    if (libKind === 'memory') { send({ type: 'sleep_hidden' }); return; }
     if (!armed(b, 'Cliquer encore pour confirmer')) return;
     disarm(b, b.dataset.label);
     if (libKind === 'history') send({ type: 'clear_history' });
@@ -1518,6 +1695,90 @@
   });
   $('star').addEventListener('mousedown', (e) => e.preventDefault());
   $('star').addEventListener('click', () => send({ type: 'toggle_bookmark', id: null }));
+
+  // --- Fiche du site (clic sur le cadenas, menu de l'onglet ou /site) ---
+  const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  function openSite() {
+    if (!state.site) return;
+    if (mode === 'bar') closeBar(false);
+    if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
+    stopEdit();
+    disarm($('site-clear'), $('site-clear').dataset.label);
+    setMode('site');
+    renderSite();
+  }
+  function closeSite() {
+    if (mode !== 'site') return;
+    setMode(null);
+    send({ type: 'focus_page' });
+  }
+  function renderSite() {
+    const site = state.site;
+    if (!site) { closeSite(); return; }
+    const tab = activeTab() || {};
+    const secure = tab.secure !== false;
+    $('site-host').textContent = site.host.replace(/^www\./, '');
+    $('site-ic').innerHTML = secure ? LOCK : WARN;
+    $('site-ic').classList.toggle('insecure', !secure);
+    const conn = $('site-conn');
+    conn.textContent = site.error ? "La page n'a pas pu être chargée"
+      : secure ? 'Connexion chiffrée (https)' : 'Connexion non sécurisée (http) : ce que vous envoyez peut être lu en chemin';
+    conn.classList.toggle('insecure', !secure);
+    const box = $('site-perms');
+    box.textContent = '';
+    const perms = (state.permissions || []).filter((p) => p.host === site.host);
+    if (!perms.length) box.innerHTML = '<div class="none">Aucune : Feather demande quand le site en a besoin.</div>';
+    for (const p of perms) {
+      const line = document.createElement('div');
+      line.className = 'line';
+      const name = document.createElement('span');
+      name.textContent = capital(p.label);
+      const seg = document.createElement('span');
+      seg.className = 'seg';
+      for (const [allow, text] of [[true, 'Autorisé'], [false, 'Refusé']]) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = text;
+        b.classList.toggle('on', p.allowed === allow);
+        b.addEventListener('click', () => { if (p.allowed !== allow) send({ type: 'set_permission', host: p.host, permission: p.permission, allow }); });
+        seg.appendChild(b);
+      }
+      const forget = document.createElement('button');
+      forget.type = 'button';
+      forget.className = 'small';
+      forget.textContent = 'Oublier';
+      forget.title = 'Feather redemandera au site';
+      forget.addEventListener('click', () => { send({ type: 'forget_permission', host: p.host, permission: p.permission }); line.remove(); });
+      line.append(name, seg, forget);
+      box.appendChild(line);
+    }
+    $('site-zoom').textContent = site.zoom + ' %';
+    $('site-zoom-reset').disabled = site.zoom === 100;
+    const eco = !!state.settings.economy && !state.settings.block_trackers;
+    $('site-trackers').textContent = site.trackers ? (eco ? 'Activé (mode économie)' : 'Activé') : 'Désactivé';
+  }
+  $('lock').addEventListener('mousedown', (e) => e.preventDefault());
+  $('lock').addEventListener('click', () => openSite());
+  $('site-close').addEventListener('click', closeSite);
+  $('site').addEventListener('mousedown', (e) => { if (e.target === $('site')) closeSite(); });
+  $('site-zoom-out').addEventListener('click', () => shortcut('zoom_out'));
+  $('site-zoom-in').addEventListener('click', () => shortcut('zoom_in'));
+  $('site-zoom-reset').addEventListener('click', () => shortcut('zoom_reset'));
+  $('site-clear').dataset.label = 'Effacer les données de ce site';
+  $('site-clear').addEventListener('click', () => {
+    const b = $('site-clear');
+    if (!armed(b, 'Cliquer encore : cookies et stockage du site seront effacés')) return;
+    disarm(b, b.dataset.label);
+    send({ type: 'clear_site_data' });
+    closeSite();
+  });
+
+  // Mode économie : bascule rapide depuis la barre (/economie).
+  function toggleEconomy() {
+    const on = !state.settings.economy;
+    send({ type: 'save_settings', settings: Object.assign({}, state.settings, { economy: on }) });
+    showNotice(on ? 'Mode économie activé : veille après 5 minutes, vidéos cachées en pause.' : 'Mode économie coupé.');
+  }
 
   // --- Bandeau du bas : recherche dans la page, autorisations, avis ---
   let findOpen = false;
@@ -1631,7 +1892,9 @@
 
   // --- Raccourcis quand l'interface a le focus ---
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) { openLibrary('memory'); e.preventDefault(); return; }
     if (e.key === 'Escape') closeTabMenu();
+    if (e.key === 'Escape' && mode === 'site') { closeSite(); return; }
     if (e.key === 'Escape' && mode === 'settings') { closeSettings(); return; }
     if (e.key === 'Escape' && mode === 'library') { closeLibrary(); return; }
     const k = e.key.toLowerCase();
@@ -1685,7 +1948,9 @@
       renderSidebar();
       renderUpdate();
       renderStrip();
-      if (mode === 'library' && libKind === 'downloads') renderLibrary();
+      document.body.classList.toggle('eco', !!state.settings.economy);
+      if (mode === 'library' && LOCAL_KINDS.includes(libKind)) renderLibrary();
+      if (mode === 'site') renderSite();
     },
     setLibrary(data) {
       if (mode !== 'library' || data.kind !== libKind) return;
@@ -1694,6 +1959,7 @@
     },
     openBar,
     openSettings,
+    openMemory() { openLibrary('memory'); },
     closePanel,
     openFind,
     setFind(r) {

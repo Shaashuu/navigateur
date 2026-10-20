@@ -20,6 +20,7 @@ use wry::{NewWindowResponse, PageLoadEvent, Rect, WebView, WebViewBuilder};
 
 use crate::UserEvent;
 use crate::downloads;
+use crate::errorpage::{self, ErrorKind};
 use crate::library::{Library, Session};
 use crate::network;
 use crate::settings::Settings;
@@ -54,6 +55,9 @@ pub struct Tab {
     pub weight: Weight,
     /// Veille douce de la page cachée (voir `softsleep.rs`).
     pub repos: Repos,
+    /// Échec du dernier chargement, affiché par une page d'erreur Feather :
+    /// la cause et l'adresse en échec (voir `errorpage.rs`).
+    pub failed: Option<(ErrorKind, String)>,
     /// Hôte de la page, partagé avec les rappels de la webview (autorisations, traqueurs).
     host: Arc<RwLock<String>>,
     /// `None` : l'onglet est en veille.
@@ -118,6 +122,10 @@ pub struct TabInfo<'a> {
     /// Connexion chiffrée (https) ou page intégrée.
     pub secure: bool,
     pub weight: Weight,
+    /// Veille douce : éveillé, allégé ou gelé.
+    pub repos: Repos,
+    /// La page affichée est une page d'erreur Feather.
+    pub error: bool,
 }
 
 /// Tout ce qu'il faut pour créer la webview d'un nouvel onglet.
@@ -169,6 +177,7 @@ impl TabManager {
             last_active: Instant::now(),
             weight: Weight::default(),
             repos: Repos::Eveille,
+            failed: None,
             host: Arc::default(),
             webview: None,
         };
@@ -191,6 +200,7 @@ impl TabManager {
         tab.loading = true;
         tab.weight = Weight::default();
         tab.repos = Repos::Eveille;
+        tab.failed = None;
         Ok(())
     }
 
@@ -214,6 +224,16 @@ impl TabManager {
         stop_page(&webview);
         self.closing.push((Instant::now(), webview));
         true
+    }
+
+    /// Met en veille tous les onglets cachés qui peuvent l'être (gestionnaire des onglets).
+    pub fn sleep_hidden(&mut self) -> bool {
+        let ids: Vec<TabId> = self.tabs.iter().map(|t| t.id).collect();
+        let mut slept = false;
+        for id in ids {
+            slept |= self.sleep(id);
+        }
+        slept
     }
 
     /// Ferme un onglet. Si c'était l'onglet actif, son voisin devient actif.
@@ -387,6 +407,8 @@ impl TabManager {
                     asleep: t.webview.is_none(),
                     secure: home || !t.url.starts_with("http://"),
                     weight: t.weight,
+                    repos: t.repos,
+                    error: t.failed.is_some(),
                 }
             })
             .collect()
@@ -400,6 +422,7 @@ impl TabManager {
 
 /// Coupe le son et vide une page avant de la détruire.
 fn stop_page(webview: &WebView) {
+    errorpage::forget(webview);
     let _ = webview.set_visible(false);
     let _ = webview.evaluate_script(
         "document.querySelectorAll('video, audio').forEach((m) => { m.pause(); m.removeAttribute('src'); m.load(); })",
@@ -425,7 +448,8 @@ fn build_page(
     let on_title = ctx.proxy.clone();
     let on_load = ctx.proxy.clone();
     let on_new_window = ctx.proxy.clone();
-    let block_trackers = ctx.settings.read().map(|s| s.block_trackers).unwrap_or(true);
+    let (block_trackers, economy) =
+        ctx.settings.read().map(|s| (s.blocks_trackers(), s.economy)).unwrap_or((true, false));
 
     let builder = WebViewBuilder::new()
         .with_bounds(ctx.bounds)
@@ -440,18 +464,26 @@ fn build_page(
         } else {
             ""
         })
+        // Mode économie au moment où la page est créée ; ensuite, Rust prévient la
+        // page à chaque chargement et à chaque changement (voir `App::apply_economy`).
+        .with_initialization_script(format!("window.__featherEconomy = {economy};"))
         // FEATHER_SANS_SCRIPT=1 : pas de script injecté (pour chercher l'origine d'un défaut).
         .with_initialization_script(if std::env::var_os("FEATHER_SANS_SCRIPT").is_some() {
             ""
         } else {
             ui::PAGE_SCRIPT
         })
-        // La page d'accueil intégrée est générée à chaque visite avec les paramètres actuels.
-        .with_custom_protocol("navigateur".into(), move |_id, _request| {
+        // La page d'accueil intégrée est générée à chaque visite avec les paramètres
+        // actuels ; `navigateur://erreur/` sert les pages d'erreur (voir errorpage.rs).
+        .with_custom_protocol("navigateur".into(), move |_id, request| {
             let settings = settings.read().map(|s| s.clone()).unwrap_or_default();
-            let html = match library.read() {
-                Ok(lib) if settings.bookmarks_on_home => ui::home_page(&settings, lib.bookmarks()),
-                _ => ui::home_page(&settings, &[]),
+            let html = if request.uri().host() == Some("erreur") {
+                errorpage::render(&request.uri().to_string(), &settings)
+            } else {
+                match library.read() {
+                    Ok(lib) if settings.bookmarks_on_home => ui::home_page(&settings, lib.bookmarks()),
+                    _ => ui::home_page(&settings, &[]),
+                }
             };
             Response::builder()
                 .header(CONTENT_TYPE, "text/html; charset=utf-8")
@@ -496,5 +528,6 @@ fn build_page(
 
     let webview = ctx.surface.attach(builder, ctx.window)?;
     trackers::install(&webview, host, block_trackers);
+    errorpage::install(&webview, id, ctx.proxy.clone());
     Ok(webview)
 }

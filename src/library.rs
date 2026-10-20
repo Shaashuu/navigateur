@@ -110,6 +110,15 @@ impl Library {
         self.history_changed = true;
     }
 
+    /// Un chargement a échoué (page d'erreur) : la visite que la fin du
+    /// chargement vient d'ajouter pour cette adresse est retirée.
+    pub fn forget_failed_visit(&mut self, url: &str) {
+        if self.history.last().is_some_and(|v| v.url == url && now().saturating_sub(v.time) <= 10) {
+            self.history.pop();
+            self.history_changed = true;
+        }
+    }
+
     /// Le titre arrive souvent après la fin du chargement : on complète la visite.
     pub fn set_title(&mut self, url: &str, title: &str) {
         if title.is_empty() {

@@ -1,6 +1,7 @@
 //! Fonctionnalités ajoutées autour du cœur de `main.rs` : zoom par site,
 //! recherche dans la page, suggestions, commandes natives, autorisations,
-//! poids et mise en veille des onglets, suivi des téléchargements.
+//! poids et mise en veille des onglets, mode économie, pages d'erreur, fiche
+//! du site, suivi des téléchargements.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -9,7 +10,9 @@ use serde_json::json;
 
 use crate::commands::{self, Contexte, Resultat};
 use crate::downloads::{self, Download, State};
+use crate::errorpage::{self, ErrorKind};
 use crate::network;
+use crate::siteclear;
 use crate::sitedata::Permission;
 use crate::softsleep;
 use crate::tab_manager::TabId;
@@ -313,7 +316,8 @@ impl App {
     /// Met en veille les onglets cachés depuis longtemps (réglage « veille »),
     /// et plus tôt ceux qui pèsent lourd.
     fn auto_sleep(&mut self) -> bool {
-        let minutes = self.read_settings().sleep_minutes;
+        // Le mode économie raccourcit le délai (voir `Settings::sleep_after`).
+        let minutes = self.read_settings().sleep_after();
         let active = self.tabs.active_id();
         let idle = Duration::from_secs(u64::from(minutes) * 60);
         let candidates: Vec<TabId> = self
@@ -334,6 +338,99 @@ impl App {
             self.schedule_reap();
         }
         slept
+    }
+
+    // --- Mode économie ---------------------------------------------------------
+
+    /// Prévient la page du mode économie (pause des vidéos cachées, lecture
+    /// automatique bloquée : voir assets/page.js). Appelé à chaque chargement,
+    /// car le script injecté garde la valeur du moment où la page a été créée.
+    pub(crate) fn apply_economy(&self, id: TabId) {
+        let economy = self.read_settings().economy;
+        if let Some(tab) = self.tabs.get(id) {
+            tab.eval(&format!("window.__featherSetEconomy && __featherSetEconomy({economy})"));
+        }
+    }
+
+    // --- Pages d'erreur -------------------------------------------------------
+
+    /// Un chargement a échoué : l'onglet affiche la page d'erreur Feather.
+    pub(crate) fn load_failed(&mut self, id: TabId, url: String, kind: ErrorKind) {
+        if !network::is_web(&url) {
+            return;
+        }
+        let Some(tab) = self.tabs.get_mut(id) else { return };
+        // Sous Windows, la fin du chargement a déjà ajouté la page à l'historique.
+        if !tab.private
+            && let Ok(mut lib) = self.library.write()
+        {
+            lib.forget_failed_visit(&url);
+        }
+        let page = errorpage::error_url(kind, &url);
+        tab.failed = Some((kind, url));
+        let Some(w) = tab.webview() else { return };
+        // Déjà sur une page d'erreur (« Réessayer » a encore échoué) : on la
+        // remplace, pour ne pas empiler les erreurs dans l'historique.
+        if w.url().is_ok_and(|u| errorpage::is_error_page(&u)) {
+            tab.eval(&format!("location.replace({})", js(&page)));
+        } else {
+            let _ = w.load_url(&page);
+        }
+    }
+
+    /// Page précédente. Sous Windows, une page en échec garde sa place dans
+    /// l'historique, juste avant la page d'erreur : on revient deux pages en
+    /// arrière, sinon on retomberait sur l'échec (et sur une nouvelle erreur).
+    pub(crate) fn go_back(&self) {
+        let Some(tab) = self.tabs.active() else { return };
+        if cfg!(windows) && tab.failed.is_some() {
+            tab.eval("history.go(-2)");
+        } else if let Some(w) = tab.webview() {
+            let _ = w.go_back();
+        }
+    }
+
+    /// Actualiser. Sur une page d'erreur, on retente l'adresse en échec à sa place.
+    pub(crate) fn reload(&self) {
+        let Some(tab) = self.tabs.active() else { return };
+        if let Some((_, url)) = &tab.failed {
+            tab.eval(&format!("location.replace({})", js(url)));
+        } else if let Some(w) = tab.webview() {
+            let _ = w.reload();
+        }
+    }
+
+    // --- Fiche du site --------------------------------------------------------
+
+    /// Ce que la fiche du site montre pour l'onglet actif (les autorisations
+    /// viennent de la liste générale `permissions`).
+    pub(crate) fn site_info(&self) -> serde_json::Value {
+        let Some(tab) = self.tabs.active() else { return json!(null) };
+        if !network::is_web(tab.url()) {
+            return json!(null);
+        }
+        let host = tab.host();
+        let zoom = self.sites.read().map(|s| s.zoom(&host)).unwrap_or(1.0);
+        json!({
+            "host": host,
+            "zoom": (zoom * 100.0).round(),
+            "trackers": self.read_settings().blocks_trackers(),
+            "error": tab.failed.is_some(),
+        })
+    }
+
+    /// Efface les cookies et le stockage du site de l'onglet actif, puis recharge la page.
+    pub(crate) fn clear_site_data(&self) {
+        let Some(tab) = self.tabs.active() else { return };
+        let Some(w) = tab.webview() else { return };
+        let Ok(url) = url::Url::parse(tab.url()) else { return };
+        if !network::is_web(tab.url()) {
+            return;
+        }
+        let host = url.host_str().unwrap_or_default().to_string();
+        siteclear::clear(w, &url.origin().ascii_serialization(), &host);
+        let text = format!("Données de {} effacées", host.strip_prefix("www.").unwrap_or(&host));
+        self.chrome_call(&format!("navigateur.showNotice({})", js(&text)));
     }
 
     // --- Téléchargements ------------------------------------------------------
