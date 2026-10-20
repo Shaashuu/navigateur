@@ -43,9 +43,9 @@ pub fn host_of(url: &str) -> Option<String> {
 
 /// Vrai pour une vraie page web (http ou https), seule admise dans l'historique,
 /// les favoris et les onglets ouverts par une page. L'accueil intégré et les
-/// pages d'erreur n'en sont pas, même sous Windows où leur adresse commence par `http://`.
+/// pages d'erreur ou de lecture n'en sont pas, même sous Windows où leur adresse commence par `http://`.
 pub fn is_web(url: &str) -> bool {
-    (url.starts_with("https://") || url.starts_with("http://")) && !is_home(url) && !errorpage::is_error_page(url)
+    (url.starts_with("https://") || url.starts_with("http://")) && !is_home(url) && !errorpage::is_error_page(url) && !crate::reader::is_reader_page(url)
 }
 
 /// Adresses données au lancement (`feather https://exemple.fr …`). Seules les

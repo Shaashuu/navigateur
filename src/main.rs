@@ -9,16 +9,19 @@
 //! `features.rs` ajoute la recherche dans la page, le zoom, les autorisations,
 //! les commandes natives, la mise en veille et le suivi des téléchargements.
 
+mod capture;
 mod commands;
 mod downloads;
 mod errorpage;
 mod features;
 mod fulltext;
+mod import;
 mod layers;
 mod library;
 #[cfg(target_os = "macos")]
 mod mac_mouse;
 mod network;
+mod reader;
 mod settings;
 mod siteclear;
 mod sitedata;
@@ -88,6 +91,8 @@ pub enum UserEvent {
     Tick,
     /// Un minuteur (`/minuteur`) est arrivé à son terme.
     TimerDone { seconds: u64, label: String },
+    /// Fin d'une capture de page : le fichier écrit (`None` : copiée), ou l'erreur.
+    Captured(Result<Option<PathBuf>, String>),
 }
 
 /// Résultat d'un travail de mise à jour fait en arrière-plan.
@@ -149,6 +154,8 @@ struct App {
     next_permission_request: u32,
     /// Mesure du processus de chaque page (macOS).
     sampler: Sampler,
+    /// Articles du mode lecture, un par onglet (lus par le protocole `navigateur`).
+    reader: reader::Store,
     /// Secondes écoulées (pour ne mesurer le poids des onglets que toutes les 5 s).
     ticks: u64,
 }
@@ -227,23 +234,42 @@ fn main() -> wry::Result<()> {
         permission_requests: HashMap::new(),
         next_permission_request: 1,
         sampler: Sampler::default(),
+        reader: reader::Store::default(),
         ticks: 0,
     };
     let session = library::load_session();
     // Adresses données au lancement (« Ouvrir avec Feather », banc de mesure de la
     // mémoire `outils/banc-memoire`) : une par onglet, la première affichée.
     let launch = network::launch_urls(std::env::args().skip(1));
+    let full_restore = restore && !session.urls.is_empty() && launch.is_empty();
+    // Les onglets épinglés reviennent à chaque démarrage (en veille, en haut de la colonne).
+    if !full_restore {
+        for (url, _) in session.urls.iter().zip(&session.pinned).filter(|(_, p)| **p) {
+            let id = app.tabs.add_asleep(url, "", false);
+            app.tabs.set_pinned(id, true);
+        }
+    }
     if let Some((first, others)) = launch.split_first() {
         app.open_tab(first, false);
         for url in others {
             app.open_tab_in_background(url);
         }
-    } else if restore && !session.urls.is_empty() {
+    } else if full_restore {
         // Les onglets restaurés restent en veille : seul celui affiché est chargé.
-        for url in &session.urls {
-            app.tabs.add_asleep(url, "", false);
+        for (i, url) in session.urls.iter().enumerate() {
+            let id = app.tabs.add_asleep(url, "", false);
+            if let Some(tab) = app.tabs.get_mut(id) {
+                tab.pinned = session.pinned.get(i).copied().unwrap_or(false);
+                tab.group = session.groups.get(i).copied().flatten();
+            }
         }
-        app.tabs.activate_index(session.active, true);
+        // L'onglet affiché est repéré avant que `restore_groups` ne range les onglets.
+        let shown = app.tabs.iter().nth(session.active).map(|t| t.id);
+        app.tabs.restore_groups(session.tab_groups.clone());
+        match shown {
+            Some(id) => app.tabs.activate(id, true),
+            None => app.tabs.activate_index(0, true),
+        }
         app.wake_active();
         app.push_state();
     } else {
@@ -294,7 +320,7 @@ impl App {
             UserEvent::Title(id, title) => {
                 if let Some(tab) = self.tabs.get_mut(id) {
                     // Le titre d'une page d'erreur ne remplace pas celui de la page dans l'historique.
-                    if !tab.private && tab.failed.is_none() {
+                    if !tab.private && !tab.on_internal_page() {
                         if let Ok(mut lib) = self.library.write() {
                             lib.set_title(tab.url(), &title);
                         }
@@ -316,6 +342,23 @@ impl App {
                             url
                         }
                     };
+                    // Page de lecture de cet onglet, pour l'article gardé : même principe.
+                    let kept = |page: &(TabId, String)| {
+                        self.reader.read().is_ok_and(|s| s.get(&id).is_some_and(|(u, _)| page.0 == id && *u == page.1))
+                    };
+                    let url = match reader::parse(&url) {
+                        Some(page) if kept(&page) => {
+                            tab.reading = Some(page.1.clone());
+                            page.1
+                        }
+                        _ => {
+                            tab.reading = None;
+                            url
+                        }
+                    };
+                    if loading {
+                        tab.readable = false;
+                    }
                     // Autre site : on efface l'icône de l'ancien en attendant celle du nouveau.
                     if loading && network::host_of(tab.url()) != network::host_of(&url) {
                         tab.icon = None;
@@ -326,7 +369,7 @@ impl App {
                     // Un onglet privé ne laisse aucune trace dans l'historique.
                     if !loading
                         && !tab.private
-                        && tab.failed.is_none()
+                        && !tab.on_internal_page()
                         && let Ok(mut lib) = self.library.write()
                     {
                         lib.record_visit(tab.url(), &tab.title);
@@ -368,6 +411,7 @@ impl App {
             }
             UserEvent::Tick => self.tick(),
             UserEvent::TimerDone { seconds, label } => self.timer_done(seconds, &label),
+            UserEvent::Captured(result) => self.captured(result),
         }
         // L'onglet affiché a pu changer : s'il était en veille, on recharge sa page.
         self.wake_active();
@@ -409,9 +453,12 @@ impl App {
             ChromeMessage::ToggleMute { id } => self.handle_shortcut(Some(id), Shortcut::ToggleMute),
             ChromeMessage::Shortcut { shortcut } => self.handle_shortcut(self.tabs.active_id(), shortcut),
             ChromeMessage::MoveTab { id, index } => self.tabs.move_tab(id, index),
-            ChromeMessage::CloseTab { id } => {
-                if let Some(id) = id.or(self.tabs.active_id()) {
-                    self.close_tab(id);
+            // Un onglet précis (bouton, menu) se ferme toujours ; Ctrl+W ou /fermer
+            // (onglet actif) épargne un onglet épinglé.
+            ChromeMessage::CloseTab { id: Some(id) } => self.close_tab(id),
+            ChromeMessage::CloseTab { id: None } => {
+                if let Some(id) = self.tabs.active_id() {
+                    self.close_unpinned(id);
                 }
             }
             ChromeMessage::ActivateTab { id } => self.tabs.activate(id, self.page_visible()),
@@ -533,6 +580,26 @@ impl App {
                 self.schedule_persist();
             }
             ChromeMessage::ClearSiteData => self.clear_site_data(),
+            ChromeMessage::PinTab { id, pinned } => self.tabs.set_pinned(id, pinned),
+            ChromeMessage::GroupTab { id, group } => self.tabs.set_group(id, group),
+            ChromeMessage::NewGroup { id, name } => {
+                self.tabs.new_group(id, &name);
+            }
+            ChromeMessage::RenameGroup { group, name } => self.tabs.rename_group(group, &name),
+            ChromeMessage::Ungroup { group } => self.tabs.ungroup(group),
+            ChromeMessage::CloseGroup { group } => {
+                for id in self.tabs.group_members(group) {
+                    self.close_tab(id);
+                }
+            }
+            ChromeMessage::ToggleGroup { group } => {
+                if self.tabs.toggle_group(group) {
+                    self.schedule_reap();
+                }
+            }
+            ChromeMessage::Reader => self.toggle_reader(),
+            ChromeMessage::ImportSources => self.send_import_sources(),
+            ChromeMessage::Import { sources, files } => self.import(&sources, &files),
         }
         self.push_state();
     }
@@ -545,7 +612,7 @@ impl App {
         if let Some(site) = message.site {
             if let Some(tab) = self.tabs.get_mut(id)
                 && !network::is_home(tab.url())
-                && tab.failed.is_none()
+                && !tab.on_internal_page()
             {
                 let (icon, name) = ui::clean_site(site);
                 tab.icon = icon;
@@ -586,6 +653,20 @@ impl App {
         if let Some(text) = message.text {
             self.index_page(id, &text);
         }
+        if let Some(readable) = message.readable
+            && let Some(tab) = self.tabs.get_mut(id)
+            && tab.readable != readable
+            && !tab.on_internal_page()
+        {
+            tab.readable = readable;
+            self.push_state();
+        }
+        if let Some(article) = message.reader {
+            self.open_reader(id, article);
+        }
+        if message.reader_failed {
+            self.chrome_call("navigateur.showNotice('Feather n\\'a pas trouvé d\\'article à lire sur cette page.')");
+        }
         // Clic dans la page pendant qu'un panneau est ouvert par-dessus : il se ferme.
         if message.pressed && self.expanded {
             self.chrome_call("navigateur.closePanel()");
@@ -624,7 +705,7 @@ impl App {
             Shortcut::NewTab => self.open_new_tab(),
             Shortcut::CloseTab => {
                 if let Some(id) = id {
-                    self.close_tab(id);
+                    self.close_unpinned(id);
                 }
             }
             Shortcut::ToggleMute => {
@@ -652,6 +733,7 @@ impl App {
             Shortcut::Print => self.with_active(|w| w.print()),
             Shortcut::NewPrivateTab => self.open_tab(network::HOME_URL, true),
             Shortcut::TaskManager => self.focus_chrome("navigateur.openMemory()"),
+            Shortcut::Capture => self.capture(false),
         }
     }
 
@@ -709,6 +791,7 @@ impl App {
             settings: &self.settings,
             library: &self.library,
             sites: &self.sites,
+            reader: &self.reader,
             bounds: self.page_bounds(),
         };
         match self.tabs.open(url, &ctx, self.page_visible(), private) {
@@ -732,6 +815,7 @@ impl App {
             settings: &self.settings,
             library: &self.library,
             sites: &self.sites,
+            reader: &self.reader,
             bounds: self.page_bounds(),
         };
         if let Err(err) = self.tabs.wake(id, &ctx, self.page_visible()) {
@@ -757,6 +841,9 @@ impl App {
 
     /// Ferme un onglet ; on garde toujours au moins un onglet ouvert.
     fn close_tab(&mut self, id: TabId) {
+        if let Ok(mut articles) = self.reader.write() {
+            articles.remove(&id);
+        }
         self.tabs.close(id, self.page_visible());
         self.schedule_reap();
         if self.tabs.is_empty() {
@@ -1000,8 +1087,14 @@ impl App {
         let active = self.tabs.active().and_then(|t| t.webview());
         let lib = self.library.read().ok();
         let permissions = self.sites.read().map(|s| s.decisions()).unwrap_or_default();
+        // Les commandes de page (`features::page_command`) s'ajoutent à celles de `commands`.
+        let mut page_commands = vec![("lecture", "Afficher l'article en mode lecture")];
+        if capture::SUPPORTED {
+            page_commands.push(("capture", "Capturer la page visible (Ctrl+Maj+S) · « copier » : dans le presse-papiers"));
+        }
         let commands: Vec<_> = commands::liste()
             .into_iter()
+            .chain(page_commands)
             .map(|(name, desc)| json!({ "name": format!("/{name}"), "desc": desc }))
             .collect();
         let state = json!({
@@ -1017,6 +1110,7 @@ impl App {
             "native_commands": commands,
             "overlay": layers::SUPPORTED,
             "site": self.site_info(),
+            "groups": self.tabs.groups(),
         });
         drop(lib);
         self.chrome_call(&format!("navigateur.setState({state})"));

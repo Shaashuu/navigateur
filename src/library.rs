@@ -50,6 +50,25 @@ pub struct Suggestion<'a> {
 pub struct Session {
     pub urls: Vec<String>,
     pub active: usize,
+    /// Pour chaque onglet (même ordre que `urls`) : épinglé ou non.
+    #[serde(default)]
+    pub pinned: Vec<bool>,
+    /// Pour chaque onglet : son groupe, s'il en a un.
+    #[serde(default)]
+    pub groups: Vec<Option<u32>>,
+    /// Les groupes d'onglets (nom, couleur, replié).
+    #[serde(default)]
+    pub tab_groups: Vec<TabGroup>,
+}
+
+/// Un groupe d'onglets : « Travail », « Courses »… Replié, ses onglets passent en veille.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TabGroup {
+    pub id: u32,
+    pub name: String,
+    pub color: String,
+    #[serde(default)]
+    pub collapsed: bool,
 }
 
 #[derive(Default)]
@@ -188,6 +207,29 @@ impl Library {
             added: now(),
         });
         self.bookmarks_changed = true;
+    }
+
+    /// Ajoute des favoris importés d'un autre navigateur (sans doublon).
+    /// Renvoie le nombre de favoris ajoutés.
+    pub fn import_bookmarks(&mut self, items: &[(String, String)]) -> usize {
+        let mut added = 0;
+        for (url, title) in items {
+            if !is_web(url) || self.is_bookmarked(url) {
+                continue;
+            }
+            let title: String = title.chars().filter(|c| !c.is_control()).take(300).collect();
+            self.bookmarks.push(Bookmark {
+                url: url.clone(),
+                title: if title.trim().is_empty() { url.clone() } else { title.trim().to_string() },
+                icon: None,
+                added: now(),
+            });
+            added += 1;
+        }
+        if added > 0 {
+            self.bookmarks_changed = true;
+        }
+        added
     }
 
     pub fn remove_bookmark(&mut self, url: &str) {

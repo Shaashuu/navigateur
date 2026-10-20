@@ -398,6 +398,86 @@
   #lib-list .total b { color: var(--text); font-variant-numeric: tabular-nums; }
   #library .foot button.plain { border-color: var(--accent); color: var(--accent); white-space: nowrap; flex: none; margin-left: 10px; }
 
+  /* Onglets épinglés : de petits carrés en tête de liste, sans croix */
+  .tab.pinned, .tab.pinned.active, .tab.pinned.has-icon, .tab.pinned.has-icon.active { height: 38px; }
+  .tab.pinned .dot, .tab.pinned:hover .dot, .tab.pinned.has-icon .dot, .tab.pinned.has-icon:hover .dot,
+  .tab.pinned.active .dot, .tab.pinned.active:hover .dot, .tab.pinned.has-icon.active .dot, .tab.pinned.has-icon.active:hover .dot {
+    width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; opacity: 1; background: var(--line);
+  }
+  .tab.pinned.active .dot { box-shadow: 0 0 0 2px var(--accent); }
+  .tab.pinned .close { display: none; }
+  .pin-sep { flex: none; width: 22px; height: 1px; margin: 2px 0; background: var(--line); }
+  body[data-pos="top"] .pin-sep { width: 1px; height: 22px; margin: 0 2px; }
+  body[data-pos="top"] .tab.pinned, body[data-pos="top"] .tab.pinned.active,
+  body[data-pos="top"] .tab.pinned.has-icon, body[data-pos="top"] .tab.pinned.has-icon.active {
+    flex: none; width: 36px; min-width: 36px; max-width: 36px; padding: 0 3px;
+  }
+  body[data-pos="top"] .tab.pinned:not(.editing) .ttl, body[data-pos="top"] .tab.pinned:not(.editing) .star,
+  body[data-pos="top"] .tab.pinned .side-ttl { display: none; }
+  body[data-pos="top"] .tab.pinned.editing { width: 320px; max-width: 320px; }
+  /* Groupes : une étiquette de couleur, puis les onglets avec un trait de la même couleur */
+  .grp {
+    flex: none; position: relative; min-width: 30px; height: 16px; padding: 0 5px; margin-top: 4px; border-radius: 8px;
+    background: var(--g); color: #fff; font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; cursor: pointer;
+    max-width: calc(var(--side) - 10px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .grp .n { display: none; }
+  body.wide .grp .n, body[data-pos="top"] .grp .n { display: inline; }
+  body.wide .grp .c::before, body[data-pos="top"] .grp .c::before { content: ' · '; }
+  .grp.collapsed { opacity: .75; }
+  .grp.collapsed::after { content: '▸'; margin-left: 3px; }
+  body[data-pos="top"] .grp { height: 24px; line-height: 24px; padding: 0 10px; border-radius: 12px; margin: 0; font-size: 12px; max-width: 160px; }
+  .tab.in-group::before {
+    content: ''; position: absolute; left: 3px; top: 5px; bottom: 5px; width: 3px; border-radius: 2px; background: var(--g);
+  }
+  body[data-pos="top"] .tab.in-group::before { left: 10px; right: 10px; top: auto; bottom: 0; width: auto; height: 3px; }
+  /* Mode lecture : un livre, quand la page ressemble à un article */
+  #reader-pill {
+    width: 40px; height: 26px; border-radius: 13px; display: grid; place-items: center;
+    color: var(--muted); border: 1.5px solid var(--line); background: var(--surface);
+  }
+  #reader-pill:hover, #reader-pill.on, #reader-btn.on, .tab .book.on { color: var(--accent); border-color: var(--accent); }
+  #reader-pill[hidden], #reader-btn[hidden] { display: none; }
+  body[data-pos="top"] #reader-pill { display: none; }
+  .tab .book { flex: none; width: 26px; height: 26px; border-radius: 13px; display: grid; place-items: center; color: var(--muted); }
+  .tab .book:hover { background: var(--surface); color: var(--text); }
+  #reader-btn svg { margin: auto; }
+
+  /* Fenêtres « Groupe » et « Importer des favoris » : comme la fiche du site */
+  #group, #import {
+    position: fixed; left: var(--side); right: 0; top: 0; bottom: 0; display: none;
+    justify-content: center; align-items: flex-start; padding: calc(16vh + 32px) 24px 12px; pointer-events: none;
+  }
+  body.group #group, body.import #import { display: flex; }
+  body[data-pos="right"] #group, body[data-pos="right"] #import { left: 0; right: var(--side); }
+  body[data-pos="top"] #group, body[data-pos="top"] #import { left: 0; top: 44px; padding-top: 12px; }
+  #group .panel, #import .panel {
+    width: min(400px, 100%); max-height: 100%; overflow-y: auto; pointer-events: auto; padding: 18px 20px 20px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
+  }
+  .sheet-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .sheet-head h2 { flex: 1; margin: 0; font-size: 17px; font-weight: 600; }
+  .sheet-head .x { width: 30px; height: 30px; border-radius: 15px; color: var(--muted); font-size: 18px; flex: none; }
+  .sheet-head .x:hover { background: var(--accent-soft); color: var(--text); }
+  .sheet-hint { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
+  .gdot { flex: none; width: 12px; height: 12px; border-radius: 6px; background: var(--g); }
+  .sheet-form { display: flex; gap: 8px; margin-top: 12px; }
+  .sheet-form input[type=text] {
+    flex: 1; min-width: 0; height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); font: inherit; outline: none; user-select: text;
+  }
+  .sheet-form input[type=text]:focus { border-color: var(--accent); }
+  .sheet-btn { height: 36px; padding: 0 16px; border-radius: 18px; border: 1px solid var(--line); flex: none; }
+  .sheet-btn:hover { border-color: var(--accent); }
+  .sheet-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .sheet-btn:disabled { opacity: .5; cursor: default; }
+  #import .src { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); font-size: 14px; cursor: pointer; }
+  #import .src span { flex: 1; }
+  #import .src em { font-style: normal; color: var(--muted); font-size: 12px; }
+  #import h3 { margin: 16px 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  #imp-files { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  #import .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
   /* Mode économie : une petite feuille sur la pastille de recherche (ou sur
      l'engrenage quand la barre est en haut) */
   .leaf {
@@ -467,7 +547,12 @@
   body:not([data-pos="top"]) #top { width: 56px; }
   body:not([data-pos="top"]) #middle { width: 100%; align-items: flex-start; }
   body[data-pos="right"] #middle { align-items: flex-end; }
-  body:not([data-pos="top"]) #search-pill { margin: 0 8px; }
+  body:not([data-pos="top"]) #search-pill, body:not([data-pos="top"]) #reader-pill { margin: 0 8px; }
+  body:not([data-pos="top"]) .grp { align-self: flex-start; margin-left: 10px; max-width: calc(var(--side) - 20px); }
+  body:not([data-pos="top"]) .pin-sep { align-self: flex-start; margin-left: 17px; }
+  body[data-pos="right"] .grp, body[data-pos="right"] .pin-sep { align-self: flex-end; margin-left: 0; margin-right: 10px; }
+  body[data-pos="right"] .pin-sep { margin-right: 17px; }
+  body[data-pos="right"] .tab.in-group::before { left: auto; right: 1px; }
   body:not([data-pos="top"]) #new-tab { margin: 0 11px; }
   body:not([data-pos="top"]) #pills { width: 100%; align-items: stretch; }
   body:not([data-pos="top"]) .tab { width: 100%; display: flex; align-items: center; }
@@ -523,6 +608,7 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <span class="leaf" aria-hidden="true"><svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4C10 4 4 9 4 16c0 1.4.3 2.7.8 3.8C6 15 9 11.5 14 9.5 10 12 7.6 15.4 6.6 20.4 8 21.4 9.6 22 11.4 22 18 22 21 15 20 4z"/></svg></span>
       </button>
+      <button id="reader-pill" hidden aria-label="Mode lecture"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5c-3.5-.5-6.5 0-8.5 1.5zM12 6.5v13"/></svg></button>
       <div id="pills"></div>
       <button class="round" id="new-tab" aria-label="Nouvel onglet (Ctrl+T)">+</button>
     </div>
@@ -535,6 +621,7 @@
       <input id="input" spellcheck="false" autocomplete="off"
              placeholder="Aller à, chercher, ou taper / pour une commande">
       <button class="icon star" id="star" title="Ajouter aux favoris (Ctrl+D)"><svg width="17" height="17" style="margin:auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg></button>
+      <button class="icon" id="reader-btn" hidden title="Mode lecture"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5c-3.5-.5-6.5 0-8.5 1.5zM12 6.5v13"/></svg></button>
       <button class="icon" id="reload" title="Actualiser (F5)">&#8635;</button>
     </div>
     <ul id="command-list" class="card"></ul>
@@ -601,6 +688,42 @@
     </div>
   </div>
 
+  <div id="group">
+    <div class="panel card" role="dialog" aria-labelledby="grp-title">
+      <div class="sheet-head">
+        <h2 id="grp-title">Groupe</h2>
+        <button type="button" class="x" id="grp-close" title="Fermer (Échap)" aria-label="Fermer">&times;</button>
+      </div>
+      <p class="sheet-hint" id="grp-hint"></p>
+      <div id="grp-list"></div>
+      <form class="sheet-form" id="grp-form">
+        <input type="text" id="grp-name" maxlength="30" autocomplete="off" spellcheck="false" placeholder="Nom du nouveau groupe">
+        <button type="submit" class="sheet-btn primary" id="grp-submit">Créer</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="import">
+    <div class="panel card" role="dialog" aria-labelledby="imp-title">
+      <div class="sheet-head">
+        <h2 id="imp-title">Importer des favoris</h2>
+        <button type="button" class="x" id="imp-close" title="Fermer (Échap)" aria-label="Fermer">&times;</button>
+      </div>
+      <p class="sheet-hint">Les favoris déjà présents dans Feather ne sont pas ajoutés deux fois.</p>
+      <h3>Navigateurs de cet ordinateur</h3>
+      <div id="imp-sources"></div>
+      <h3>Depuis un fichier</h3>
+      <p class="sheet-hint">Firefox, Safari et les autres navigateurs savent exporter leurs favoris en fichier HTML.</p>
+      <button type="button" class="sheet-btn" id="imp-pick">Choisir un fichier…</button>
+      <input type="file" id="imp-file" accept=".html,.htm,text/html" multiple hidden>
+      <div id="imp-files"></div>
+      <div class="actions">
+        <button type="button" class="sheet-btn" id="imp-cancel">Annuler</button>
+        <button type="button" class="sheet-btn primary" id="imp-go" disabled>Importer</button>
+      </div>
+    </div>
+  </div>
+
   <div id="settings">
     <form id="settings-form" class="card">
       <h2>Paramètres</h2>
@@ -643,6 +766,7 @@
         <option value="0">Toujours</option>
       </select>
       <label class="check"><input type="checkbox" id="s-bmhome"> Afficher les favoris sur la page d'accueil</label>
+      <button type="button" class="danger" id="s-import" style="color:var(--text)">Importer des favoris…</button>
       <button type="button" class="danger" id="s-clear">Effacer l'historique</button>
       <label class="check"><input type="checkbox" id="s-index"> Retrouver les pages par leur texte (gardé sur cet ordinateur)</label>
       <h3 class="sec">Vie privée et sites</h3>
@@ -713,7 +837,9 @@
   let lastActive = null;    // onglet actif au dernier dessin
   let drag = null;          // onglet en cours de déplacement
   const badIcons = new Set(); // icônes introuvables : on garde le point gris
-  let mode = null;          // null, 'bar', 'settings', 'library' ou 'site'
+  let mode = null;          // null, 'bar', 'settings', 'library', 'site', 'group' ou 'import'
+  // Fenêtres posées sur la page, fermées dès qu'une autre s'ouvre.
+  const isSheet = () => ['library', 'site', 'group', 'import'].includes(mode);
   let matches = [];
   let selected = 0;
   let draftTheme = 'auto';
@@ -745,6 +871,8 @@
     document.body.classList.toggle('settings', mode === 'settings');
     document.body.classList.toggle('library', mode === 'library');
     document.body.classList.toggle('site', mode === 'site');
+    document.body.classList.toggle('group', mode === 'group');
+    document.body.classList.toggle('import', mode === 'import');
     for (const k of LIB_KINDS) $('lib-' + k).classList.toggle('on', mode === 'library' && libKind === k);
     if (mode !== null) reportShape();
     if (wasOpen !== (mode !== null)) send({ type: 'expand', open: mode !== null });
@@ -785,12 +913,16 @@
     else if (mode === 'settings') closeSettings();
     else if (mode === 'library') closeLibrary();
     else if (mode === 'site') closeSite();
+    else if (mode === 'group' || mode === 'import') closeSheet();
   }
 
   let ctxTimer = 0;
   function closeTabMenu() { clearTimeout(ctxTimer); $('ctx').classList.remove('open'); }
+  const PIN = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v7"/></svg>';
+  const GROUP = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/></svg>';
+  const BOOK = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5c-3.5-.5-6.5 0-8.5 1.5zM12 6.5v13"/></svg>';
+  const CLOSE = '<svg width="12" height="12" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg>';
   function openTabMenu(tab, ev) {
-    const y = ev.clientY;
     const items = [];
     if (!tab.home) items.push([tab.muted ? SPEAKER_OFF : SPEAKER, tab.muted ? 'Son' : 'Muet', tab.muted ? 'Réactiver le son' : "Couper le son de l'onglet", () => send({ type: 'toggle_mute', id: tab.id })]);
     // Veille : libère la mémoire d'un onglet caché ; sa page revient au clic.
@@ -801,7 +933,25 @@
     if (tab.active && state.site) {
       items.push(['<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.5"/></svg>', 'Site', 'Fiche du site : autorisations, zoom, données', () => openSite()]);
     }
-    items.push(['<svg width="12" height="12" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg>', 'Fermer', "Fermer l'onglet", () => send({ type: 'close_tab', id: tab.id })]);
+    if (tab.active && (tab.readable || tab.reading)) {
+      items.push([BOOK, 'Lecture', tab.reading ? 'Quitter le mode lecture' : "Afficher l'article en mode lecture", () => send({ type: 'reader' })]);
+    }
+    items.push([PIN, tab.pinned ? 'Détacher' : 'Épingler', tab.pinned ? "Détacher l'onglet" : "Épingler l'onglet en tête de liste", () => send({ type: 'pin_tab', id: tab.id, pinned: !tab.pinned })]);
+    if (!tab.pinned) items.push([GROUP, 'Groupe', 'Ranger dans un groupe', () => openGroupSheet(tab)]);
+    items.push([CLOSE, 'Fermer', "Fermer l'onglet", () => send({ type: 'close_tab', id: tab.id })]);
+    showMenu(items, ev);
+  }
+  // Clic droit sur l'étiquette d'un groupe.
+  function openGroupMenu(group, ev) {
+    showMenu([
+      [GROUP, group.collapsed ? 'Ouvrir' : 'Replier', group.collapsed ? 'Afficher les onglets du groupe' : 'Replier le groupe (ses onglets se mettent en veille)', () => send({ type: 'toggle_group', group: group.id })],
+      ['<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>', 'Nom', 'Renommer le groupe', () => openGroupSheet(null, group)],
+      ['<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="3" y="6" width="18" height="13" rx="3" stroke-dasharray="3 3"/></svg>', 'Dégrouper', 'Garder les onglets, sans groupe', () => send({ type: 'ungroup', group: group.id })],
+      [CLOSE, 'Fermer', 'Fermer tous les onglets du groupe', () => send({ type: 'close_group', group: group.id })],
+    ], ev);
+  }
+  function showMenu(items, ev) {
+    const y = ev.clientY;
     const box = $('ctx');
     box.textContent = '';
     for (const [icon, text, title, run] of items) {
@@ -817,7 +967,7 @@
       box.style.left = Math.max(4, Math.min(ev.clientX - 20, window.innerWidth - 150)) + 'px';
     } else {
       box.style.left = '';
-      box.style.top = Math.max(4, Math.min(y - 20, window.innerHeight - 70 * items.length)) + 'px';
+      box.style.top = Math.max(4, Math.min(y - 20, window.innerHeight - 8 - 44 * items.length)) + 'px';
     }
     box.classList.add('open');
     clearTimeout(ctxTimer);
@@ -865,6 +1015,12 @@
     pill.classList.toggle('insecure', insecure);
     pill.title = insecure ? 'Connexion non sécurisée (http)' : '';
     renderLock(tab);
+    const canRead = !!(tab && (tab.readable || tab.reading));
+    for (const b of [$('reader-pill'), $('reader-btn')]) {
+      b.hidden = !canRead;
+      b.classList.toggle('on', !!(tab && tab.reading));
+      b.title = tab && tab.reading ? 'Quitter le mode lecture' : 'Mode lecture : le texte de l\'article, sans le reste';
+    }
     $('star').hidden = !tab || tab.home;
     $('star').classList.toggle('on', !!(tab && tab.bookmarked));
     $('star').title = tab && tab.bookmarked ? 'Retirer des favoris (Ctrl+D)' : 'Ajouter aux favoris (Ctrl+D)';
@@ -873,14 +1029,25 @@
 
     const box = $('pills');
     box.textContent = '';
+    const groups = new Map((state.groups || []).map((g) => [g.id, g]));
+    let lastGroup = null;
+    let afterPinned = false;
     for (const tab of state.tabs) {
+      // Après les épinglés, un petit trait ; avant chaque groupe, son étiquette.
+      if (tab.pinned) afterPinned = true;
+      else if (afterPinned) { afterPinned = false; const sep = document.createElement('div'); sep.className = 'pin-sep'; box.appendChild(sep); }
+      const group = tab.group != null ? groups.get(tab.group) : null;
+      if (group && group.id !== lastGroup) box.appendChild(groupLabel(group));
+      lastGroup = group ? group.id : null;
+      if (group && group.collapsed && !tab.active) continue;
       const el = document.createElement('div');
       const sound = tab.audible || tab.muted;
       const icon = tab.icon && !badIcons.has(tab.icon) ? tab.icon : null;
       const level = tab.weight ? tab.weight.level : 0;
       el.className = 'tab' + (tab.active ? ' active' : '') + (tab.loading && !sound ? ' loading' : '') +
         (icon ? ' has-icon' : '') + (tab.muted ? ' muted' : '') + (tab.private ? ' private' : '') +
-        (tab.asleep ? ' asleep' : '') + (level ? ' w' + level : '');
+        (tab.asleep ? ' asleep' : '') + (level ? ' w' + level : '') + (tab.pinned ? ' pinned' : '') + (group ? ' in-group' : '');
+      if (group) el.style.setProperty('--g', group.color);
       el.dataset.id = tab.id;
       el.setAttribute('role', 'button');
       el.setAttribute('aria-label', label(tab));
@@ -945,6 +1112,16 @@
             star.innerHTML = STAR;
             star.addEventListener('pointerdown', (e) => e.stopPropagation());
             star.addEventListener('click', (e) => { e.stopPropagation(); send({ type: 'toggle_bookmark', id: tab.id }); });
+            if (tab.readable || tab.reading) {
+              const book = document.createElement('button');
+              book.className = 'book' + (tab.reading ? ' on' : '');
+              book.title = tab.reading ? 'Quitter le mode lecture' : 'Mode lecture';
+              book.setAttribute('aria-label', book.title);
+              book.innerHTML = BOOK;
+              book.addEventListener('pointerdown', (e) => e.stopPropagation());
+              book.addEventListener('click', (e) => { e.stopPropagation(); send({ type: 'reader' }); });
+              el.appendChild(book);
+            }
             el.appendChild(star);
           }
         }
@@ -971,9 +1148,28 @@
     }
   }
 
+  // Étiquette d'un groupe : un clic le replie ou l'ouvre, clic droit pour le menu.
+  function groupLabel(group) {
+    const el = document.createElement('div');
+    const count = state.tabs.filter((t) => t.group === group.id).length;
+    el.className = 'grp' + (group.collapsed ? ' collapsed' : '');
+    el.style.setProperty('--g', group.color);
+    el.innerHTML = '<span class="n"></span><span class="c"></span>';
+    el.querySelector('.n').textContent = group.name;
+    el.querySelector('.c').textContent = count;
+    el.title = group.name + ' · ' + count + ' onglet' + (count > 1 ? 's' : '') + '\n' +
+      (group.collapsed ? 'Cliquer pour ouvrir' : 'Cliquer pour replier') + ' · clic droit : menu';
+    el.addEventListener('click', () => send({ type: 'toggle_group', group: group.id }));
+    el.addEventListener('contextmenu', (e) => { e.preventDefault(); openGroupMenu(group, e); });
+    return el;
+  }
+
   // Bulle d'un onglet : titre, puis privé, en veille, poids.
   function tabTitle(tab) {
     const parts = [label(tab)];
+    if (tab.pinned) parts.push('Épinglé');
+    if (tab.group != null) { const g = (state.groups || []).find((g) => g.id === tab.group); if (g) parts.push('Groupe « ' + g.name + ' »'); }
+    if (tab.reading) parts.push('Mode lecture');
     if (tab.private) parts.push('Onglet privé');
     if (tab.asleep) parts.push('En veille (rechargé au clic)');
     if (tab.error) parts.push('La page n\'a pas pu être chargée');
@@ -1087,23 +1283,26 @@
     if (!drag.moved && Math.abs(pos - drag.y) < 6) return;
     if (!drag.moved) { drag.moved = true; drag.el.classList.add('dragging'); drag.el.title = ''; }
     const box = $('pills');
-    const others = [...box.children].filter((el) => el !== drag.el);
+    const others = [...box.querySelectorAll('.tab')].filter((el) => el !== drag.el);
     // La position du pointeur s'appelait « c », comme l'onglet comparé : on comparait
     // donc un élément à un nombre (toujours faux) et l'onglet partait toujours à la fin.
     const before = others.find((el) => {
       const r = el.getBoundingClientRect();
       return top ? pos < r.left + r.width / 2 : pos < r.top + r.height / 2;
     });
+    drag.before = before ? Number(before.dataset.id) : null;
     if (before) { if (drag.el.nextSibling !== before) box.insertBefore(drag.el, before); }
     else if (box.lastChild !== drag.el) box.appendChild(drag.el);
   });
   const endDrag = () => {
     if (!drag) return;
-    const { el, tab, moved, onTitle } = drag;
+    const { tab, moved, onTitle, before } = drag;
     drag = null;
     if (moved) {
-      const index = [...$('pills').children].indexOf(el);
-      send({ type: 'move_tab', id: tab.id, index });
+      // Position dans la liste complète (les onglets d'un groupe replié n'y sont pas dessinés).
+      const rest = state.tabs.filter((t) => t.id !== tab.id).map((t) => t.id);
+      const at = before == null ? -1 : rest.indexOf(before);
+      send({ type: 'move_tab', id: tab.id, index: at < 0 ? rest.length : at });
     } else if (tab.active && onTitle && isTop()) {
       startEdit();
       return;
@@ -1242,7 +1441,7 @@
     renderPosChoices();
     renderUpdate();
     if (mode === 'bar') closeBar(false);
-    if (mode === 'library' || mode === 'site') setMode(null);
+    if (isSheet()) setMode(null);
     setMode('settings');
     $('s-name').focus();
   }
@@ -1340,7 +1539,7 @@
     $(id).addEventListener('click', () => {
       if (mode === 'bar') closeBar(false);
       if (mode === 'settings') closeSettings();
-      if (mode === 'library' || mode === 'site') setMode(null);
+      if (isSheet()) setMode(null);
       send({ type: id });
       send({ type: 'focus_page' });
     });
@@ -1350,6 +1549,129 @@
   });
 
   $('search-pill').addEventListener('click', () => openBar(''));
+  $('reader-pill').addEventListener('click', () => send({ type: 'reader' }));
+  $('reader-btn').addEventListener('mousedown', (e) => e.preventDefault());
+  $('reader-btn').addEventListener('click', () => { closeBar(false); send({ type: 'reader' }); });
+
+  // --- Groupe d'un onglet, ou nouveau nom d'un groupe ---
+  let sheetTab = null;    // onglet à ranger
+  let sheetGroup = null;  // groupe à renommer
+  function openSheet(next) {
+    if (mode === 'bar') closeBar(false);
+    if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
+    stopEdit();
+    setMode(next);
+  }
+  function closeSheet() {
+    if (mode !== 'group' && mode !== 'import') return;
+    setMode(null);
+    send({ type: 'focus_page' });
+  }
+  function openGroupSheet(tab, group) {
+    sheetTab = tab ? tab.id : null;
+    sheetGroup = group ? group.id : null;
+    openSheet('group');
+    renderGroupSheet();
+    const name = $('grp-name');
+    name.value = group ? group.name : '';
+    name.focus();
+    name.select();
+  }
+  function renderGroupSheet() {
+    const list = $('grp-list');
+    list.textContent = '';
+    const tab = state.tabs.find((t) => t.id === sheetTab);
+    if (sheetGroup != null) {
+      $('grp-title').textContent = 'Renommer le groupe';
+      $('grp-hint').textContent = '';
+      $('grp-name').placeholder = 'Nom du groupe';
+      $('grp-submit').textContent = 'Renommer';
+      return;
+    }
+    if (!tab) { closeSheet(); return; }
+    $('grp-title').textContent = 'Ranger dans un groupe';
+    $('grp-hint').textContent = label(tab);
+    $('grp-name').placeholder = 'Nom du nouveau groupe';
+    $('grp-submit').textContent = 'Créer';
+    const row = (color, text, sub, on, run) => {
+      const r = document.createElement('div');
+      r.className = 'row';
+      r.innerHTML = '<span class="gdot"></span><div class="txt"><span class="t"></span></div><span class="time"></span>';
+      r.querySelector('.gdot').style.setProperty('--g', color);
+      r.querySelector('.t').textContent = text;
+      r.querySelector('.time').textContent = on ? '✓' : sub;
+      r.addEventListener('click', run);
+      list.appendChild(r);
+    };
+    for (const g of state.groups || []) {
+      const n = state.tabs.filter((t) => t.group === g.id).length;
+      row(g.color, g.name, n + ' onglet' + (n > 1 ? 's' : ''), tab.group === g.id, () => { send({ type: 'group_tab', id: tab.id, group: g.id }); closeSheet(); });
+    }
+    if (tab.group != null) row('transparent', 'Retirer du groupe', '', false, () => { send({ type: 'group_tab', id: tab.id, group: null }); closeSheet(); });
+  }
+  $('grp-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = $('grp-name').value.trim();
+    if (sheetGroup != null) send({ type: 'rename_group', group: sheetGroup, name });
+    else if (sheetTab != null) send({ type: 'new_group', id: sheetTab, name });
+    closeSheet();
+  });
+  $('grp-close').addEventListener('click', closeSheet);
+  $('group').addEventListener('mousedown', (e) => { if (e.target === $('group')) closeSheet(); });
+
+  // --- Import des favoris (Paramètres → Importer des favoris) ---
+  let importFiles = [];   // [nom, texte]
+  function openImport() {
+    importFiles = [];
+    $('imp-file').value = '';
+    $('imp-sources').innerHTML = '<p class="sheet-hint">Recherche…</p>';
+    renderImportFiles();
+    openSheet('import');
+    send({ type: 'import_sources' });
+  }
+  function importReady() {
+    const any = importFiles.length || $('imp-sources').querySelector('input:checked');
+    $('imp-go').disabled = !any;
+  }
+  function renderImportFiles() {
+    $('imp-files').textContent = importFiles.map(([n]) => n).join(', ');
+    importReady();
+  }
+  function setImportSources(list) {
+    const box = $('imp-sources');
+    box.textContent = '';
+    if (!list.length) box.innerHTML = '<p class="sheet-hint">Aucun autre navigateur trouvé (Chrome, Edge, Brave, Chromium).</p>';
+    for (const src of list) {
+      const l = document.createElement('label');
+      l.className = 'src';
+      l.innerHTML = '<input type="checkbox" checked><span></span><em></em>';
+      l.querySelector('input').value = src.id;
+      l.querySelector('span').textContent = src.name;
+      l.querySelector('em').textContent = src.count + ' favori' + (src.count > 1 ? 's' : '');
+      l.querySelector('input').addEventListener('change', importReady);
+      box.appendChild(l);
+    }
+    importReady();
+  }
+  $('imp-pick').addEventListener('click', () => $('imp-file').click());
+  $('imp-file').addEventListener('change', () => {
+    for (const f of $('imp-file').files) {
+      if (f.size > 20 * 1024 * 1024) continue;
+      const reader = new FileReader();
+      reader.onload = () => { importFiles.push([f.name, String(reader.result || '')]); renderImportFiles(); };
+      reader.readAsText(f);
+    }
+  });
+  $('imp-go').addEventListener('click', () => {
+    const sources = [...$('imp-sources').querySelectorAll('input:checked')].map((i) => i.value);
+    send({ type: 'import', sources, files: importFiles.map(([, t]) => t) });
+    importFiles = [];
+    closeSheet();
+  });
+  $('imp-cancel').addEventListener('click', closeSheet);
+  $('imp-close').addEventListener('click', closeSheet);
+  $('import').addEventListener('mousedown', (e) => { if (e.target === $('import')) closeSheet(); });
+  $('s-import').addEventListener('click', openImport);
   $('gear').addEventListener('click', () => mode === 'settings' ? closeSettings() : openSettings());
   $('new-tab').addEventListener('click', () => send({ type: 'new_tab' }));
 
@@ -1412,7 +1734,7 @@
     if (mode === 'library' && libKind === kind) { closeLibrary(); return; }
     if (mode === 'bar') closeBar(false);
     if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
-    if (mode === 'site') setMode(null);
+    if (mode === 'site' || mode === 'group' || mode === 'import') setMode(null);
     stopEdit();
     libKind = kind;
     const info = LIB_PANELS[kind];
@@ -1895,6 +2217,7 @@
     if (e.key === 'Escape' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) { openLibrary('memory'); e.preventDefault(); return; }
     if (e.key === 'Escape') closeTabMenu();
     if (e.key === 'Escape' && mode === 'site') { closeSite(); return; }
+    if (e.key === 'Escape' && (mode === 'group' || mode === 'import')) { closeSheet(); return; }
     if (e.key === 'Escape' && mode === 'settings') { closeSettings(); return; }
     if (e.key === 'Escape' && mode === 'library') { closeLibrary(); return; }
     const k = e.key.toLowerCase();
@@ -1912,6 +2235,7 @@
     if (k === 'f5') { send({ type: 'reload' }); e.preventDefault(); return; }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     if (e.shiftKey && k === 't') shortcut('reopen_tab');
+    else if (e.shiftKey && k === 's') shortcut('capture');
     else if (e.shiftKey && k === 'n') shortcut('new_private_tab');
     else if (k === 'f' && !e.shiftKey) openFind();
     else if (k === 'p' && !e.shiftKey) shortcut('print');
@@ -1951,7 +2275,9 @@
       document.body.classList.toggle('eco', !!state.settings.economy);
       if (mode === 'library' && LOCAL_KINDS.includes(libKind)) renderLibrary();
       if (mode === 'site') renderSite();
+      if (mode === 'group') renderGroupSheet();
     },
+    setImportSources(list) { if (mode === 'import') setImportSources(list || []); },
     setLibrary(data) {
       if (mode !== 'library' || data.kind !== libKind) return;
       libItems = data.items || [];

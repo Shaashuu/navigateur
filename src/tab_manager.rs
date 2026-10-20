@@ -21,8 +21,9 @@ use wry::{NewWindowResponse, PageLoadEvent, Rect, WebView, WebViewBuilder};
 use crate::UserEvent;
 use crate::downloads;
 use crate::errorpage::{self, ErrorKind};
-use crate::library::{Library, Session};
+use crate::library::{Library, Session, TabGroup};
 use crate::network;
+use crate::reader;
 use crate::settings::Settings;
 use crate::sitedata::SiteData;
 use crate::softsleep::{self, Repos};
@@ -34,6 +35,9 @@ pub type TabId = u32;
 
 /// Nombre d'onglets fermés que `Ctrl+Maj+T` peut rouvrir.
 const CLOSED_MEMORY: usize = 10;
+
+/// Couleurs proposées aux groupes, l'une après l'autre.
+const GROUP_COLORS: [&str; 6] = ["#5b5bd6", "#2f9e5b", "#e8a317", "#e5484d", "#0e9fb5", "#c2489b"];
 
 pub struct Tab {
     pub id: TabId,
@@ -55,6 +59,14 @@ pub struct Tab {
     pub weight: Weight,
     /// Veille douce de la page cachée (voir `softsleep.rs`).
     pub repos: Repos,
+    /// La page ressemble à un article : le mode lecture est proposé.
+    pub readable: bool,
+    /// Mode lecture : l'adresse de la page d'origine de l'article affiché.
+    pub reading: Option<String>,
+    /// Onglet épinglé : en haut de la colonne, jamais fermé par Ctrl+W, rouvert à chaque démarrage.
+    pub pinned: bool,
+    /// Groupe de l'onglet (voir `TabGroup`).
+    pub group: Option<u32>,
     /// Échec du dernier chargement, affiché par une page d'erreur Feather :
     /// la cause et l'adresse en échec (voir `errorpage.rs`).
     pub failed: Option<(ErrorKind, String)>,
@@ -68,6 +80,12 @@ impl Tab {
     /// La webview de l'onglet, sauf s'il est en veille.
     pub fn webview(&self) -> Option<&WebView> {
         self.webview.as_ref()
+    }
+
+    /// La page affichée est une page Feather (erreur, lecture) à la place du site :
+    /// ni historique, ni titre, ni icône venant d'elle.
+    pub fn on_internal_page(&self) -> bool {
+        self.failed.is_some() || self.reading.is_some()
     }
 
     pub fn is_asleep(&self) -> bool {
@@ -126,6 +144,10 @@ pub struct TabInfo<'a> {
     pub repos: Repos,
     /// La page affichée est une page d'erreur Feather.
     pub error: bool,
+    pub pinned: bool,
+    pub group: Option<u32>,
+    pub readable: bool,
+    pub reading: bool,
 }
 
 /// Tout ce qu'il faut pour créer la webview d'un nouvel onglet.
@@ -136,6 +158,7 @@ pub struct PageContext<'a> {
     pub settings: &'a Arc<RwLock<Settings>>,
     pub library: &'a Arc<RwLock<Library>>,
     pub sites: &'a Arc<RwLock<SiteData>>,
+    pub reader: &'a reader::Store,
     pub bounds: Rect,
 }
 
@@ -148,6 +171,9 @@ pub struct TabManager {
     closing: Vec<(Instant, WebView)>,
     /// Adresses des derniers onglets fermés (les plus récents à la fin).
     closed: Vec<String>,
+    /// Groupes d'onglets, dans l'ordre de création.
+    groups: Vec<TabGroup>,
+    next_group: u32,
 }
 
 impl TabManager {
@@ -177,6 +203,10 @@ impl TabManager {
             last_active: Instant::now(),
             weight: Weight::default(),
             repos: Repos::Eveille,
+            readable: false,
+            reading: None,
+            pinned: false,
+            group: None,
             failed: None,
             host: Arc::default(),
             webview: None,
@@ -242,6 +272,8 @@ impl TabManager {
             return;
         };
         let mut closed = self.tabs.remove(index);
+        let tabs = &self.tabs;
+        self.groups.retain(|g| tabs.iter().any(|t| t.group == Some(g.id)));
         // On garde l'adresse pour « rouvrir l'onglet fermé », sauf pour un onglet privé.
         if !closed.private && !network::is_home(&closed.url) {
             self.closed.retain(|u| *u != closed.url);
@@ -323,6 +355,7 @@ impl TabManager {
         let tab = self.tabs.remove(from);
         let index = index.min(self.tabs.len());
         self.tabs.insert(index, tab);
+        self.arrange();
     }
 
     pub fn active(&self) -> Option<&Tab> {
@@ -373,10 +406,132 @@ impl TabManager {
     /// Les onglets ouverts, pour les rouvrir au prochain démarrage (sans les onglets privés).
     pub fn session(&self) -> Session {
         let public: Vec<&Tab> = self.tabs.iter().filter(|t| !t.private).collect();
+        let used: Vec<u32> = public.iter().filter_map(|t| t.group).collect();
         Session {
             urls: public.iter().map(|t| t.url.clone()).collect(),
             active: public.iter().position(|t| Some(t.id) == self.active).unwrap_or(0),
+            pinned: public.iter().map(|t| t.pinned).collect(),
+            groups: public.iter().map(|t| t.group).collect(),
+            tab_groups: self.groups.iter().filter(|g| used.contains(&g.id)).cloned().collect(),
         }
+    }
+
+    // --- Épinglés et groupes ---
+
+    pub fn groups(&self) -> &[TabGroup] {
+        &self.groups
+    }
+
+    /// Reprend les groupes d'une session enregistrée (les numéros sont gardés).
+    pub fn restore_groups(&mut self, groups: Vec<TabGroup>) {
+        self.next_group = groups.iter().map(|g| g.id).max().unwrap_or(0);
+        self.groups = groups;
+        // Un onglet dont le groupe a disparu du fichier redevient libre.
+        let known: Vec<u32> = self.groups.iter().map(|g| g.id).collect();
+        for tab in &mut self.tabs {
+            if tab.group.is_some_and(|g| !known.contains(&g)) {
+                tab.group = None;
+            }
+        }
+        self.arrange();
+    }
+
+    /// Épingle un onglet (ou le détache). Un onglet épinglé quitte son groupe.
+    pub fn set_pinned(&mut self, id: TabId, pinned: bool) {
+        if let Some(tab) = self.get_mut(id) {
+            tab.pinned = pinned;
+            if pinned {
+                tab.group = None;
+            }
+        }
+        self.arrange();
+    }
+
+    /// Crée un groupe avec cet onglet ; renvoie son numéro.
+    pub fn new_group(&mut self, id: TabId, name: &str) -> Option<u32> {
+        self.get(id)?;
+        self.next_group += 1;
+        let group = self.next_group;
+        let color = GROUP_COLORS[(group as usize - 1) % GROUP_COLORS.len()];
+        self.groups.push(TabGroup { id: group, name: clean_name(name), color: color.to_string(), collapsed: false });
+        self.set_group(id, Some(group));
+        Some(group)
+    }
+
+    /// Range un onglet dans un groupe (`None` : le sort de son groupe).
+    pub fn set_group(&mut self, id: TabId, group: Option<u32>) {
+        if group.is_some_and(|g| !self.groups.iter().any(|x| x.id == g)) {
+            return;
+        }
+        if let Some(tab) = self.get_mut(id) {
+            tab.group = group;
+            if group.is_some() {
+                tab.pinned = false;
+            }
+        }
+        self.arrange();
+    }
+
+    pub fn rename_group(&mut self, group: u32, name: &str) {
+        if let Some(g) = self.groups.iter_mut().find(|g| g.id == group) {
+            g.name = clean_name(name);
+        }
+    }
+
+    /// Défait un groupe : ses onglets restent ouverts, hors groupe.
+    pub fn ungroup(&mut self, group: u32) {
+        for tab in self.tabs.iter_mut().filter(|t| t.group == Some(group)) {
+            tab.group = None;
+        }
+        self.arrange();
+    }
+
+    /// Les onglets d'un groupe (pour le fermer en entier).
+    pub fn group_members(&self, group: u32) -> Vec<TabId> {
+        self.tabs.iter().filter(|t| t.group == Some(group)).map(|t| t.id).collect()
+    }
+
+    /// Replie ou déplie un groupe. Replié, ses onglets cachés passent en veille :
+    /// leur mémoire est rendue. Renvoie vrai si au moins un onglet a été endormi.
+    pub fn toggle_group(&mut self, group: u32) -> bool {
+        let Some(g) = self.groups.iter_mut().find(|g| g.id == group) else {
+            return false;
+        };
+        g.collapsed = !g.collapsed;
+        if !g.collapsed {
+            return false;
+        }
+        let mut slept = false;
+        for id in self.group_members(group) {
+            slept |= self.sleep(id);
+        }
+        slept
+    }
+
+    /// Range les onglets : les épinglés d'abord, puis les onglets de chaque
+    /// groupe côte à côte (à la place du premier d'entre eux). Les groupes
+    /// vides disparaissent.
+    fn arrange(&mut self) {
+        let mut rest: Vec<Tab> = Vec::with_capacity(self.tabs.len());
+        let mut pinned = Vec::new();
+        for tab in self.tabs.drain(..) {
+            if tab.pinned { pinned.push(tab) } else { rest.push(tab) }
+        }
+        let mut ordered = pinned;
+        // Le premier onglet restant emmène avec lui tous ceux de son groupe.
+        while !rest.is_empty() {
+            match rest[0].group {
+                Some(g) => {
+                    let (members, others): (Vec<Tab>, Vec<Tab>) = rest.into_iter().partition(|t| t.group == Some(g));
+                    ordered.extend(members);
+                    rest = others;
+                }
+                None => ordered.push(rest.remove(0)),
+            }
+        }
+        self.tabs = ordered;
+        let tabs = &self.tabs;
+        self.groups.retain(|g| tabs.iter().any(|t| t.group == Some(g.id)));
     }
 
     /// Active l'onglet à cette position (restauration de la session).
@@ -409,6 +564,10 @@ impl TabManager {
                     weight: t.weight,
                     repos: t.repos,
                     error: t.failed.is_some(),
+                    pinned: t.pinned,
+                    group: t.group,
+                    readable: t.readable,
+                    reading: t.reading.is_some(),
                 }
             })
             .collect()
@@ -418,6 +577,13 @@ impl TabManager {
         self.active
             .and_then(|id| self.tabs.iter().position(|t| t.id == id))
     }
+}
+
+/// Nom d'un groupe : court, sans caractères de contrôle ; « Groupe » s'il est vide.
+fn clean_name(name: &str) -> String {
+    let name: String = name.chars().filter(|c| !c.is_control()).take(30).collect();
+    let name = name.trim();
+    if name.is_empty() { "Groupe".to_string() } else { name.to_string() }
 }
 
 /// Coupe le son et vide une page avant de la détruire.
@@ -441,6 +607,7 @@ fn build_page(
     let library = Arc::clone(ctx.library);
     let download_settings = Arc::clone(ctx.settings);
     let sites = Arc::clone(ctx.sites);
+    let articles = Arc::clone(ctx.reader);
     let permission_host = Arc::clone(&host);
     let on_download = ctx.proxy.clone();
     let on_downloaded = ctx.proxy.clone();
@@ -477,8 +644,16 @@ fn build_page(
         // actuels ; `navigateur://erreur/` sert les pages d'erreur (voir errorpage.rs).
         .with_custom_protocol("navigateur".into(), move |_id, request| {
             let settings = settings.read().map(|s| s.clone()).unwrap_or_default();
+            let uri = request.uri().to_string();
             let html = if request.uri().host() == Some("erreur") {
-                errorpage::render(&request.uri().to_string(), &settings)
+                errorpage::render(&uri, &settings)
+            } else if request.uri().host() == Some("lecture") {
+                // Seul l'article de cet onglet, et seulement pour l'adresse demandée.
+                let store = articles.read().ok();
+                let article = store.as_ref().and_then(|s| s.get(&id)).and_then(|(url, a)| {
+                    (reader::parse(&uri).as_ref() == Some(&(id, url.clone()))).then_some(a)
+                });
+                reader::render(&uri, article, &settings)
             } else {
                 match library.read() {
                     Ok(lib) if settings.bookmarks_on_home => ui::home_page(&settings, lib.bookmarks()),
@@ -530,4 +705,76 @@ fn build_page(
     trackers::install(&webview, host, block_trackers);
     errorpage::install(&webview, id, ctx.proxy.clone());
     Ok(webview)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn order(m: &TabManager) -> Vec<TabId> {
+        m.tabs.iter().map(|t| t.id).collect()
+    }
+
+    #[test]
+    fn epingles_en_tete() {
+        let mut m = TabManager::default();
+        let a = m.add_asleep("https://a.fr/", "A", false);
+        let b = m.add_asleep("https://b.fr/", "B", false);
+        let c = m.add_asleep("https://c.fr/", "C", false);
+        m.set_pinned(c, true);
+        assert_eq!(order(&m), vec![c, a, b]);
+        // Un onglet ordinaire ne passe pas devant un épinglé.
+        m.move_tab(b, 0);
+        assert_eq!(order(&m), vec![c, b, a]);
+        m.set_pinned(c, false);
+        assert_eq!(m.session().pinned, vec![false, false, false]);
+    }
+
+    #[test]
+    fn groupes_cote_a_cote() {
+        let mut m = TabManager::default();
+        let a = m.add_asleep("https://a.fr/", "A", false);
+        let b = m.add_asleep("https://b.fr/", "B", false);
+        let c = m.add_asleep("https://c.fr/", "C", false);
+        let g = m.new_group(a, "  ").unwrap();
+        assert_eq!(m.groups()[0].name, "Groupe");
+        m.set_group(c, Some(g));
+        assert_eq!(order(&m), vec![a, c, b]);
+        // Épingler sort l'onglet de son groupe.
+        m.set_pinned(c, true);
+        assert_eq!(order(&m), vec![c, a, b]);
+        assert_eq!(m.get(c).unwrap().group, None);
+        // Groupe vidé : il disparaît.
+        m.set_group(a, None);
+        assert!(m.groups().is_empty());
+        // Un groupe inconnu est refusé.
+        m.set_group(b, Some(99));
+        assert_eq!(m.get(b).unwrap().group, None);
+    }
+
+    #[test]
+    fn session_et_restauration() {
+        let mut m = TabManager::default();
+        let a = m.add_asleep("https://a.fr/", "A", false);
+        let b = m.add_asleep("https://b.fr/", "B", false);
+        let g = m.new_group(b, "Travail").unwrap();
+        m.rename_group(g, "Bureau");
+        m.toggle_group(g);
+        let s = m.session();
+        assert_eq!(s.groups, vec![None, Some(g)]);
+        assert_eq!(s.tab_groups.len(), 1);
+        assert!(s.tab_groups[0].collapsed);
+        assert_eq!(m.group_members(g), vec![b]);
+        m.ungroup(g);
+        assert!(m.groups().is_empty());
+        assert_eq!(order(&m), vec![a, b]);
+        // Restauration : un onglet dont le groupe manque redevient libre.
+        let mut r = TabManager::default();
+        let x = r.add_asleep("https://x.fr/", "X", false);
+        r.get_mut(x).unwrap().group = Some(7);
+        r.restore_groups(Vec::new());
+        assert_eq!(r.get(x).unwrap().group, None);
+        let n = r.new_group(x, "Neuf").unwrap();
+        assert_eq!(n, 1);
+    }
 }
