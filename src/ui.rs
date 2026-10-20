@@ -13,8 +13,8 @@ use crate::settings::{BarPosition, Settings, Theme};
 use crate::sitedata::Permission;
 use crate::tab_manager::TabId;
 
-/// Largeur de la colonne des pastilles, à gauche (pixels logiques).
-pub const SIDEBAR_WIDTH: f64 = 56.0;
+/// Largeur la plus étroite de la colonne des pastilles (pixels logiques).
+pub const SIDEBAR_WIDTH: f64 = crate::settings::SIDEBAR_MIN as f64;
 /// Hauteur de la barre quand elle est placée en haut.
 pub const TOP_BAR_HEIGHT: f64 = 44.0;
 /// Hauteur du bandeau du bas (recherche dans la page, question d'autorisation,
@@ -88,9 +88,20 @@ pub enum ChromeMessage {
     Forward,
     Reload,
     Home,
-    /// L'interface ouvre (ou ferme) un panneau : il faut cacher la page.
+    /// L'interface ouvre (ou ferme) un panneau : elle passe au-dessus de la page
+    /// (macOS, Windows) ou la cache (Linux).
     Expand {
         open: bool,
+    },
+    /// Forme de l'interface pendant qu'un panneau est ouvert : la barre et les panneaux.
+    Shape {
+        rects: Vec<crate::layers::ShapeRect>,
+    },
+    /// La barre latérale est élargie ou rétrécie à la souris ; `done` : bouton relâché.
+    SidebarWidth {
+        width: u32,
+        #[serde(default)]
+        done: bool,
     },
     /// L'utilisateur a quitté la barre : rendre le focus à la page.
     FocusPage,
@@ -218,6 +229,8 @@ pub struct PageMessage {
     pub permission: Option<PermissionRequest>,
     /// La page est prête : elle demande si son fond doit être en verre.
     pub glass: bool,
+    /// Clic dans la page : un panneau ouvert par-dessus se ferme.
+    pub pressed: bool,
 }
 
 #[derive(Debug, Default, Deserialize, serde::Serialize, Clone, Copy)]
@@ -310,12 +323,15 @@ pub enum Shortcut {
 
 /// Zone occupée par les pages : tout sauf la barre (à gauche, à droite ou en
 /// haut) et, s'il est ouvert, le bandeau du bas.
-pub fn page_bounds(window: &Window, bar: BarPosition, strip: bool) -> Rect {
+/// `side` : largeur de la barre quand elle est à gauche ou à droite.
+pub fn page_bounds(window: &Window, bar: BarPosition, side: u32, strip: bool) -> Rect {
     let size = window.inner_size().to_logical::<f64>(window.scale_factor());
     let strip = if strip { STRIP_HEIGHT } else { 0.0 };
+    // La barre ne prend jamais plus de la moitié de la fenêtre.
+    let side = f64::from(side).clamp(SIDEBAR_WIDTH, (size.width / 2.0).max(SIDEBAR_WIDTH));
     let (x, y, w, h) = match bar {
-        BarPosition::Left => (SIDEBAR_WIDTH, 0.0, size.width - SIDEBAR_WIDTH, size.height - strip),
-        BarPosition::Right => (0.0, 0.0, size.width - SIDEBAR_WIDTH, size.height - strip),
+        BarPosition::Left => (side, 0.0, size.width - side, size.height - strip),
+        BarPosition::Right => (0.0, 0.0, size.width - side, size.height - strip),
         BarPosition::Top => (0.0, TOP_BAR_HEIGHT, size.width, size.height - TOP_BAR_HEIGHT - strip),
     };
     Rect {

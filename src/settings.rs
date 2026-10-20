@@ -43,7 +43,14 @@ pub struct Settings {
     pub glass: Glass,
     /// Transparence du verre, de 0 (presque opaque) à 100 (très transparent).
     pub glass_level: u32,
+    /// Largeur de la barre à gauche ou à droite, en pixels (voir `SIDEBAR_MIN`).
+    pub sidebar_width: u32,
 }
+
+/// Largeur la plus étroite de la barre latérale : les pastilles seules.
+pub const SIDEBAR_MIN: u32 = 56;
+/// Largeur la plus grande : les pastilles et le titre des pages.
+pub const SIDEBAR_MAX: u32 = 320;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -63,6 +70,7 @@ impl Default for Settings {
             index_pages: true,
             glass: Glass::Off,
             glass_level: 60,
+            sidebar_width: SIDEBAR_MIN,
         }
     }
 }
@@ -164,6 +172,7 @@ impl Settings {
         self.download_dir = self.download_dir.trim().to_string();
         self.sleep_minutes = self.sleep_minutes.min(24 * 60);
         self.glass_level = self.glass_level.min(100);
+        self.sidebar_width = self.sidebar_width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
         self
     }
 
@@ -201,5 +210,9 @@ mod tests {
         .cleaned();
         assert_eq!(s.name, "Léa");
         assert_eq!(s.start_url(), "https://exemple.fr/");
+        let narrow = Settings { sidebar_width: 10, ..Default::default() }.cleaned();
+        assert_eq!(narrow.sidebar_width, SIDEBAR_MIN);
+        let wide = Settings { sidebar_width: 5000, ..Default::default() }.cleaned();
+        assert_eq!(wide.sidebar_width, SIDEBAR_MAX);
     }
 }

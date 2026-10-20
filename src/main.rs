@@ -14,6 +14,7 @@ mod downloads;
 mod features;
 mod fulltext;
 mod glass;
+mod layers;
 mod library;
 #[cfg(target_os = "macos")]
 mod mac_mouse;
@@ -115,6 +116,8 @@ struct App {
     proxy: EventLoopProxy<UserEvent>,
     /// Un panneau de l'interface (commandes, paramètres) recouvre la page.
     expanded: bool,
+    /// L'interface passe au-dessus des pages quand un panneau est ouvert.
+    layers: layers::Layers,
     /// Le bandeau du bas (recherche, question, minuteur) est ouvert : la page rétrécit.
     strip: bool,
     update: UpdateState,
@@ -206,6 +209,7 @@ fn main() -> wry::Result<()> {
         settings: Arc::new(RwLock::new(settings)),
         proxy,
         expanded: false,
+        layers: layers::Layers::default(),
         strip: false,
         update: UpdateState::Idle,
         restart: None,
@@ -390,7 +394,7 @@ impl App {
                     self.close_tab(id);
                 }
             }
-            ChromeMessage::ActivateTab { id } => self.tabs.activate(id, !self.expanded),
+            ChromeMessage::ActivateTab { id } => self.tabs.activate(id, self.page_visible()),
             // Mêmes actions que les raccourcis des pages : un seul endroit pour les deux.
             ChromeMessage::Back => self.handle_shortcut(None, Shortcut::Back),
             ChromeMessage::Forward => self.handle_shortcut(None, Shortcut::Forward),
@@ -401,7 +405,22 @@ impl App {
             }
             ChromeMessage::Expand { open } => {
                 self.expanded = open;
-                self.tabs.set_active_visible(!open);
+                if layers::SUPPORTED {
+                    self.layers.set_on_top(&self.window, &self.chrome, open);
+                } else {
+                    self.tabs.set_active_visible(!open);
+                }
+            }
+            // Messages fréquents (à chaque image) : rien à redessiner dans l'interface.
+            ChromeMessage::Shape { rects } => {
+                self.layers.set_shape(&self.window, &self.chrome, rects);
+                return;
+            }
+            ChromeMessage::SidebarWidth { width, done } => {
+                self.set_sidebar_width(width, done);
+                if !done {
+                    return;
+                }
             }
             ChromeMessage::FocusPage => self.focus_page(),
             ChromeMessage::FocusBar => self.focus_bar(),
@@ -537,6 +556,10 @@ impl App {
         if let Some(text) = message.text {
             self.index_page(id, &text);
         }
+        // Clic dans la page pendant qu'un panneau est ouvert par-dessus : il se ferme.
+        if message.pressed && self.expanded {
+            self.chrome_call("navigateur.closePanel()");
+        }
         // La page vient d'être construite : elle demande si son fond doit être en verre.
         if message.glass {
             self.apply_page_glass(id);
@@ -589,8 +612,8 @@ impl App {
                     self.toggle_bookmark(id);
                 }
             }
-            Shortcut::NextTab => self.tabs.cycle(1, !self.expanded),
-            Shortcut::PreviousTab => self.tabs.cycle(-1, !self.expanded),
+            Shortcut::NextTab => self.tabs.cycle(1, self.page_visible()),
+            Shortcut::PreviousTab => self.tabs.cycle(-1, self.page_visible()),
             Shortcut::Find => self.focus_chrome("navigateur.openFind()"),
             Shortcut::ZoomIn => self.zoom(1),
             Shortcut::ZoomOut => self.zoom(-1),
@@ -627,9 +650,28 @@ impl App {
         self.open_tab(network::HOME_URL, false);
     }
 
-    /// Zone des pages selon la position de la barre et le bandeau du bas.
+    /// Zone des pages selon la position et la largeur de la barre, et le bandeau du bas.
     fn page_bounds(&self) -> wry::Rect {
-        ui::page_bounds(&self.window, self.read_settings().bar_position, self.strip)
+        let settings = self.read_settings();
+        ui::page_bounds(&self.window, settings.bar_position, settings.sidebar_width, self.strip)
+    }
+
+    /// La page active reste affichée : toujours quand les panneaux passent
+    /// par-dessus, sinon seulement si aucun panneau n'est ouvert.
+    fn page_visible(&self) -> bool {
+        !self.expanded || layers::SUPPORTED
+    }
+
+    /// La barre latérale change de largeur ; on enregistre quand le bouton est relâché.
+    fn set_sidebar_width(&mut self, width: u32, save: bool) {
+        let width = width.clamp(settings::SIDEBAR_MIN, settings::SIDEBAR_MAX);
+        if let Ok(mut s) = self.settings.write() {
+            s.sidebar_width = width;
+            if save && let Err(err) = s.save() {
+                eprintln!("paramètres non enregistrés : {err}");
+            }
+        }
+        self.tabs.set_bounds(self.page_bounds());
     }
 
     fn open_tab(&mut self, url: &str, private: bool) {
@@ -642,10 +684,12 @@ impl App {
             sites: &self.sites,
             bounds: self.page_bounds(),
         };
-        match self.tabs.open(url, &ctx, !self.expanded, private) {
+        match self.tabs.open(url, &ctx, self.page_visible(), private) {
             Ok(_) => self.focus_page(),
             Err(err) => eprintln!("impossible d'ouvrir l'onglet : {err}"),
         }
+        // La nouvelle page est créée au-dessus de tout, panneau ouvert compris.
+        self.layers.restack(&self.window, &self.chrome);
         self.push_state();
     }
 
@@ -663,9 +707,10 @@ impl App {
             sites: &self.sites,
             bounds: self.page_bounds(),
         };
-        if let Err(err) = self.tabs.wake(id, &ctx, !self.expanded) {
+        if let Err(err) = self.tabs.wake(id, &ctx, self.page_visible()) {
             eprintln!("impossible de réveiller l'onglet : {err}");
         }
+        self.layers.restack(&self.window, &self.chrome);
         self.focus_page();
         self.push_state();
     }
@@ -675,7 +720,7 @@ impl App {
         let previous = self.tabs.active().map(|t| t.id);
         self.open_tab(url, false);
         if let Some(id) = previous {
-            self.tabs.activate(id, !self.expanded);
+            self.tabs.activate(id, self.page_visible());
             // `open_tab` a donné le focus clavier au nouvel onglet, caché : on le
             // rend à la page visible, sinon les touches partaient dans l'onglet caché.
             self.focus_page();
@@ -685,7 +730,7 @@ impl App {
 
     /// Ferme un onglet ; on garde toujours au moins un onglet ouvert.
     fn close_tab(&mut self, id: TabId) {
-        self.tabs.close(id, !self.expanded);
+        self.tabs.close(id, self.page_visible());
         self.schedule_reap();
         if self.tabs.is_empty() {
             self.open_new_tab();
@@ -944,6 +989,8 @@ impl App {
             "native_commands": commands,
             "glass_supported": settings::Glass::SUPPORTED,
             "glass_page": self.active_page_glass(),
+            "overlay": layers::SUPPORTED,
+            "panel_blur": cfg!(target_os = "macos"),
         });
         drop(lib);
         self.chrome_call(&format!("navigateur.setState({state})"));
