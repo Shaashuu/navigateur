@@ -152,6 +152,14 @@ pub fn check() -> Result<Option<Available>, String> {
     Ok(pick_release(&release, CURRENT, asset_suffix()))
 }
 
+/// Télécharge un petit fichier en https (styles des sites). `what` : pour le message d'erreur.
+pub fn fetch(url: &str, what: &str) -> Result<Vec<u8>, String> {
+    let mut cmd = Command::new("curl");
+    cmd.args(["-sSL", "--fail", "--max-time", "60", "--max-filesize", "20000000", "--proto", "=https", "--proto-redir", "=https"])
+        .arg(url);
+    Ok(run(cmd, what)?.stdout)
+}
+
 /// Seul https est accepté ; les essais en développement peuvent viser un serveur local.
 fn proto() -> &'static str {
     if cfg!(debug_assertions) && std::env::var("FEATHER_UPDATE_API").is_ok() {
