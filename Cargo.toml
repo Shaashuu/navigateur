@@ -21,7 +21,7 @@ block2 = "0.6"
 libc = "0.2"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSGraphics", "NSResponder", "NSView", "NSVisualEffectView", "block2", "objc2-quartz-core"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSError", "NSGeometry"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSString", "NSError", "NSGeometry"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer"] }
 objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "block2", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController"] }
 # Effet de verre (flou du bureau derrière la fenêtre).
