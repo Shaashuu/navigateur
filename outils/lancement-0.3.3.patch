@@ -1,0 +1,56 @@
+diff --git a/src/main.rs b/src/main.rs
+index cedce21..66f414b 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -225,7 +225,13 @@ fn main() -> wry::Result<()> {
+         ticks: 0,
+     };
+     let session = library::load_session();
+-    if restore && !session.urls.is_empty() {
++    let launch = network::launch_urls(std::env::args().skip(1));
++    if let Some((first, others)) = launch.split_first() {
++        app.open_tab(first, false);
++        for url in others {
++            app.open_tab_in_background(url);
++        }
++    } else if restore && !session.urls.is_empty() {
+         // Les onglets restaurés restent en veille : seul celui affiché est chargé.
+         for url in &session.urls {
+             app.tabs.add_asleep(url, "", false);
+diff --git a/src/network.rs b/src/network.rs
+index 2f7623a..322b2c7 100644
+--- a/src/network.rs
++++ b/src/network.rs
+@@ -47,6 +47,16 @@ pub fn is_web(url: &str) -> bool {
+     (url.starts_with("https://") || url.starts_with("http://")) && !is_home(url)
+ }
+ 
++/// Adresses données au lancement (`feather https://exemple.fr …`). Seules les
++/// vraies pages web sont gardées : macOS ajoute parfois ses propres arguments
++/// (`-psn_…`), et une adresse locale (`file://`) ne doit pas s'ouvrir ainsi.
++pub fn launch_urls(args: impl IntoIterator<Item = String>) -> Vec<String> {
++    args.into_iter()
++        .map(|a| a.trim().to_string())
++        .filter(|a| is_web(a) && Url::parse(a).is_ok())
++        .collect()
++}
++
+ /// Transforme la saisie de la barre en adresse : soit l'adresse elle-même,
+ /// soit une recherche avec le moteur choisi. `None` si la saisie est vide.
+ pub fn resolve_input(input: &str, engine: SearchEngine) -> Option<String> {
+@@ -138,6 +148,15 @@ fn looks_like_domain(host: &str) -> bool {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn adresses_du_lancement() {
++        let args = ["-psn_0_12345", "https://fr.wikipedia.org/", "file:///etc/passwd", " http://a.fr ", "mots"];
++        assert_eq!(
++            launch_urls(args.map(String::from)),
++            vec!["https://fr.wikipedia.org/".to_string(), "http://a.fr".to_string()]
++        );
++    }
++
+     const DDG: SearchEngine = SearchEngine::DuckDuckGo;
+ 
+     #[test]
