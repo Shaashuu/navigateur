@@ -42,7 +42,9 @@ jobs:
           path: Feather-*-windows.exe
 
   macos:
-    runs-on: macos-latest
+    # Machine Intel : les machines Apple Silicon de GitHub sont souvent saturées,
+    # et celle-ci construit aussi la version Apple Silicon (fichier universel).
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -57,7 +59,7 @@ jobs:
       - name: Mesurer la mémoire
         continue-on-error: true
         timeout-minutes: 5
-        run: bash outils/banc-memoire.sh target/aarch64-apple-darwin/release/feather
+        run: bash outils/banc-memoire.sh target/x86_64-apple-darwin/release/feather
       - name: Créer l'application et le .dmg
         run: |
           mkdir -p dmg/Feather.app/Contents/MacOS
