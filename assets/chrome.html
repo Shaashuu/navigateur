@@ -212,24 +212,61 @@
   #overlay .help { margin-top: 14px; color: var(--muted); font-size: 12px; }
 
   /* Paramètres */
-  #settings form {
-    width: min(460px, 100%); max-height: 100%; overflow-y: auto; padding: 24px 26px;
+  /* Paramètres : les catégories à gauche, leurs réglages à droite, enregistrés à chaque changement */
+  #settings-form {
+    position: relative; width: min(860px, 100%); height: min(620px, 100%); display: flex; overflow: hidden;
     background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
-    user-select: text;
   }
-  #settings h2 { margin: 0 0 18px; font-size: 20px; font-weight: 600; }
-  #settings label { display: block; margin: 14px 0 6px; color: var(--muted); font-size: 13px; }
-  #settings input[type=text], #settings select {
-    width: 100%; height: 38px; padding: 0 12px; border-radius: 10px;
-    border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit;
+  .set-nav { width: 220px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 18px 10px; background: var(--bg); border-right: 1px solid var(--line); overflow-y: auto; }
+  .set-nav h2 { margin: 0 8px 12px; font-size: 18px; font-weight: 600; }
+  .set-search { display: flex; align-items: center; gap: 6px; height: 32px; margin: 0 0 10px; padding: 0 10px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+  .set-search:focus-within { border-color: var(--accent); }
+  .set-search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 13px; user-select: text; }
+  .navbtn { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 9px; font-size: 13px; text-align: left; color: var(--text); }
+  .navbtn svg { color: var(--muted); flex: none; }
+  .navbtn:hover { background: var(--line); }
+  .navbtn.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .navbtn.on svg { color: var(--accent); }
+  .navbtn.dim { opacity: .4; }
+  .set-body { position: relative; flex: 1; min-width: 0; padding: 22px 26px 30px; overflow-y: auto; user-select: text; }
+  .set-close { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; border-radius: 15px; color: var(--muted); font-size: 18px; z-index: 1; }
+  .set-close:hover { background: var(--accent-soft); color: var(--text); }
+  .set-body section { display: none; }
+  .set-body section.on { display: block; }
+  /* Recherche : toutes les catégories, seulement les réglages qui correspondent */
+  .set-body.searching section { display: block; margin-bottom: 18px; }
+  .set-body.searching section.empty, .set-body .srow.hide, .set-body.searching .desc { display: none; }
+  .set-body h3 { margin: 0 40px 2px 0; font-size: 18px; font-weight: 600; }
+  .set-body .desc { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+  .set-none { color: var(--muted); font-size: 14px; }
+  .srow { display: flex; align-items: center; gap: 14px; padding: 11px 0; border-bottom: 1px solid var(--line); min-height: 50px; }
+  .srow:last-child { border-bottom: 0; }
+  .srow.col { flex-direction: column; align-items: stretch; gap: 6px; }
+  .srow .lab { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; color: var(--text); margin: 0; }
+  .srow .lab small { font-size: 12px; color: var(--muted); }
+  #settings .srow input[type=text], #settings .srow select {
+    width: 230px; flex: none; height: 34px; padding: 0 10px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; font-size: 13px;
   }
-  #settings .choices { display: flex; gap: 6px; }
-  #settings .choices button { flex: 1; height: 36px; border-radius: 10px; border: 1px solid var(--line); }
+  #settings .srow input[type=text]:focus, #settings .srow select:focus { outline: none; border-color: var(--accent); }
+  #settings .choices { display: flex; gap: 4px; flex: none; }
+  #settings .choices button { height: 30px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line); font-size: 12.5px; white-space: nowrap; }
   #settings .choices button.on { border-color: var(--accent); background: var(--accent-soft); }
-  #settings .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
-  #settings .actions button { height: 38px; padding: 0 18px; border-radius: 19px; }
-  #settings .primary { background: var(--accent); color: #fff; }
-  #settings .update { margin-top: 20px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+  /* Interrupteur */
+  .tg { appearance: none; -webkit-appearance: none; flex: none; width: 36px; height: 22px; margin: 0; border-radius: 11px; background: var(--line); position: relative; cursor: pointer; transition: background .15s; }
+  .tg::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 8px; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: left .15s; }
+  .tg:checked { background: var(--accent); }
+  .tg:checked::after { left: 17px; }
+  .tg:focus-visible, .navbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #settings .plain { flex: none; height: 32px; padding: 0 14px; border-radius: 16px; border: 1px solid var(--line); }
+  #settings .plain:hover { border-color: var(--accent); }
+  .saved { position: absolute; right: 18px; bottom: 16px; padding: 5px 12px; border-radius: 14px; background: var(--text); color: var(--bg); font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .saved.show { opacity: .9; }
+  .key { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .key span:first-child { flex: 1; }
+  .key kbd { font-family: inherit; font-size: 12px; padding: 2px 7px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; background: var(--bg); white-space: nowrap; }
+  @media (max-width: 640px) { .set-nav { width: 64px; } .set-nav h2, .set-nav .navbtn span, .set-search { display: none; } }
+  #settings .update { margin: 4px 0 6px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
   #settings [hidden] { display: none !important; }
   #settings .update h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
   #settings .update .row { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; }
@@ -250,7 +287,7 @@
   #settings .about { margin-top: 18px; color: var(--muted); font-size: 12px; }
   #settings h3.sec { margin: 22px 0 0; font-size: 14px; font-weight: 600; }
   #settings .check { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 13px; color: var(--text); }
-  #settings .danger { margin-top: 12px; height: 34px; padding: 0 16px; border-radius: 17px; border: 1px solid var(--line); color: var(--danger); }
+  #settings .danger { flex: none; height: 32px; padding: 0 16px; border-radius: 17px; border: 1px solid var(--line); color: var(--danger); }
   #settings .danger.confirm { background: var(--danger); color: #fff; border-color: var(--danger); }
 
   /* Favoris, historique, téléchargements : trois boutons sous la maison */
@@ -678,6 +715,7 @@
       <div id="site-conn"></div>
       <h3>Autorisations retenues</h3>
       <div id="site-perms"></div>
+      <button type="button" class="small" id="site-all" style="margin-top:6px">Toutes les autorisations…</button>
       <h3>Affichage et vie privée</h3>
       <div class="line"><span>Zoom</span><span class="v" id="site-zoom"></span>
         <button type="button" class="small" id="site-zoom-out" title="Réduire (Ctrl+moins)">&minus;</button>
@@ -726,87 +764,140 @@
   </div>
 
   <div id="settings">
-    <form id="settings-form" class="card">
-      <h2>Paramètres</h2>
-      <label for="s-name">Votre prénom (affiché sur l'accueil)</label>
-      <input type="text" id="s-name" maxlength="40" autocomplete="off">
-      <label for="s-engine">Moteur de recherche</label>
-      <select id="s-engine">
-        <option value="duckduckgo">DuckDuckGo</option>
-        <option value="qwant">Qwant</option>
-        <option value="ecosia">Ecosia</option>
-        <option value="google">Google</option>
-        <option value="bing">Bing</option>
-      </select>
-      <label for="s-home">Adresse du bouton maison (vide = accueil Feather avec l'heure et la recherche)</label>
-      <input type="text" id="s-home" placeholder="exemple.fr" autocomplete="off">
-      <label>Thème</label>
-      <div class="choices" id="s-theme">
-        <button type="button" data-value="auto">Automatique</button>
-        <button type="button" data-value="light">Clair</button>
-        <button type="button" data-value="dark">Sombre</button>
-      </div>
-      <label>Position de la barre</label>
-      <div class="choices" id="s-pos">
-        <button type="button" data-value="left">Gauche</button>
-        <button type="button" data-value="right">Droite</button>
-        <button type="button" data-value="top">Haut</button>
-      </div>
-      <h3 class="sec">Au démarrage</h3>
-      <div class="choices" id="s-startup" style="margin-top:8px">
-        <button type="button" data-value="home">Ouvrir l'accueil</button>
-        <button type="button" data-value="restore">Restaurer les onglets</button>
-      </div>
-      <h3 class="sec">Historique et favoris</h3>
-      <label for="s-history">Conserver l'historique</label>
-      <select id="s-history">
-        <option value="7">7 jours</option>
-        <option value="30">30 jours</option>
-        <option value="90">3 mois</option>
-        <option value="365">1 an</option>
-        <option value="0">Toujours</option>
-      </select>
-      <label class="check"><input type="checkbox" id="s-bmhome"> Afficher les favoris sur la page d'accueil</label>
-      <button type="button" class="danger" id="s-import" style="color:var(--text)">Importer des favoris…</button>
-      <button type="button" class="danger" id="s-clear">Effacer l'historique</button>
-      <label class="check"><input type="checkbox" id="s-index"> Retrouver les pages par leur texte (gardé sur cet ordinateur)</label>
-      <h3 class="sec">Vie privée et sites</h3>
-      <label class="check"><input type="checkbox" id="s-trackers"> Bloquer les traqueurs (mesure d'audience, publicité)</label>
-      <label>Autorisations retenues</label>
-      <div id="s-perms"></div>
-      <h3 class="sec">Onglets</h3>
-      <label for="s-sleep">Mettre en veille un onglet caché après</label>
-      <select id="s-sleep">
-        <option value="0">Jamais</option>
-        <option value="15">15 minutes</option>
-        <option value="30">30 minutes</option>
-        <option value="60">1 heure</option>
-        <option value="120">2 heures</option>
-      </select>
-      <label class="check"><input type="checkbox" id="s-economy"> Mode économie</label>
-      <div class="hint">Moins de mémoire et de batterie : veille après 5 minutes, vidéos des onglets cachés en pause, lecture automatique des vidéos bloquée, traqueurs bloqués.</div>
-      <h3 class="sec">Téléchargements</h3>
-      <label for="s-dldir">Dossier (vide = dossier Téléchargements de l'ordinateur)</label>
-      <input type="text" id="s-dldir" placeholder="Téléchargements" autocomplete="off" spellcheck="false">
-      <div class="update">
-        <h3>Mise à jour</h3>
-        <div class="row"><span>Version actuelle</span><b id="u-current"></b></div>
-        <div class="row" id="u-new-row" hidden><span>Nouvelle version</span><b id="u-new"></b></div>
-        <p class="status" id="u-status"></p>
-        <div class="buttons">
-          <button type="button" id="u-check">Rechercher une mise à jour</button>
-          <button type="button" id="u-install" class="primary" hidden>Télécharger</button>
-          <button type="button" id="u-restart" class="primary" hidden>Redémarrer pour mettre à jour</button>
-          <button type="button" id="u-page" hidden>Voir la version</button>
+    <div id="settings-form" class="card" role="dialog" aria-label="Paramètres">
+      <nav class="set-nav">
+        <h2>Paramètres</h2>
+        <div class="set-search">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="search" id="s-search" placeholder="Chercher un réglage" spellcheck="false" autocomplete="off">
         </div>
-        <label class="check"><input type="checkbox" id="s-autoupdate"> Chercher une mise à jour à chaque démarrage</label>
+        <button type="button" class="navbtn" data-cat="general"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z"/></svg><span>Général</span></button>
+        <button type="button" class="navbtn" data-cat="apparence"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor"/></svg><span>Apparence</span></button>
+        <button type="button" class="navbtn" data-cat="recherche"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Recherche</span></button>
+        <button type="button" class="navbtn" data-cat="onglets"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M10 10h4v4h-4zM9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></svg><span>Onglets et mémoire</span></button>
+        <button type="button" class="navbtn" data-cat="vieprivee"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg><span>Vie privée et sites</span></button>
+        <button type="button" class="navbtn" data-cat="donnees"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 4v4h4"/><path d="M12 7.5V12l3 2"/></svg><span>Historique et données</span></button>
+        <button type="button" class="navbtn" data-cat="telech"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg><span>Téléchargements</span></button>
+        <button type="button" class="navbtn" data-cat="raccourcis"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h1M10 10h1M14 10h1M18 10h0M7 14h10"/></svg><span>Raccourcis clavier</span></button>
+        <button type="button" class="navbtn" data-cat="apropos"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.5"/></svg><span>À propos et mise à jour</span></button>
+      </nav>
+      <div class="set-body" id="set-body">
+        <button type="button" class="set-close" id="s-close" title="Fermer (Échap)" aria-label="Fermer">&times;</button>
+        <section data-cat="general">
+          <h3>Général</h3>
+          <p class="desc">Ce que Feather ouvre au démarrage et qui il salue.</p>
+          <div class="srow"><label class="lab" for="s-name">Votre prénom<small>Affiché sur l'accueil</small></label>
+            <input type="text" id="s-name" maxlength="40" autocomplete="off"></div>
+          <div class="srow"><span class="lab">Au démarrage</span>
+            <div class="choices" id="s-startup">
+              <button type="button" data-value="home">Ouvrir l'accueil</button>
+              <button type="button" data-value="restore">Restaurer les onglets</button>
+            </div></div>
+          <div class="srow"><label class="lab" for="s-home">Adresse du bouton maison<small>Vide : l'accueil Feather, avec l'heure et la recherche</small></label>
+            <input type="text" id="s-home" placeholder="exemple.fr" autocomplete="off"></div>
+        </section>
+        <section data-cat="apparence">
+          <h3>Apparence</h3>
+          <p class="desc">Les couleurs, la place de la barre et l'accueil.</p>
+          <div class="srow"><span class="lab">Thème</span>
+            <div class="choices" id="s-theme">
+              <button type="button" data-value="auto">Automatique</button>
+              <button type="button" data-value="light">Clair</button>
+              <button type="button" data-value="dark">Sombre</button>
+            </div></div>
+          <div class="srow"><span class="lab">Position de la barre<small>À gauche ou à droite, tirer sur son bord l'élargit</small></span>
+            <div class="choices" id="s-pos">
+              <button type="button" data-value="left">Gauche</button>
+              <button type="button" data-value="right">Droite</button>
+              <button type="button" data-value="top">Haut</button>
+            </div></div>
+          <div class="srow"><label class="lab" for="s-bmhome">Favoris sur la page d'accueil</label>
+            <input type="checkbox" class="tg" id="s-bmhome"></div>
+        </section>
+        <section data-cat="recherche">
+          <h3>Recherche</h3>
+          <p class="desc">Ce que fait la barre quand on tape autre chose qu'une adresse.</p>
+          <div class="srow"><label class="lab" for="s-engine">Moteur de recherche</label>
+            <select id="s-engine">
+              <option value="duckduckgo">DuckDuckGo</option>
+              <option value="qwant">Qwant</option>
+              <option value="ecosia">Ecosia</option>
+              <option value="google">Google</option>
+              <option value="bing">Bing</option>
+            </select></div>
+        </section>
+        <section data-cat="onglets">
+          <h3>Onglets et mémoire</h3>
+          <p class="desc">Ce qui garde Feather léger.</p>
+          <div class="srow"><label class="lab" for="s-economy">Mode économie<small>Veille après 5 minutes, vidéos des onglets cachés en pause, lecture automatique des vidéos bloquée, traqueurs bloqués</small></label>
+            <input type="checkbox" class="tg" id="s-economy"></div>
+          <div class="srow"><label class="lab" for="s-sleep">Mettre en veille un onglet caché après<small>Sa page est fermée et rechargée au retour ; sa mémoire est rendue</small></label>
+            <select id="s-sleep">
+              <option value="0">Jamais</option>
+              <option value="15">15 minutes</option>
+              <option value="30">30 minutes</option>
+              <option value="60">1 heure</option>
+              <option value="120">2 heures</option>
+            </select></div>
+        </section>
+        <section data-cat="vieprivee">
+          <h3>Vie privée et sites</h3>
+          <p class="desc">Ce que les sites peuvent savoir de vous, et ce que vous leur avez permis.</p>
+          <div class="srow"><label class="lab" for="s-trackers">Bloquer les traqueurs<small>Mesure d'audience et publicité</small></label>
+            <input type="checkbox" class="tg" id="s-trackers"></div>
+          <div class="srow col"><span class="lab">Autorisations retenues<small>Caméra, micro, position, notifications… site par site</small></span>
+            <div id="s-perms"></div></div>
+        </section>
+        <section data-cat="donnees">
+          <h3>Historique et données</h3>
+          <p class="desc">Ce que Feather garde sur cet ordinateur.</p>
+          <div class="srow"><label class="lab" for="s-history">Conserver l'historique</label>
+            <select id="s-history">
+              <option value="7">7 jours</option>
+              <option value="30">30 jours</option>
+              <option value="90">3 mois</option>
+              <option value="365">1 an</option>
+              <option value="0">Toujours</option>
+            </select></div>
+          <div class="srow"><label class="lab" for="s-index">Retrouver les pages par leur texte<small>Le texte des pages visitées reste sur cet ordinateur</small></label>
+            <input type="checkbox" class="tg" id="s-index"></div>
+          <div class="srow"><span class="lab">Effacer l'historique<small>Toutes les pages visitées et leur texte</small></span>
+            <button type="button" class="danger" id="s-clear">Effacer l'historique</button></div>
+          <div class="srow"><span class="lab">Importer des favoris<small>Depuis Chrome, Edge, Brave, ou un fichier exporté par Firefox ou Safari</small></span>
+            <button type="button" class="plain" id="s-import">Importer…</button></div>
+        </section>
+        <section data-cat="telech">
+          <h3>Téléchargements</h3>
+          <p class="desc">Où vont les fichiers et les captures de page.</p>
+          <div class="srow"><label class="lab" for="s-dldir">Dossier<small>Vide : le dossier Téléchargements de l'ordinateur</small></label>
+            <input type="text" id="s-dldir" placeholder="Téléchargements" autocomplete="off" spellcheck="false"></div>
+        </section>
+        <section data-cat="raccourcis">
+          <h3>Raccourcis clavier</h3>
+          <p class="desc">Ils marchent aussi quand la page a le focus.</p>
+          <div id="s-keys"></div>
+        </section>
+        <section data-cat="apropos">
+          <h3>À propos et mise à jour</h3>
+          <p class="desc">Feather, un navigateur léger écrit en Rust.</p>
+          <div class="update">
+            <div class="row"><span>Version actuelle</span><b id="u-current"></b></div>
+            <div class="row" id="u-new-row" hidden><span>Nouvelle version</span><b id="u-new"></b></div>
+            <p class="status" id="u-status"></p>
+            <div class="buttons">
+              <button type="button" id="u-check">Rechercher une mise à jour</button>
+              <button type="button" id="u-install" class="primary" hidden>Télécharger</button>
+              <button type="button" id="u-restart" class="primary" hidden>Redémarrer pour mettre à jour</button>
+              <button type="button" id="u-page" hidden>Voir la version</button>
+            </div>
+          </div>
+          <div class="srow"><label class="lab" for="s-autoupdate">Chercher une mise à jour à chaque démarrage</label>
+            <input type="checkbox" class="tg" id="s-autoupdate"></div>
+        </section>
+        <p class="set-none" id="s-none" hidden>Aucun réglage ne correspond.</p>
       </div>
-      <div class="actions">
-        <button type="button" id="s-cancel">Annuler</button>
-        <button type="submit" class="primary">Enregistrer</button>
-      </div>
-      <div class="about">Feather</div>
-    </form>
+      <div class="saved" id="s-saved">Enregistré</div>
+    </div>
   </div>
 
 <script>
@@ -821,7 +912,7 @@
     { name: '/retour', desc: 'Page précédente', run: () => send({ type: 'back' }) },
     { name: '/suivant', desc: 'Page suivante', run: () => send({ type: 'forward' }) },
     { name: '/actualiser', desc: 'Recharger la page', run: () => send({ type: 'reload' }) },
-    { name: '/parametres', desc: 'Ouvrir les paramètres', run: () => openSettings() },
+    { name: '/parametres', desc: 'Ouvrir les paramètres (« /parametres veille » cherche un réglage)', run: () => openSettings() },
     { name: '/prive', desc: 'Ouvrir un onglet privé (Ctrl+Maj+N)', run: () => shortcut('new_private_tab') },
     { name: '/rouvrir', desc: 'Rouvrir le dernier onglet fermé (Ctrl+Maj+T)', run: () => shortcut('reopen_tab') },
     { name: '/chercher', desc: 'Chercher dans la page (Ctrl+F)', run: () => openFind() },
@@ -843,9 +934,7 @@
   const isSheet = () => ['library', 'site', 'group', 'import'].includes(mode);
   let matches = [];
   let selected = 0;
-  let draftTheme = 'auto';
-  let draftPos = 'left';
-  let draftStartup = 'home';
+  let setCat = 'general';   // catégorie ouverte dans les paramètres
   const LIB_KINDS = ['bookmarks', 'history', 'downloads', 'memory'];
   let libKind = 'history';   // onglet ouvert dans la bibliothèque
   let libItems = [];
@@ -975,7 +1064,6 @@
       box.appendChild(b);
     }
     if (mode === 'bar') closeBar(false);
-    if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
     stopEdit();
     // Juste à droite du curseur (à gauche s'il n'y a pas la place), sans sortir de la fenêtre.
     box.style.visibility = 'hidden';
@@ -1436,34 +1524,123 @@
     c.run();
   }
 
-  function openSettings() {
+  // Les paramètres : chaque changement est envoyé à Rust tout de suite (plus de
+  // bouton « Enregistrer »). `cat` : la catégorie à ouvrir.
+  function openSettings(cat) {
+    fillSettings();
+    if (cat) setCat = cat;
+    $('s-search').value = '';
+    filterSettings();
+    showCat(setCat);
+    if (mode === 'bar') closeBar(false);
+    if (isSheet()) setMode(null);
+    setMode('settings');
+    $('s-search').focus();
+  }
+  function fillSettings() {
     const s = state.settings;
-    $('s-name').value = s.name || '';
+    const active = document.activeElement;
+    const set = (id, v) => { if ($(id) !== active) $(id).value = v; };
+    set('s-name', s.name || '');
     $('s-engine').value = s.search_engine || 'duckduckgo';
-    $('s-home').value = s.home_page || '';
-    draftTheme = s.theme || 'auto';
-    draftPos = s.bar_position || 'left';
+    set('s-home', s.home_page || '');
     $('s-autoupdate').checked = s.auto_update_check !== false;
-    draftStartup = s.startup || 'home';
     $('s-history').value = String(s.history_days ?? 90);
     if (!$('s-history').value) $('s-history').value = '90';
     $('s-bmhome').checked = s.bookmarks_on_home !== false;
-    $('s-dldir').value = s.download_dir || '';
+    set('s-dldir', s.download_dir || '');
     $('s-trackers').checked = s.block_trackers !== false;
     $('s-index').checked = s.index_pages !== false;
     $('s-sleep').value = String(s.sleep_minutes ?? 30);
     if (!$('s-sleep').value) $('s-sleep').value = '30';
     $('s-economy').checked = !!s.economy;
+    choose('s-startup', s.startup || 'home');
+    choose('s-theme', s.theme || 'auto');
+    choose('s-pos', s.bar_position || 'left');
     renderPermissions();
-    disarm($('s-clear'), "Effacer l'historique");
-    renderStartupChoices();
-    renderThemeChoices();
-    renderPosChoices();
     renderUpdate();
-    if (mode === 'bar') closeBar(false);
-    if (isSheet()) setMode(null);
-    setMode('settings');
-    $('s-name').focus();
+  }
+  const choose = (id, value) => { for (const b of $(id).children) b.classList.toggle('on', b.dataset.value === value); };
+  const chosen = (id) => { const b = $(id).querySelector('.on'); return b ? b.dataset.value : undefined; };
+  function showCat(cat) {
+    setCat = cat;
+    for (const b of document.querySelectorAll('.navbtn')) b.classList.toggle('on', b.dataset.cat === cat && !$('s-search').value.trim());
+    for (const sec of document.querySelectorAll('.set-body section')) sec.classList.toggle('on', sec.dataset.cat === cat);
+    $('set-body').scrollTop = 0;
+  }
+  // Recherche : on garde les réglages dont le texte contient tous les mots tapés.
+  const fold = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  function filterSettings() {
+    const words = fold($('s-search').value).split(/\s+/).filter(Boolean);
+    const body = $('set-body');
+    body.classList.toggle('searching', words.length > 0);
+    let any = false;
+    for (const sec of body.querySelectorAll('section')) {
+      const title = fold(sec.querySelector('h3').textContent);
+      let found = 0;
+      for (const row of sec.querySelectorAll('.srow, .key, .update')) {
+        const text = title + ' ' + fold(row.textContent);
+        const hit = words.every((w) => text.includes(w));
+        row.classList.toggle('hide', words.length > 0 && !hit);
+        if (hit) found++;
+      }
+      sec.classList.toggle('empty', words.length > 0 && !found);
+      const btn = document.querySelector('.navbtn[data-cat="' + sec.dataset.cat + '"]');
+      btn.classList.toggle('dim', words.length > 0 && !found);
+      any = any || found > 0;
+    }
+    $('s-none').hidden = !words.length || any;
+    if (!words.length) showCat(setCat);
+    else for (const b of document.querySelectorAll('.navbtn')) b.classList.remove('on');
+  }
+  let savedTimer = 0;
+  function saveSettings() {
+    const settings = {
+      name: $('s-name').value,
+      search_engine: $('s-engine').value,
+      home_page: $('s-home').value,
+      theme: chosen('s-theme'),
+      bar_position: chosen('s-pos'),
+      auto_update_check: $('s-autoupdate').checked,
+      startup: chosen('s-startup'),
+      history_days: Number($('s-history').value),
+      bookmarks_on_home: $('s-bmhome').checked,
+      download_dir: $('s-dldir').value,
+      block_trackers: $('s-trackers').checked,
+      sleep_minutes: Number($('s-sleep').value),
+      index_pages: $('s-index').checked,
+      sidebar_width: state.settings.sidebar_width,
+      economy: $('s-economy').checked,
+    };
+    state.settings = Object.assign({}, state.settings, settings);
+    applyTheme(settings.theme);
+    applyPos(settings.bar_position);
+    send({ type: 'save_settings', settings });
+    const tag = $('s-saved');
+    tag.classList.add('show');
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => tag.classList.remove('show'), 1200);
+  }
+  const KEYS = [
+    ['Rechercher ou aller à une adresse', 'Ctrl+L'], ['Nouvel onglet', 'Ctrl+T'], ['Fermer l\'onglet', 'Ctrl+W'],
+    ['Rouvrir l\'onglet fermé', 'Ctrl+Maj+T'], ['Onglet privé', 'Ctrl+Maj+N'], ['Onglet suivant / précédent', 'Ctrl+Tab · Ctrl+Maj+Tab'],
+    ['Page précédente / suivante', 'Alt+← · Alt+→'], ['Actualiser', 'F5 · Ctrl+R'], ['Chercher dans la page', 'Ctrl+F'],
+    ['Ajouter aux favoris', 'Ctrl+D'], ['Couper le son de l\'onglet', 'Ctrl+M'], ['Imprimer', 'Ctrl+P'],
+    ['Zoom', 'Ctrl++ · Ctrl+- · Ctrl+0'], ['Capture de la page', 'Ctrl+Maj+S'], ['Mémoire des onglets', 'Maj+Échap'], ['Paramètres', 'Ctrl+,'],
+  ];
+  for (const [what, keys] of KEYS) {
+    const row = document.createElement('div');
+    row.className = 'key';
+    const t = document.createElement('span');
+    t.textContent = what;
+    row.appendChild(t);
+    for (const k of keys.split(' · ')) {
+      const kbd = document.createElement('kbd');
+      // Sous macOS, Ctrl s'écrit ⌘ (sauf Ctrl+M et Ctrl+Tab, qui restent Ctrl).
+      kbd.textContent = isMac && !/^Ctrl\+(M|Tab|Maj\+Tab)$/.test(k) ? k.replace(/^Ctrl\+/, '⌘') : k;
+      row.appendChild(kbd);
+    }
+    $('s-keys').appendChild(row);
   }
 
   // Autorisations retenues par site, avec un bouton pour les oublier.
@@ -1493,19 +1670,11 @@
   }
 
   function closeSettings() {
-    applyTheme(state.settings.theme);
-    applyPos(state.settings.bar_position);
+    if (mode !== 'settings') return;
+    // Un champ en cours de saisie est enregistré en fermant.
+    if (document.activeElement && document.activeElement.matches('#settings input[type=text]')) saveSettings();
     setMode(null);
     send({ type: 'focus_page' });
-  }
-
-  function renderThemeChoices() {
-    for (const b of $('s-theme').children) b.classList.toggle('on', b.dataset.value === draftTheme);
-    applyTheme(draftTheme); // aperçu immédiat
-  }
-
-  function renderStartupChoices() {
-    for (const b of $('s-startup').children) b.classList.toggle('on', b.dataset.value === draftStartup);
   }
 
   // Bouton à confirmer d'un second clic (effacer l'historique).
@@ -1517,11 +1686,6 @@
     b.textContent = text;
     setTimeout(() => { if (b.dataset.armed) disarm(b, b.dataset.label); }, 4000);
     return false;
-  }
-
-  function renderPosChoices() {
-    for (const b of $('s-pos').children) b.classList.toggle('on', b.dataset.value === draftPos);
-    applyPos(draftPos); // aperçu immédiat
   }
 
   // --- Barre ---
@@ -1545,7 +1709,10 @@
     if (e.key === 'Enter') {
       const text = input.value.trim();
       // Commande native : le résultat s'affiche sous la barre, qui reste ouverte.
-      if (text.startsWith('/') && isNative(text)) send({ type: 'command', input: text, run: true });
+      // « /parametres cookies » : les paramètres, déjà filtrés sur ces mots.
+      const wanted = text.match(/^\/param[eè]tres\s+(.+)$/i);
+      if (wanted) { closeBar(false); openSettings(); $('s-search').value = wanted[1]; filterSettings(); }
+      else if (text.startsWith('/') && isNative(text)) send({ type: 'command', input: text, run: true });
       else if (text) { closeBar(false); send({ type: 'navigate', input: text }); }
       e.preventDefault();
     } else if (e.key === 'Escape') {
@@ -1585,7 +1752,6 @@
   let sheetGroup = null;  // groupe à renommer
   function openSheet(next) {
     if (mode === 'bar') closeBar(false);
-    if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
     stopEdit();
     setMode(next);
   }
@@ -1703,12 +1869,24 @@
   $('new-tab').addEventListener('click', () => send({ type: 'new_tab' }));
 
   // --- Paramètres ---
-  for (const b of $('s-theme').children) {
-    b.addEventListener('click', () => { draftTheme = b.dataset.value; renderThemeChoices(); });
+  for (const id of ['s-theme', 's-pos', 's-startup']) {
+    for (const b of $(id).children) b.addEventListener('click', () => { choose(id, b.dataset.value); saveSettings(); });
   }
-  for (const b of $('s-startup').children) {
-    b.addEventListener('click', () => { draftStartup = b.dataset.value; renderStartupChoices(); });
+  for (const id of ['s-engine', 's-history', 's-sleep', 's-bmhome', 's-trackers', 's-index', 's-economy', 's-autoupdate']) {
+    $(id).addEventListener('change', saveSettings);
   }
+  // Champs de texte : enregistrés en quittant le champ ou avec Entrée.
+  for (const id of ['s-name', 's-home', 's-dldir']) {
+    $(id).addEventListener('change', saveSettings);
+    $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $(id).blur(); } });
+  }
+  for (const b of document.querySelectorAll('.navbtn')) {
+    b.addEventListener('click', () => { $('s-search').value = ''; filterSettings(); showCat(b.dataset.cat); });
+  }
+  $('s-search').addEventListener('input', filterSettings);
+  $('s-search').addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('s-search').value) { e.stopPropagation(); $('s-search').value = ''; filterSettings(); } });
+  $('s-close').addEventListener('click', closeSettings);
+  $('site-all').addEventListener('click', () => openSettings('vieprivee'));
   $('s-clear').dataset.label = "Effacer l'historique";
   $('s-clear').addEventListener('click', () => {
     const b = $('s-clear');
@@ -1716,37 +1894,8 @@
     send({ type: 'clear_history' });
     disarm(b, 'Historique effacé');
   });
-  for (const b of $('s-pos').children) {
-    b.addEventListener('click', () => { draftPos = b.dataset.value; renderPosChoices(); });
-  }
-  $('s-cancel').addEventListener('click', closeSettings);
-  // Clic à côté des paramètres (sur la page, visible derrière) : comme « Annuler ».
+  // Clic à côté des paramètres (sur la page, visible derrière) : ils se ferment.
   $('settings').addEventListener('mousedown', (e) => { if (e.target === $('settings')) closeSettings(); });
-  $('settings-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    send({
-      type: 'save_settings',
-      settings: {
-        name: $('s-name').value,
-        search_engine: $('s-engine').value,
-        home_page: $('s-home').value,
-        theme: draftTheme,
-        bar_position: draftPos,
-        auto_update_check: $('s-autoupdate').checked,
-        startup: draftStartup,
-        history_days: Number($('s-history').value),
-        bookmarks_on_home: $('s-bmhome').checked,
-        download_dir: $('s-dldir').value,
-        block_trackers: $('s-trackers').checked,
-        sleep_minutes: Number($('s-sleep').value),
-        index_pages: $('s-index').checked,
-        sidebar_width: state.settings.sidebar_width,
-        economy: $('s-economy').checked,
-      },
-    });
-    setMode(null);
-    send({ type: 'focus_page' });
-  });
 
   // --- Favoris, historique, téléchargements : un panneau chacun ---
   const LIB_PANELS = {
@@ -1760,7 +1909,6 @@
   function openLibrary(kind) {
     if (mode === 'library' && libKind === kind) { closeLibrary(); return; }
     if (mode === 'bar') closeBar(false);
-    if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
     if (mode === 'site' || mode === 'group' || mode === 'import') setMode(null);
     stopEdit();
     libKind = kind;
@@ -2050,7 +2198,6 @@
   function openSite() {
     if (!state.site) return;
     if (mode === 'bar') closeBar(false);
-    if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
     stopEdit();
     disarm($('site-clear'), $('site-clear').dataset.label);
     setMode('site');
@@ -2287,10 +2434,8 @@
     setState(next) {
       state = next;
       document.body.classList.toggle('overlay', !!state.overlay);
-      if (mode !== 'settings') {
-        applyTheme(state.settings.theme);
-        applyPos(state.settings.bar_position);
-      }
+      applyTheme(state.settings.theme);
+      applyPos(state.settings.bar_position);
       if (!resize) applySide(state.settings.sidebar_width);
       // Autre onglet affiché : la recherche dans la page se ferme.
       const active = activeTab();
@@ -2303,6 +2448,7 @@
       if (mode === 'library' && LOCAL_KINDS.includes(libKind)) renderLibrary();
       if (mode === 'site') renderSite();
       if (mode === 'group') renderGroupSheet();
+      if (mode === 'settings') fillSettings();
     },
     setImportSources(list) { if (mode === 'import') setImportSources(list || []); },
     setLibrary(data) {

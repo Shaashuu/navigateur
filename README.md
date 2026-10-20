@@ -142,6 +142,13 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   - Menu du clic droit sur un onglet plus grand, ouvert à droite du curseur,
     avec « Réglages du site web ».
   - Barre latérale élargie : 300 px au plus.
+- **Depuis la 0.3.7** (pas encore publié) :
+  - **Paramètres rangés par catégories** (Général, Apparence, Recherche,
+    Onglets et mémoire, Vie privée et sites, Historique et données,
+    Téléchargements, Raccourcis clavier, À propos et mise à jour), avec une
+    recherche (« veille », « cookies »…). Chaque changement est enregistré tout
+    de suite : plus de bouton « Enregistrer ». `/parametres veille` ouvre les
+    paramètres déjà filtrés ; la fiche du site mène à « Vie privée et sites ».
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
