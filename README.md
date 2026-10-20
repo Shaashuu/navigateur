@@ -95,7 +95,7 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   - **Adresses au lancement** : `feather https://exemple.fr https://autre.fr`
     ouvre chaque adresse dans un onglet.
   - **Banc de mesure de la mémoire** : voir « Mesurer la mémoire » plus bas.
-- **Prochaine version** :
+- **Nouveau en 0.3.5** :
   - **Mémoire des onglets** (bouton sous les téléchargements, `Maj+Échap` ou
     `/memoire`) : chaque onglet avec sa mémoire, son processeur et son état
     (affiché, allégé, gelé, en veille), le total, et des boutons pour réveiller,
