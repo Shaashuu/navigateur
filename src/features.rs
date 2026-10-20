@@ -9,9 +9,12 @@ use std::time::Duration;
 use serde_json::json;
 
 use crate::commands::{self, Contexte, Resultat};
+use crate::capture::{self, Target};
 use crate::downloads::{self, Download, State};
+use crate::import;
 use crate::errorpage::{self, ErrorKind};
 use crate::network;
+use crate::reader::{self, Article};
 use crate::siteclear;
 use crate::sitedata::Permission;
 use crate::softsleep;
@@ -110,6 +113,11 @@ impl App {
 
     /// Commande native de la barre : aperçu pendant la frappe, ou exécution.
     pub(crate) fn run_command(&mut self, input: &str, run: bool) {
+        // Commandes qui agissent sur la page : traitées ici, pas dans `commands`.
+        if let Some(reponse) = self.page_command(input, run) {
+            self.chrome_call(&format!("navigateur.setCommandResult({reponse})"));
+            return;
+        }
         let mut ctx = Contexte { notes: &mut self.notes };
         let reponse = if run {
             match commands::executer(input, &mut ctx) {
@@ -255,7 +263,7 @@ impl App {
             return;
         }
         let Some(tab) = self.tabs.get(id) else { return };
-        if tab.private || network::is_home(tab.url()) {
+        if tab.private || network::is_home(tab.url()) || tab.on_internal_page() {
             return;
         }
         let (url, title) = (tab.url().to_string(), tab.title.clone());
@@ -397,6 +405,169 @@ impl App {
             tab.eval(&format!("location.replace({})", js(url)));
         } else if let Some(w) = tab.webview() {
             let _ = w.reload();
+        }
+    }
+
+    // --- Mode lecture ---------------------------------------------------------
+
+    /// Bouton livre : extrait l'article de la page, ou quitte la lecture.
+    pub(crate) fn toggle_reader(&self) {
+        let Some(tab) = self.tabs.active() else { return };
+        if tab.reading.is_some() {
+            tab.eval("history.back()");
+        } else if network::is_web(tab.url()) && !tab.on_internal_page() {
+            tab.eval(&reader::extraction_script());
+        }
+    }
+
+    /// L'article extrait arrive : il est gardé pour l'onglet et affiché dans la
+    /// page de lecture (la page d'origine est quittée, sa mémoire rendue).
+    pub(crate) fn open_reader(&mut self, id: TabId, article: Article) {
+        let Some(article) = reader::clean(article) else { return };
+        let Some(tab) = self.tabs.get(id) else { return };
+        let original = tab.url().to_string();
+        if !network::is_web(&original) || tab.on_internal_page() {
+            return;
+        }
+        if let Ok(mut store) = self.reader.write() {
+            store.insert(id, (original.clone(), article));
+        }
+        if let Some(w) = tab.webview() {
+            let _ = w.load_url(&reader::reader_url(id, &original));
+        }
+    }
+
+    // --- Commandes de page ----------------------------------------------------
+
+    /// `/capture`, `/capture copier` et `/lecture`. `None` : pas une de ces commandes.
+    fn page_command(&mut self, input: &str, run: bool) -> Option<serde_json::Value> {
+        let mut words = input.trim().trim_start_matches('/').split_whitespace();
+        let name = words.next()?.to_lowercase();
+        let arg = words.next().map(str::to_lowercase);
+        let texte = match (name.as_str(), arg.as_deref()) {
+            ("capture", None) => {
+                if run {
+                    self.capture(false);
+                    "Capture en cours…".to_string()
+                } else {
+                    match self.capture_name() {
+                        Some(n) => format!("Enregistrer la page visible : {n}"),
+                        None => "Rien à capturer sur cette page".to_string(),
+                    }
+                }
+            }
+            ("capture", Some("copier" | "copie")) => {
+                if run {
+                    self.capture(true);
+                    "Capture en cours…".to_string()
+                } else {
+                    "Copier la page visible dans le presse-papiers".to_string()
+                }
+            }
+            ("lecture", None) => {
+                if run {
+                    self.toggle_reader();
+                }
+                "Afficher l'article en mode lecture".to_string()
+            }
+            _ => return None,
+        };
+        Some(json!({ "texte": texte, "erreur": false, "run": run }))
+    }
+
+    // --- Capture de la page ---------------------------------------------------
+
+    /// Nom du fichier de capture de l'onglet actif (`None` : pas de page à capturer).
+    fn capture_name(&self) -> Option<String> {
+        let tab = self.tabs.active()?;
+        tab.webview()?;
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or_default();
+        let host = if network::is_web(tab.url()) { tab.host() } else { "feather".to_string() };
+        Some(capture::file_name(&host, secs))
+    }
+
+    /// Ctrl+Maj+S ou `/capture` : image de la partie visible de la page.
+    pub(crate) fn capture(&mut self, copy: bool) {
+        if !capture::SUPPORTED {
+            self.chrome_call(&format!("navigateur.showNotice({})", js("La capture n'est pas encore possible sur ce système")));
+            return;
+        }
+        let Some(name) = self.capture_name() else { return };
+        let Some(w) = self.tabs.active().and_then(|t| t.webview()) else { return };
+        let target = if copy {
+            Target::Clipboard
+        } else {
+            let dir = self.read_settings().download_dir;
+            Target::File(downloads::destination(std::path::Path::new(&name), &dir))
+        };
+        capture::capture(w, target, self.proxy.clone());
+    }
+
+    /// La capture est faite : elle rejoint la liste des téléchargements.
+    pub(crate) fn captured(&mut self, result: Result<Option<PathBuf>, String>) {
+        let text = match result {
+            Ok(Some(path)) => {
+                let id = self.next_download_id;
+                self.next_download_id += 1;
+                let mut d = Download::new(id, String::new(), path);
+                d.state = State::Done;
+                d.probe();
+                d.speed = None;
+                let text = format!("Capture enregistrée : {}", d.name);
+                self.downloads.push(d);
+                self.push_state();
+                text
+            }
+            Ok(None) => "Capture copiée dans le presse-papiers".to_string(),
+            Err(e) => e,
+        };
+        self.chrome_call(&format!("navigateur.showNotice({})", js(&text)));
+    }
+
+    // --- Onglets épinglés -----------------------------------------------------
+
+    /// Ctrl+W ou le bouton de fermeture : un onglet épinglé reste ouvert (on le
+    /// ferme par son menu).
+    pub(crate) fn close_unpinned(&mut self, id: TabId) {
+        if self.tabs.get(id).is_some_and(|t| t.pinned) {
+            self.chrome_call(&format!("navigateur.showNotice({})", js("Onglet épinglé : clic droit → Fermer")));
+        } else {
+            self.close_tab(id);
+        }
+    }
+
+    // --- Import des favoris ---------------------------------------------------
+
+    /// Les navigateurs installés dont on peut reprendre les favoris.
+    pub(crate) fn send_import_sources(&self) {
+        let sources = import::sources();
+        self.chrome_call(&format!("navigateur.setImportSources({})", js(&sources)));
+    }
+
+    /// Importe les favoris des navigateurs choisis et des fichiers HTML lus par l'interface.
+    pub(crate) fn import(&mut self, sources: &[String], files: &[String]) {
+        let mut items = Vec::new();
+        for id in sources {
+            items.extend(import::from_source(id));
+        }
+        for text in files.iter().filter(|t| t.len() <= 20 * 1024 * 1024) {
+            items.extend(import::parse_html(text));
+        }
+        let added = self.library.write().map(|mut lib| lib.import_bookmarks(&items)).unwrap_or(0);
+        let text = match added {
+            0 if items.is_empty() => "Aucun favori trouvé".to_string(),
+            0 => "Ces favoris sont déjà dans Feather".to_string(),
+            1 => "1 favori importé".to_string(),
+            n => format!("{n} favoris importés"),
+        };
+        self.chrome_call(&format!("navigateur.showNotice({})", js(&text)));
+        if added > 0 {
+            self.reload_home_tabs();
+            self.push_state();
+            self.schedule_persist();
         }
     }
 

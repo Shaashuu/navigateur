@@ -180,6 +180,49 @@ pub enum ChromeMessage {
     },
     /// Efface les cookies et le stockage du site de l'onglet actif (fiche du site).
     ClearSiteData,
+    /// Épingle un onglet, ou le détache.
+    PinTab {
+        id: TabId,
+        pinned: bool,
+    },
+    /// Range un onglet dans un groupe existant (`None` : le sort de son groupe).
+    GroupTab {
+        id: TabId,
+        group: Option<u32>,
+    },
+    /// Crée un groupe avec cet onglet.
+    NewGroup {
+        id: TabId,
+        name: String,
+    },
+    RenameGroup {
+        group: u32,
+        name: String,
+    },
+    /// Défait un groupe (ses onglets restent ouverts).
+    Ungroup {
+        group: u32,
+    },
+    /// Ferme tous les onglets d'un groupe.
+    CloseGroup {
+        group: u32,
+    },
+    /// Replie (ses onglets passent en veille) ou déplie un groupe.
+    ToggleGroup {
+        group: u32,
+    },
+    /// Ouvre la page de l'onglet actif en mode lecture (ou en sort).
+    Reader,
+    /// Liste des navigateurs dont on peut importer les favoris.
+    ImportSources,
+    /// Importe les favoris des navigateurs choisis et des fichiers d'export
+    /// (contenu HTML lu par l'interface).
+    Import {
+        #[serde(default)]
+        sources: Vec<String>,
+        #[serde(default)]
+        files: Vec<String>,
+    },
     /// Annule un téléchargement en cours.
     CancelDownload {
         id: u32,
@@ -235,6 +278,12 @@ pub struct PageMessage {
     pub permission: Option<PermissionRequest>,
     /// Clic dans la page : un panneau ouvert par-dessus se ferme.
     pub pressed: bool,
+    /// La page ressemble à un article (mode lecture possible).
+    pub readable: Option<bool>,
+    /// Article extrait pour le mode lecture (voir `reader.rs`).
+    pub reader: Option<crate::reader::Article>,
+    /// L'extraction n'a trouvé aucun article.
+    pub reader_failed: bool,
 }
 
 #[derive(Debug, Default, Deserialize, serde::Serialize, Clone, Copy)]
@@ -325,6 +374,8 @@ pub enum Shortcut {
     NewPrivateTab,
     /// Maj+Échap : gestionnaire des onglets (mémoire et processeur).
     TaskManager,
+    /// Ctrl+Maj+S : capture de la page visible.
+    Capture,
 }
 
 /// Zone occupée par les pages : tout sauf la barre (à gauche, à droite ou en

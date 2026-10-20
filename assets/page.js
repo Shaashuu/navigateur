@@ -7,6 +7,7 @@
     let a = null;
     // Ctrl+Maj+T et Ctrl+Maj+N passent avant Ctrl+T (même touche).
     if (ctrl && e.shiftKey && k === 't') a = 'reopen_tab';
+    else if (ctrl && e.shiftKey && k === 's') a = 'capture';
     else if (ctrl && e.shiftKey && k === 'n') a = 'new_private_tab';
     else if (ctrl && !e.shiftKey && k === 'f') a = 'find';
     else if (ctrl && !e.shiftKey && k === 'p') a = 'print';
@@ -333,6 +334,22 @@
     const text = (body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 8000);
     if (text.length > 40) post({ text });
   }, 2000));
+
+  // Mode lecture : la page ressemble-t-elle à un article ? Même idée que Firefox
+  // (paragraphes longs et visibles), sans charger Readability dans chaque page.
+  window.addEventListener('load', () => setTimeout(() => {
+    if (window.top !== window || (location.protocol !== 'http:' && location.protocol !== 'https:')) return;
+    if (location.pathname === '/' && !location.search) { post({ readable: false }); return; }
+    let score = 0;
+    for (const p of document.querySelectorAll('p, pre')) {
+      if (p.closest('nav, footer, aside, form')) continue;
+      const len = (p.textContent || '').trim().length;
+      if (len < 140 || !p.offsetParent) continue;
+      score += Math.sqrt(len - 140);
+      if (score > 20) break;
+    }
+    post({ readable: score > 20 });
+  }, 800));
 
   // Autorisations : avant que le moteur ne demande caméra, micro, position,
   // notifications ou presse-papiers, Feather pose la question (ou applique la

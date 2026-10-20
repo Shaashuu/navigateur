@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="{{LANG}}" data-theme="{{THEME}}">
+<head>
+<meta charset="utf-8">
+<!-- Le texte vient du site : aucun de ses scripts ne peut s'exécuter ici (seul
+     le script de Feather, qui porte le nonce, est permis). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src http: https: data:; media-src http: https:; style-src 'unsafe-inline'; script-src 'nonce-{{NONCE}}'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<title>{{TITLE}}</title>
+<style>
+  :root { --bg: #f4f3ef; --surface: #ffffff; --text: #1d1d1f; --muted: #8a8a8e; --line: #e2e0da; --accent: #5b5bd6; --size: 19px; --font: Georgia, "Iowan Old Style", "Times New Roman", serif; }
+  :root[data-look="sepia"] { --bg: #f4ecd8; --surface: #fbf5e6; --text: #4a3b2a; --muted: #8c7a63; --line: #e2d6bc; --accent: #a0662b; }
+  :root[data-look="night"] { --bg: #17171a; --surface: #222226; --text: #dcdce0; --muted: #7d7d85; --line: #34343a; --accent: #8f8ff5; }
+  :root[data-face="sans"] { --font: "Segoe UI", system-ui, -apple-system, sans-serif; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
+  #tools {
+    position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 10px 16px; background: color-mix(in srgb, var(--bg) 92%, transparent); border-bottom: 1px solid var(--line);
+    font-size: 13px; transition: opacity .2s;
+  }
+  #tools .site { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #tools button {
+    height: 30px; min-width: 30px; padding: 0 10px; border-radius: 15px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--text); font: inherit; cursor: pointer;
+  }
+  #tools button.on { border-color: var(--accent); color: var(--accent); }
+  #tools .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+  article { max-width: 680px; margin: 0 auto; padding: 36px 24px 80px; font-family: var(--font); font-size: var(--size); line-height: 1.65; }
+  h1.title { font-size: 1.7em; line-height: 1.2; margin: 0 0 .4em; }
+  .byline { color: var(--muted); font-family: "Segoe UI", system-ui, -apple-system, sans-serif; font-size: 14px; margin-bottom: 2em; }
+  article img, article video, article figure { max-width: 100%; height: auto; }
+  article figure { margin: 1.4em 0; }
+  article figcaption { color: var(--muted); font-size: .8em; }
+  article a { color: var(--accent); }
+  article pre { overflow-x: auto; font-size: .8em; background: var(--surface); padding: 12px; border-radius: 8px; }
+  article blockquote { margin: 1.2em 0; padding-left: 1em; border-left: 3px solid var(--line); color: var(--muted); }
+  article table { border-collapse: collapse; max-width: 100%; display: block; overflow-x: auto; }
+  article td, article th { border: 1px solid var(--line); padding: 4px 8px; }
+  .missing { text-align: center; color: var(--muted); font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
+</style>
+</head>
+<body>
+  <div id="tools">
+    <button type="button" id="quit" title="Revenir à la page d'origine">&larr; Quitter la lecture</button>
+    <span class="site">{{SITE}}</span>
+    <button type="button" id="smaller" title="Texte plus petit">A&minus;</button>
+    <button type="button" id="bigger" title="Texte plus grand">A+</button>
+    <span class="sep"></span>
+    <button type="button" data-face="serif">Serif</button>
+    <button type="button" data-face="sans">Sans</button>
+    <span class="sep"></span>
+    <button type="button" data-look="light">Clair</button>
+    <button type="button" data-look="sepia">Sépia</button>
+    <button type="button" data-look="night">Nuit</button>
+  </div>
+  <article data-url="{{URL}}">
+    <h1 class="title">{{TITLE}}</h1>
+    <div class="byline">{{BYLINE}}</div>
+    {{CONTENT}}
+  </article>
+<script nonce="{{NONCE}}">
+  (() => {
+    const root = document.documentElement;
+    const url = document.querySelector('article').dataset.url;
+    // Réglages gardés d'un article à l'autre (taille, police, thème).
+    const load = (k, d) => { try { return localStorage.getItem('lecture-' + k) || d; } catch { return d; } };
+    const save = (k, v) => { try { localStorage.setItem('lecture-' + k, v); } catch {} };
+    const dark = root.dataset.theme === 'dark' || (root.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+    let size = Number(load('taille', '19'));
+    let face = load('police', 'serif');
+    let look = load('theme', dark ? 'night' : 'light');
+    const apply = () => {
+      root.style.setProperty('--size', size + 'px');
+      root.dataset.face = face;
+      root.dataset.look = look;
+      for (const b of document.querySelectorAll('[data-face]')) b.classList.toggle('on', b.dataset.face === face);
+      for (const b of document.querySelectorAll('[data-look]')) b.classList.toggle('on', b.dataset.look === look);
+    };
+    apply();
+    document.getElementById('smaller').addEventListener('click', () => { size = Math.max(14, size - 1); save('taille', size); apply(); });
+    document.getElementById('bigger').addEventListener('click', () => { size = Math.min(30, size + 1); save('taille', size); apply(); });
+    for (const b of document.querySelectorAll('[data-face]')) b.addEventListener('click', () => { face = b.dataset.face; save('police', face); apply(); });
+    for (const b of document.querySelectorAll('[data-look]')) b.addEventListener('click', () => { look = b.dataset.look; save('theme', look); apply(); });
+    document.getElementById('quit').addEventListener('click', () => {
+      if (history.length > 1) history.back();
+      else if (/^https?:\/\//.test(url)) location.replace(url);
+    });
+    // Les réglages s'effacent pendant qu'on lit, et reviennent en remontant.
+    let last = scrollY;
+    const tools = document.getElementById('tools');
+    addEventListener('scroll', () => { tools.style.opacity = scrollY > last && scrollY > 80 ? '.15' : '1'; last = scrollY; }, { passive: true });
+    tools.addEventListener('pointerenter', () => { tools.style.opacity = '1'; });
+  })();
+</script>
+</body>
+</html>

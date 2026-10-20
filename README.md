@@ -112,13 +112,37 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     `/site`) : connexion chiffrée ou non, autorisations retenues pour ce site
     (à changer ou oublier), zoom, blocage des traqueurs, et « Effacer les
     données de ce site » (cookies et stockage).
+- **Nouveau en 0.3.6** :
+  - **Onglets épinglés** (clic droit sur l'onglet → Épingler) : de petits
+    carrés en tête de liste, gardés d'une session à l'autre et ouverts même
+    quand Feather démarre sur l'accueil (en veille, sans mémoire). `Ctrl+W` et
+    la croix ne les ferment pas : clic droit → Fermer.
+  - **Groupes d'onglets** (clic droit → Groupe) : une étiquette de couleur
+    au-dessus des onglets du groupe, avec leur nombre (et le nom quand la barre
+    est élargie ou en haut). Un clic replie le groupe : ses onglets cachés se
+    mettent en veille et rendent leur mémoire. Clic droit sur l'étiquette :
+    renommer, dégrouper, fermer le groupe.
+  - **Mode lecture** (bouton livre, menu de l'onglet ou `/lecture`) : le texte
+    et les images de l'article, sans menus ni publicités, avec la taille du
+    texte, la police et le thème (clair, sépia, nuit) à choisir. Le bouton
+    n'apparaît que sur les pages qui ressemblent à un article. L'extraction
+    reprend Readability de Firefox, chargé seulement au clic ; la page
+    d'origine est quittée et sa mémoire rendue.
+  - **Importer des favoris** (Paramètres → Importer des favoris…) : depuis
+    Chrome, Edge, Brave ou Chromium installés sur l'ordinateur, ou depuis un
+    fichier HTML exporté par Firefox, Safari ou un autre navigateur. Les favoris
+    déjà présents ne sont pas ajoutés deux fois.
+  - **Capture de la page** (`Ctrl+Maj+S` ou `/capture`) : une image PNG de la
+    partie visible, rangée dans le dossier des téléchargements et ajoutée à leur
+    liste. `/capture copier` la met dans le presse-papiers.
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
 ou suivante, `F5` ou `Ctrl+R` actualiser, `Ctrl+M` couper le son de l'onglet,
 `Ctrl+D` ajouter aux favoris, `Ctrl+,` paramètres, `Ctrl+F` chercher dans la
 page, `Ctrl++` / `Ctrl+-` / `Ctrl+0` zoom, `Ctrl+Maj+T` rouvrir l'onglet fermé,
-`Ctrl+Maj+N` onglet privé, `Ctrl+P` imprimer, `Maj+Échap` mémoire des onglets.
+`Ctrl+Maj+N` onglet privé, `Ctrl+P` imprimer, `Maj+Échap` mémoire des onglets,
+`Ctrl+Maj+S` capture de la page.
 
 ## Lancer le navigateur
 
@@ -161,12 +185,17 @@ Pour lancer les tests : `cargo test`.
 | `src/softsleep.rs` | Veille douce des onglets cachés (Windows : mémoire réduite, puis page gelée). |
 | `src/errorpage.rs` | Pages d'erreur Feather et détection des chargements en échec. |
 | `src/siteclear.rs` | « Effacer les données de ce site » (fiche du site). |
+| `src/reader.rs` | Mode lecture : extraction de l'article et page `navigateur://lecture/`. |
+| `src/import.rs` | Import des favoris (Chrome, Edge, Brave, fichier HTML). |
+| `src/capture.rs` | Capture de la page visible (WebView2, WebKit). |
 | `outils/banc-memoire.*` | Banc de mesure de la mémoire (macOS et Windows). |
 | `src/layers.rs` | Panneaux par-dessus la page : l'interface passe devant, découpée à leur forme. |
 | `assets/page.js` | Script injecté dans chaque page : raccourcis, son, recherche, menu des liens, autorisations. |
 | `assets/chrome.html` | L'interface (pastilles, barre, commandes, paramètres) en HTML/CSS. |
 | `assets/home.html` | La page d'accueil. |
 | `assets/error.html` | Le modèle des pages d'erreur. |
+| `assets/reader.html` | Le modèle de la page de lecture. |
+| `assets/vendor/Readability.js` | Readability de Mozilla 0.6.0 (licence Apache 2.0, voir `Readability-LICENSE.md`). |
 
 L'interface est une webview placée sous les pages : elle dessine la colonne de
 gauche, et la page de l'onglet actif occupe le reste. Quand un panneau s'ouvre
@@ -207,6 +236,14 @@ leur onglet et envoient des messages.
 - Pages d'erreur : pas de « Continuer quand même » sur un certificat invalide.
   Sous Windows, « Précédent » depuis une page d'erreur recule de deux pages
   (le moteur garde la page en échec juste avant).
+- Capture : seulement la partie visible de la page (pas la page entière), et
+  pas sous Linux. Sous Windows, l'image copiée est au format PNG : la plupart
+  des logiciels la collent (Word, navigateurs, messageries), pas Paint.
+- Import : les favoris seulement (pas l'historique ni les mots de passe), et
+  depuis le profil par défaut de chaque navigateur. Firefox et Safari passent
+  par leur export HTML.
+- Mode lecture : l'article est gardé en mémoire le temps de la lecture ;
+  après un redémarrage, la page de lecture renvoie vers la page d'origine.
 - L'icône de son repère les balises vidéo et audio de la page, pas les sons
   produits par Web Audio ni ceux des vidéos intégrées dans un cadre (iframe).
 
