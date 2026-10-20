@@ -181,6 +181,7 @@ mod tests {
         assert!(is_reader_page(&url));
         assert_eq!(parse(&url), Some((7, "https://www.lemonde.fr/article?a=1&b=2".into())));
         assert!(!network::is_web(&url));
+        assert!(!network::is_web("http://navigateur.lecture/?t=1&u=https%3A%2F%2Fa.fr%2F"));
         assert_eq!(parse("navigateur://lecture/?t=1&u=javascript%3Aalert(1)"), None);
         assert!(!is_reader_page("http://navigateur.lecture.exemple.fr/"));
     }
