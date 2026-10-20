@@ -9,7 +9,6 @@
 //!   barre et des panneaux (`SetWindowRgn`) : ailleurs, on voit et on clique
 //!   la page.
 //! - macOS : les zones transparentes de l'interface laissent voir la page.
-//!   Sous chaque panneau en verre, une `NSVisualEffectView` floute la page.
 //! - Linux : pas d'ordre réglable entre les webviews GTK ; la page est cachée
 //!   pendant qu'un panneau est ouvert, comme avant.
 //!
@@ -36,9 +35,6 @@ pub struct ShapeRect {
     /// Rayon des coins arrondis.
     #[serde(default)]
     pub r: f64,
-    /// Panneau en verre : la page est floutée derrière (macOS).
-    #[serde(default)]
-    pub glass: bool,
 }
 
 impl ShapeRect {
@@ -62,8 +58,6 @@ pub fn clean(mut rects: Vec<ShapeRect>) -> Vec<ShapeRect> {
 pub struct Layers {
     on_top: bool,
     shape: Vec<ShapeRect>,
-    #[cfg(target_os = "macos")]
-    blur: Vec<objc2::rc::Retained<objc2_app_kit::NSVisualEffectView>>,
 }
 
 impl Layers {
@@ -95,12 +89,10 @@ impl Layers {
         self.apply(window, chrome);
     }
 
-    /// Applique la forme : découpe (Windows) ou flou sous les panneaux (macOS).
+    /// Applique la forme : découpe de l'interface (Windows seulement).
     #[cfg_attr(target_os = "macos", allow(unused_variables))]
     fn apply(&mut self, window: &Window, chrome: &WebView) {
         let shape: &[ShapeRect] = if self.on_top { &self.shape } else { &[] };
-        #[cfg(target_os = "macos")]
-        platform::blur(&mut self.blur, chrome, shape);
         #[cfg(not(target_os = "macos"))]
         platform::clip(chrome, shape, window.scale_factor());
     }
@@ -156,65 +148,15 @@ mod platform {
 
 #[cfg(target_os = "macos")]
 mod platform {
-    use objc2::rc::Retained;
-    use objc2::{MainThreadMarker, MainThreadOnly};
-    use objc2_app_kit::{
-        NSView, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
-        NSWindowOrderingMode,
-    };
-    use objc2_foundation::{NSObjectProtocol, NSPoint, NSRect, NSSize};
+    use objc2_app_kit::{NSView, NSWindowOrderingMode};
     use wry::{WebView, WebViewExtMacOS};
-
-    use super::ShapeRect;
 
     pub fn raise(chrome: &WebView, top: bool) {
         let webview = chrome.webview();
         let view: &NSView = &webview;
         let Some(parent) = (unsafe { view.superview() }) else { return };
-        if top {
-            parent.addSubview_positioned_relativeTo(view, NSWindowOrderingMode::Above, None);
-            return;
-        }
-        // Pas tout en bas : la vue de flou de l'effet de verre (window-vibrancy)
-        // y est, et elle recouvrait alors la barre. On se place juste sous la
-        // plus basse des pages (des webviews de la même classe que l'interface).
-        let class = view.class();
-        let lowest_page = parent
-            .subviews()
-            .iter()
-            .find(|v| !std::ptr::eq(&**v, view) && v.isKindOfClass(class));
-        if let Some(page) = lowest_page {
-            parent.addSubview_positioned_relativeTo(view, NSWindowOrderingMode::Below, Some(&page));
-        }
-    }
-
-    /// Une vue de flou sous chaque panneau en verre, juste sous l'interface.
-    pub fn blur(views: &mut Vec<Retained<NSVisualEffectView>>, chrome: &WebView, shape: &[ShapeRect]) {
-        for v in views.drain(..) {
-            v.removeFromSuperview();
-        }
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let webview = chrome.webview();
-        let view: &NSView = &webview;
-        let Some(parent) = (unsafe { view.superview() }) else { return };
-        let height = parent.frame().size.height;
-        let flipped = parent.isFlipped();
-        for r in shape.iter().filter(|r| r.glass) {
-            let y = if flipped { r.y } else { height - r.y - r.h };
-            let frame = NSRect::new(NSPoint::new(r.x, y), NSSize::new(r.w, r.h));
-            let fx = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), frame);
-            fx.setMaterial(NSVisualEffectMaterial::Popover);
-            // Floute ce qui est dessous dans la fenêtre : la page.
-            fx.setBlendingMode(NSVisualEffectBlendingMode::WithinWindow);
-            fx.setState(NSVisualEffectState::Active);
-            fx.setWantsLayer(true);
-            if let Some(layer) = fx.layer() {
-                layer.setCornerRadius(r.r);
-                layer.setMasksToBounds(true);
-            }
-            parent.addSubview_positioned_relativeTo(&fx, NSWindowOrderingMode::Below, Some(view));
-            views.push(fx);
-        }
+        let order = if top { NSWindowOrderingMode::Above } else { NSWindowOrderingMode::Below };
+        parent.addSubview_positioned_relativeTo(view, order, None);
     }
 }
 
@@ -235,7 +177,7 @@ mod tests {
 
     #[test]
     fn rectangles_invalides_ignores() {
-        let ok = ShapeRect { x: 0.0, y: 0.0, w: 10.0, h: 10.0, r: 4.0, glass: true };
+        let ok = ShapeRect { x: 0.0, y: 0.0, w: 10.0, h: 10.0, r: 4.0 };
         let rects = vec![
             ok,
             ShapeRect { w: 0.0, ..ok },
@@ -246,6 +188,5 @@ mod tests {
         assert_eq!(clean(vec![ok; 40]).len(), MAX_RECTS);
         let parsed: Vec<ShapeRect> = serde_json::from_str(r#"[{"x":1,"y":2,"w":3,"h":4}]"#).unwrap();
         assert_eq!(parsed[0].r, 0.0);
-        assert!(!parsed[0].glass);
     }
 }

@@ -392,25 +392,6 @@
     }
   }
 
-  // Effet de verre sur le fond de la page : Feather envoie la feuille de style
-  // qui rend transparents le fond et les grands blocs de ce site (styles de Zen
-  // Internet), ou seulement le fond pour un site inconnu. Le texte, les images
-  // et les vidéos ne changent pas. `null` : on remet la page comme elle était.
-  let glassStyle = null;
-  window.__featherGlass = (css) => {
-    if (glassStyle) { glassStyle.remove(); glassStyle = null; }
-    if (typeof css !== 'string' || !css) return;
-    glassStyle = document.createElement('style');
-    glassStyle.textContent = css;
-    // Ajoutée au document lui-même : elle passe après les styles du site et
-    // survit aux sites qui remplacent leur <head>.
-    document.documentElement.appendChild(glassStyle);
-  };
-  // La page est prête : Feather répond avec son réglage de verre.
-  const askGlass = () => post({ glass: true });
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', askGlass);
-  else askGlass();
-
   // Clic dans la page : Feather ferme le panneau ouvert par-dessus, s'il y en a un.
   if (window.top === window) window.addEventListener('pointerdown', () => post({ pressed: true }), true);
 })();

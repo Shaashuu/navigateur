@@ -10,7 +10,6 @@ use serde_json::json;
 use crate::commands::{self, Contexte, Resultat};
 use crate::downloads::{self, Download, State};
 use crate::network;
-use crate::settings::{Glass, Theme};
 use crate::sitedata::Permission;
 use crate::tab_manager::TabId;
 use crate::ui::{PageMetrics, PermissionRequest};
@@ -395,93 +394,5 @@ impl App {
             }
         }
         json!(items)
-    }
-
-    // --- Effet de verre -------------------------------------------------------
-
-    /// Flou du bureau derrière la fenêtre, si la barre ou les pages sont en verre.
-    pub(crate) fn apply_window_glass(&self) {
-        let settings = self.read_settings();
-        let on = settings.glass.effective() != Glass::Off;
-        crate::glass::apply(&self.window, on, settings.theme == Theme::Dark);
-    }
-
-    /// Feuille de style qui rend la page `id` transparente, ou `None` si son fond
-    /// reste normal : le style de Zen Internet pour ce site, sinon le fond seul.
-    fn page_glass(&self, id: TabId) -> Option<String> {
-        if !self.read_settings().glass.pages() {
-            return None;
-        }
-        let host = self.tabs.get(id)?.host();
-        let allowed = self.sites.read().map(|s| s.glass_allowed(&host)).unwrap_or(true);
-        if !allowed {
-            return None;
-        }
-        let css = self.site_styles.as_ref().and_then(|s| s.css_for(&host));
-        Some(css.unwrap_or_else(|| crate::sitestyles::FALLBACK.to_string()))
-    }
-
-    /// Le fond de la page active est-il en verre ? (l'interface adapte ce qu'elle peint dessous)
-    pub(crate) fn active_page_glass(&self) -> bool {
-        self.tabs.active_id().is_some_and(|id| self.page_glass(id).is_some())
-    }
-
-    /// Envoie à la page sa feuille de style de verre (`null` : fond normal).
-    pub(crate) fn apply_page_glass(&self, id: TabId) {
-        if let Some(tab) = self.tabs.get(id) {
-            let css = serde_json::to_string(&self.page_glass(id)).unwrap_or_else(|_| "null".into());
-            tab.eval(&format!("window.__featherGlass && __featherGlass({css})"));
-        }
-    }
-
-    /// Télécharge les styles des sites (Zen Internet) s'il le faut : seulement
-    /// quand le fond des pages est en verre, et au plus une fois par jour.
-    pub(crate) fn refresh_site_styles(&mut self) {
-        if self.styles_loading || !self.read_settings().glass.pages() {
-            return;
-        }
-        if self.site_styles.is_some() && !crate::sitestyles::needs_refresh() {
-            return;
-        }
-        self.styles_loading = true;
-        let proxy = self.proxy.clone();
-        std::thread::spawn(move || {
-            let _ = proxy.send_event(UserEvent::SiteStyles(crate::sitestyles::download()));
-        });
-    }
-
-    /// Les styles sont arrivés : les pages ouvertes les reprennent.
-    pub(crate) fn site_styles_ready(&mut self, result: Result<crate::sitestyles::SiteStyles, String>) {
-        self.styles_loading = false;
-        match result {
-            Ok(styles) => {
-                self.site_styles = Some(styles);
-                self.apply_page_glass_all();
-            }
-            Err(err) => eprintln!("styles des sites : {err}"),
-        }
-    }
-
-    pub(crate) fn apply_page_glass_all(&self) {
-        let ids: Vec<TabId> = self.tabs.iter().filter(|t| !t.is_asleep()).map(|t| t.id).collect();
-        for id in ids {
-            self.apply_page_glass(id);
-        }
-    }
-
-    /// « Pas de transparence sur ce site » : vaut pour tous les onglets du même site.
-    pub(crate) fn toggle_glass_site(&mut self, id: TabId) {
-        let Some(host) = self.tabs.get(id).map(|t| t.host()) else { return };
-        if host.is_empty() {
-            return;
-        }
-        if let Ok(mut sites) = self.sites.write() {
-            sites.toggle_glass(&host);
-        }
-        let same: Vec<TabId> = self.tabs.iter().filter(|t| t.host() == host).map(|t| t.id).collect();
-        for id in same {
-            self.apply_page_glass(id);
-        }
-        self.schedule_persist();
     }
 }

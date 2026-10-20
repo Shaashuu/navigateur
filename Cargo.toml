@@ -20,18 +20,13 @@ gtk = "0.18"
 block2 = "0.6"
 libc = "0.2"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSGraphics", "NSResponder", "NSView", "NSVisualEffectView", "block2", "objc2-quartz-core"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSString", "NSError", "NSGeometry"] }
-objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSResponder", "NSView", "block2"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSError"] }
 objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "block2", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController"] }
-# Effet de verre (flou du bureau derrière la fenêtre).
-window-vibrancy = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
 windows = { version = "0.62", features = ["Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
-# Effet Mica ou Acrylic (verre) sous Windows 11.
-window-vibrancy = "0.8"
 
 [target."cfg(windows)".build-dependencies]
 winresource = "0.1.34"

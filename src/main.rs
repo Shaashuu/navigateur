@@ -13,7 +13,6 @@ mod commands;
 mod downloads;
 mod features;
 mod fulltext;
-mod glass;
 mod layers;
 mod library;
 #[cfg(target_os = "macos")]
@@ -21,7 +20,6 @@ mod mac_mouse;
 mod network;
 mod settings;
 mod sitedata;
-mod sitestyles;
 mod storage;
 mod tab_manager;
 mod trackers;
@@ -83,8 +81,6 @@ pub enum UserEvent {
     Persist,
     /// Chaque seconde : progression des téléchargements, poids et veille des onglets.
     Tick,
-    /// Les styles des sites (transparence, Zen Internet) sont téléchargés.
-    SiteStyles(Result<sitestyles::SiteStyles, String>),
     /// Un minuteur (`/minuteur`) est arrivé à son terme.
     TimerDone { seconds: u64, label: String },
 }
@@ -129,10 +125,6 @@ struct App {
     library: Arc<RwLock<Library>>,
     /// Zoom et autorisations retenus par site.
     sites: Arc<RwLock<SiteData>>,
-    /// Styles de transparence site par site (voir `sitestyles.rs`).
-    site_styles: Option<sitestyles::SiteStyles>,
-    /// Ces styles sont en cours de téléchargement.
-    styles_loading: bool,
     /// Texte des pages visitées (recherche dans l'historique).
     fulltext: FullText,
     /// Notes de la commande `/note`.
@@ -165,8 +157,6 @@ fn main() -> wry::Result<()> {
         .with_window_icon(window_icon())
         .with_inner_size(LogicalSize::new(1200.0, 800.0))
         .with_min_inner_size(LogicalSize::new(480.0, 360.0))
-        // Fenêtre transparente : nécessaire à l'effet de verre (macOS et Windows).
-        .with_transparent(settings::Glass::SUPPORTED)
         .build(&event_loop)
         .expect("impossible de créer la fenêtre");
 
@@ -181,8 +171,8 @@ fn main() -> wry::Result<()> {
         WebViewBuilder::new()
             .with_bounds(ui::chrome_bounds(&window))
             .with_html(ui::CHROME_HTML)
-            // L'interface dessine elle-même son fond (opaque ou en verre).
-            .with_transparent(settings::Glass::SUPPORTED)
+            // Transparente là où les panneaux laissent voir la page (voir `layers.rs`).
+            .with_transparent(layers::SUPPORTED)
             .with_devtools(cfg!(debug_assertions))
             .with_ipc_handler(move |request| {
                 let _ = chrome_proxy.send_event(UserEvent::Chrome(request.into_body()));
@@ -222,8 +212,6 @@ fn main() -> wry::Result<()> {
         restart: None,
         library: Arc::new(RwLock::new(library)),
         sites: Arc::new(RwLock::new(SiteData::load())),
-        site_styles: sitestyles::SiteStyles::load(),
-        styles_loading: false,
         fulltext,
         notes: Notes::load(),
         downloads: Vec::new(),
@@ -248,8 +236,6 @@ fn main() -> wry::Result<()> {
     } else {
         app.open_tab(&start_url, false);
     }
-    app.apply_window_glass();
-    app.refresh_site_styles();
     if check_update {
         app.start_check(false);
     }
@@ -330,9 +316,6 @@ impl App {
                     }
                 }
                 self.apply_zoom(id);
-                if !loading {
-                    self.apply_page_glass(id);
-                }
                 self.push_state();
             }
             // window.open : seules les pages web sont acceptées. Avant, une page
@@ -358,7 +341,6 @@ impl App {
             }
             UserEvent::Tick => self.tick(),
             UserEvent::TimerDone { seconds, label } => self.timer_done(seconds, &label),
-            UserEvent::SiteStyles(result) => self.site_styles_ready(result),
         }
         // L'onglet affiché a pu changer : s'il était en veille, on recharge sa page.
         self.wake_active();
@@ -507,11 +489,6 @@ impl App {
                     sites.forget_permission(&host, permission);
                 }
             }
-            ChromeMessage::ToggleGlassSite { id } => {
-                if let Some(id) = id.or(self.tabs.active_id()) {
-                    self.toggle_glass_site(id);
-                }
-            }
             ChromeMessage::SleepTab { id } => {
                 self.tabs.sleep(id);
             }
@@ -570,10 +547,6 @@ impl App {
         // Clic dans la page pendant qu'un panneau est ouvert par-dessus : il se ferme.
         if message.pressed && self.expanded {
             self.chrome_call("navigateur.closePanel()");
-        }
-        // La page vient d'être construite : elle demande si son fond doit être en verre.
-        if message.glass {
-            self.apply_page_glass(id);
         }
         if let Some(request) = message.permission {
             self.ask_permission(id, request);
@@ -838,15 +811,8 @@ impl App {
                 trackers::set_enabled(w, settings.block_trackers);
             }
         }
-        let glass_changed = (before.glass, before.glass_level, before.theme)
-            != (settings.glass, settings.glass_level, settings.theme);
         if let Ok(mut current) = self.settings.write() {
             *current = settings;
-        }
-        if glass_changed {
-            self.apply_window_glass();
-            self.apply_page_glass_all();
-            self.refresh_site_styles();
         }
         self.relayout();
         // Les pages d'accueil ouvertes reprennent le nouveau prénom et thème.
@@ -999,10 +965,7 @@ impl App {
             "permissions": permissions,
             "permission_prompt": self.permission_prompt(),
             "native_commands": commands,
-            "glass_supported": settings::Glass::SUPPORTED,
-            "glass_page": self.active_page_glass(),
             "overlay": layers::SUPPORTED,
-            "panel_blur": cfg!(target_os = "macos"),
         });
         drop(lib);
         self.chrome_call(&format!("navigateur.setState({state})"));
