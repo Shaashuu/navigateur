@@ -6,6 +6,7 @@
 <style>
   :root {
     --bg: #f4f3ef;
+    --bg-rgb: 244, 243, 239;
     --surface: #ffffff;
     --text: #1d1d1f;
     --muted: #8a8a8e;
@@ -19,6 +20,7 @@
      réglage et, en « automatique », selon le système. */
   :root[data-mode="dark"] {
     --bg: #17171a;
+    --bg-rgb: 23, 23, 26;
     --surface: #222226;
     --text: #ececef;
     --muted: #7d7d85;
@@ -27,6 +29,25 @@
     --accent-soft: #2c2c4a;
     --shadow: 0 6px 24px rgba(0, 0, 0, .45);
   }
+
+  /* Effet de verre (macOS et Windows) : la fenêtre est transparente, l'interface
+     peint elle-même son fond. --glass : opacité du voile (curseur Transparence). */
+  :root { --glass: 1; }
+  body.glass { background: transparent; }
+  body.glass #sidebar { background: var(--bg); }
+  body.glass.glass-bar #sidebar { background: rgba(var(--bg-rgb), var(--glass)); }
+  body.glass.glass-bar[data-pos="top"] #sidebar { border-bottom-color: rgba(255, 255, 255, .25); }
+  /* Sous la page : blanc (fond par défaut d'un site), ou le voile quand le fond
+     de la page est en verre. Sous un panneau ouvert : le fond de l'interface. */
+  #backdrop { position: fixed; left: 56px; right: 0; top: 0; bottom: 0; background: #fff; display: none; }
+  body.glass #backdrop { display: block; }
+  body.glass.panel #backdrop { background: var(--bg); }
+  body.glass.glass-page #backdrop, body.glass.glass-pages.panel #backdrop { background: rgba(var(--bg-rgb), var(--glass)); }
+  body[data-pos="right"] #backdrop { left: 0; right: 56px; }
+  body[data-pos="top"] #backdrop { left: 0; top: 44px; }
+  body.glass.glass-bar #strip { background: rgba(var(--bg-rgb), var(--glass)); }
+  #glass-site.off { color: var(--muted); opacity: .6; }
+  #glass-site[hidden] { display: none; }
 
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; }
@@ -389,6 +410,7 @@
 </style>
 </head>
 <body data-pos="left">
+  <div id="backdrop" aria-hidden="true"></div>
   <nav id="sidebar" aria-label="Navigation">
     <div id="top">
       <button class="round" id="gear" title="Paramètres (Ctrl+,)" aria-label="Paramètres">
@@ -433,6 +455,7 @@
       <input id="input" spellcheck="false" autocomplete="off"
              placeholder="Aller à, chercher, ou taper / pour une commande">
       <button class="icon star" id="star" title="Ajouter aux favoris (Ctrl+D)"><svg width="17" height="17" style="margin:auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg></button>
+      <button class="icon" id="glass-site" hidden title="Verre sur ce site"><svg width="17" height="17" style="margin:auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 14 14 8M11 17l6-6"/></svg></button>
       <button class="icon" id="reload" title="Actualiser (F5)">&#8635;</button>
     </div>
     <ul id="command-list"></ul>
@@ -508,6 +531,18 @@
         <button type="button" data-value="left">Gauche</button>
         <button type="button" data-value="right">Droite</button>
         <button type="button" data-value="top">Haut</button>
+      </div>
+      <div id="s-glass-box">
+        <label>Transparence (effet de verre)</label>
+        <div class="choices" id="s-glass">
+          <button type="button" data-value="off">Aucune</button>
+          <button type="button" data-value="bar">Barre</button>
+          <button type="button" data-value="pages">Pages</button>
+          <button type="button" data-value="all">Tout</button>
+        </div>
+        <label for="s-glasslevel" id="s-glasslevel-label">Intensité : <span id="s-glasslevel-value"></span></label>
+        <input type="range" id="s-glasslevel" min="0" max="100" step="5" style="width:100%; accent-color: var(--accent)">
+        <p class="hint" style="margin:6px 0 0; font-size:12px; color:var(--muted)">« Pages » rend transparent le fond des sites ; le texte, les images et les vidéos ne changent pas. Bouton dans la barre de recherche : pas de transparence sur ce site.</p>
       </div>
       <h3 class="sec">Au démarrage</h3>
       <div class="choices" id="s-startup" style="margin-top:8px">
@@ -595,6 +630,8 @@
   let draftTheme = 'auto';
   let draftPos = 'left';
   let draftStartup = 'home';
+  let draftGlass = 'off';
+  let draftGlassLevel = 60;
   let libKind = 'history';   // onglet ouvert dans la bibliothèque
   let libItems = [];
   let seenDownloads = 0;     // téléchargements terminés déjà vus dans la bibliothèque
@@ -613,6 +650,7 @@
     if (next === mode) return;
     const wasOpen = mode !== null;
     mode = next;
+    document.body.classList.toggle('panel', mode !== null);
     document.body.classList.toggle('bar', mode === 'bar');
     document.body.classList.toggle('settings', mode === 'settings');
     document.body.classList.toggle('library', mode === 'library');
@@ -629,6 +667,9 @@
     // Veille : libère la mémoire d'un onglet caché ; sa page revient au clic.
     if (!tab.active && !tab.asleep && !tab.private && !tab.audible) {
       items.push(['<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>', 'Veille', "Mettre l'onglet en veille (libère la mémoire)", () => send({ type: 'sleep_tab', id: tab.id })]);
+    }
+    if (tab.active && !tab.home && state.glass_supported && ['pages', 'all'].includes(state.settings.glass)) {
+      items.push(['<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 14 14 8"/></svg>', state.glass_page ? 'Opaque' : 'Verre', state.glass_page ? 'Pas de transparence sur ce site' : 'Remettre la transparence sur ce site', () => send({ type: 'toggle_glass_site', id: tab.id })]);
     }
     items.push(['<svg width="12" height="12" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg>', 'Fermer', "Fermer l'onglet", () => send({ type: 'close_tab', id: tab.id })]);
     const box = $('ctx');
@@ -666,6 +707,17 @@
   }
 
   const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+  // Effet de verre : quelles parties sont transparentes, et à quel point.
+  function applyGlass(kind, level) {
+    const on = !!state.glass_supported && kind && kind !== 'off';
+    const b = document.body.classList;
+    b.toggle('glass', !!state.glass_supported);
+    b.toggle('glass-bar', on && (kind === 'bar' || kind === 'all'));
+    b.toggle('glass-pages', on && (kind === 'pages' || kind === 'all'));
+    b.toggle('glass-page', on && !!state.glass_page && (kind === 'pages' || kind === 'all'));
+    // 0 % : voile presque opaque ; 100 % : très transparent.
+    document.documentElement.style.setProperty('--glass', String(1 - (level ?? 60) / 100 * 0.85));
+  }
   function applyTheme(theme) {
     const root = document.documentElement;
     root.dataset.theme = theme || 'auto';
@@ -695,6 +747,10 @@
     pill.title = insecure ? 'Connexion non sécurisée (http)' : '';
     renderLock(tab);
     $('star').hidden = !tab || tab.home;
+    const glassPages = state.glass_supported && ['pages', 'all'].includes(state.settings.glass);
+    $('glass-site').hidden = !glassPages || !tab || tab.home;
+    $('glass-site').classList.toggle('off', !state.glass_page);
+    $('glass-site').title = state.glass_page ? 'Pas de transparence sur ce site' : 'Remettre la transparence sur ce site';
     $('star').classList.toggle('on', !!(tab && tab.bookmarked));
     $('star').title = tab && tab.bookmarked ? 'Retirer des favoris (Ctrl+D)' : 'Ajouter aux favoris (Ctrl+D)';
     renderDownloadsButton();
@@ -1001,6 +1057,11 @@
     $('s-bmhome').checked = s.bookmarks_on_home !== false;
     $('s-dldir').value = s.download_dir || '';
     $('s-trackers').checked = s.block_trackers !== false;
+    draftGlass = s.glass || 'off';
+    draftGlassLevel = s.glass_level ?? 60;
+    $('s-glass-box').hidden = !state.glass_supported;
+    $('s-glasslevel').value = String(draftGlassLevel);
+    renderGlassChoices();
     $('s-index').checked = s.index_pages !== false;
     $('s-sleep').value = String(s.sleep_minutes ?? 30);
     if (!$('s-sleep').value) $('s-sleep').value = '30';
@@ -1042,7 +1103,19 @@
     }
   }
 
+  function renderGlassChoices() {
+    for (const b of $('s-glass').children) b.classList.toggle('on', b.dataset.value === draftGlass);
+    $('s-glasslevel-value').textContent = draftGlassLevel + ' %';
+    $('s-glasslevel').disabled = draftGlass === 'off';
+    applyGlass(draftGlass, draftGlassLevel); // aperçu immédiat de la barre
+  }
+  for (const b of $('s-glass').children) {
+    b.addEventListener('click', () => { draftGlass = b.dataset.value; renderGlassChoices(); });
+  }
+  $('s-glasslevel').addEventListener('input', () => { draftGlassLevel = Number($('s-glasslevel').value); renderGlassChoices(); });
+
   function closeSettings() {
+    applyGlass(state.settings.glass, state.settings.glass_level);
     applyTheme(state.settings.theme);
     applyPos(state.settings.bar_position);
     setMode(null);
@@ -1158,6 +1231,8 @@
         block_trackers: $('s-trackers').checked,
         sleep_minutes: Number($('s-sleep').value),
         index_pages: $('s-index').checked,
+        glass: draftGlass,
+        glass_level: draftGlassLevel,
       },
     });
     setMode(null);
@@ -1168,7 +1243,7 @@
   function openLibrary(kind) {
     if (mode === 'library' && libKind === kind) { closeLibrary(); return; }
     if (mode === 'bar') closeBar(false);
-    if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
+    if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); applyGlass(state.settings.glass, state.settings.glass_level); }
     stopEdit();
     libKind = kind;
     for (const b of $('lib-tabs').children) b.classList.toggle('on', b.dataset.kind === kind);
@@ -1386,6 +1461,8 @@
     if (libKind === 'history') send({ type: 'clear_history' });
     else { send({ type: 'clear_downloads' }); state.downloads = (state.downloads || []).filter((d) => d.state === 'progress'); renderLibrary(); }
   });
+  $('glass-site').addEventListener('mousedown', (e) => e.preventDefault());
+  $('glass-site').addEventListener('click', () => send({ type: 'toggle_glass_site', id: null }));
   $('star').addEventListener('mousedown', (e) => e.preventDefault());
   $('star').addEventListener('click', () => send({ type: 'toggle_bookmark', id: null }));
 
@@ -1542,7 +1619,11 @@
   window.navigateur = {
     setState(next) {
       state = next;
-      if (mode !== 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); }
+      if (mode !== 'settings') {
+        applyTheme(state.settings.theme);
+        applyPos(state.settings.bar_position);
+        applyGlass(state.settings.glass, state.settings.glass_level);
+      }
       // Autre onglet affiché : la recherche dans la page se ferme.
       const active = activeTab();
       const id = active ? active.id : null;

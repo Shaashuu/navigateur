@@ -10,6 +10,7 @@ use serde_json::json;
 use crate::commands::{self, Contexte, Resultat};
 use crate::downloads::{self, Download, State};
 use crate::network;
+use crate::settings::{Glass, Theme};
 use crate::sitedata::Permission;
 use crate::tab_manager::TabId;
 use crate::ui::{PageMetrics, PermissionRequest};
@@ -394,5 +395,62 @@ impl App {
             }
         }
         json!(items)
+    }
+
+    // --- Effet de verre -------------------------------------------------------
+
+    /// Flou du bureau derrière la fenêtre, si la barre ou les pages sont en verre.
+    pub(crate) fn apply_window_glass(&self) {
+        let settings = self.read_settings();
+        let on = settings.glass.effective() != Glass::Off;
+        crate::glass::apply(&self.window, on, settings.theme == Theme::Dark);
+    }
+
+    /// Opacité des blocs de la page `id` (0 à 1), ou `None` si son fond reste normal.
+    fn page_glass(&self, id: TabId) -> Option<f64> {
+        let settings = self.read_settings();
+        if !settings.glass.pages() {
+            return None;
+        }
+        let tab = self.tabs.get(id)?;
+        let allowed = self.sites.read().map(|s| s.glass_allowed(&tab.host())).unwrap_or(true);
+        // 0 % : presque opaque ; 100 % : très transparent.
+        allowed.then(|| 1.0 - f64::from(settings.glass_level) / 100.0 * 0.85)
+    }
+
+    /// Le fond de la page active est-il en verre ? (l'interface adapte ce qu'elle peint dessous)
+    pub(crate) fn active_page_glass(&self) -> bool {
+        self.tabs.active_id().is_some_and(|id| self.page_glass(id).is_some())
+    }
+
+    /// Envoie à la page son réglage de verre (`null` : fond normal).
+    pub(crate) fn apply_page_glass(&self, id: TabId) {
+        if let Some(tab) = self.tabs.get(id) {
+            let alpha = self.page_glass(id).map_or("null".to_string(), |a| format!("{a:.2}"));
+            tab.eval(&format!("window.__featherGlass && __featherGlass({alpha})"));
+        }
+    }
+
+    pub(crate) fn apply_page_glass_all(&self) {
+        let ids: Vec<TabId> = self.tabs.iter().filter(|t| !t.is_asleep()).map(|t| t.id).collect();
+        for id in ids {
+            self.apply_page_glass(id);
+        }
+    }
+
+    /// « Pas de transparence sur ce site » : vaut pour tous les onglets du même site.
+    pub(crate) fn toggle_glass_site(&mut self, id: TabId) {
+        let Some(host) = self.tabs.get(id).map(|t| t.host()) else { return };
+        if host.is_empty() {
+            return;
+        }
+        if let Ok(mut sites) = self.sites.write() {
+            sites.toggle_glass(&host);
+        }
+        let same: Vec<TabId> = self.tabs.iter().filter(|t| t.host() == host).map(|t| t.id).collect();
+        for id in same {
+            self.apply_page_glass(id);
+        }
+        self.schedule_persist();
     }
 }

@@ -39,6 +39,10 @@ pub struct Settings {
     pub sleep_minutes: u32,
     /// Garder le texte des pages visitées pour les retrouver par leur contenu.
     pub index_pages: bool,
+    /// Effet de verre : rien, la barre, le fond des pages, ou les deux (macOS et Windows).
+    pub glass: Glass,
+    /// Transparence du verre, de 0 (presque opaque) à 100 (très transparent).
+    pub glass_level: u32,
 }
 
 impl Default for Settings {
@@ -57,6 +61,8 @@ impl Default for Settings {
             block_trackers: true,
             sleep_minutes: 30,
             index_pages: true,
+            glass: Glass::Off,
+            glass_level: 60,
         }
     }
 }
@@ -101,6 +107,34 @@ impl SearchEngine {
     }
 }
 
+/// Ce qui devient transparent quand l'effet de verre est actif.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Glass {
+    #[default]
+    Off,
+    /// La barre (colonne des onglets ou barre du haut) seulement.
+    Bar,
+    /// Le fond des pages seulement.
+    Pages,
+    /// La barre et le fond des pages.
+    All,
+}
+
+impl Glass {
+    /// L'effet de verre n'existe que sous macOS et Windows.
+    pub const SUPPORTED: bool = cfg!(any(target_os = "macos", windows));
+
+    /// Le réglage tel qu'il s'applique sur ce système.
+    pub fn effective(self) -> Glass {
+        if Self::SUPPORTED { self } else { Glass::Off }
+    }
+
+    pub fn pages(self) -> bool {
+        matches!(self.effective(), Glass::Pages | Glass::All)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
@@ -129,6 +163,7 @@ impl Settings {
         self.home_page = network::normalize_home_page(&self.home_page).unwrap_or_default();
         self.download_dir = self.download_dir.trim().to_string();
         self.sleep_minutes = self.sleep_minutes.min(24 * 60);
+        self.glass_level = self.glass_level.min(100);
         self
     }
 

@@ -155,6 +155,10 @@ pub enum ChromeMessage {
         host: String,
         permission: Permission,
     },
+    /// « Pas de transparence sur ce site » (ou l'inverse), l'onglet actif par défaut.
+    ToggleGlassSite {
+        id: Option<TabId>,
+    },
     /// Met un onglet en veille (menu de l'onglet).
     SleepTab {
         id: TabId,
@@ -212,6 +216,8 @@ pub struct PageMessage {
     pub text: Option<String>,
     /// La page demande une autorisation (caméra, position…).
     pub permission: Option<PermissionRequest>,
+    /// La page est prête : elle demande si son fond doit être en verre.
+    pub glass: bool,
 }
 
 #[derive(Debug, Default, Deserialize, serde::Serialize, Clone, Copy)]
