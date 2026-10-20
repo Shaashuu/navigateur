@@ -39,8 +39,9 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   ou automatique. Ils sont enregistrés dans `parametres.json`, dans le dossier
   de configuration du système (`%APPDATA%\Feather\Feather\config` sur Windows).
 - **Favoris, historique, téléchargements** (nouveau en 0.2) : trois boutons sous
-  la maison (tout à droite quand la barre est en haut) ouvrent la Bibliothèque,
-  avec une recherche. L'étoile (dans la barre de recherche, ou dans l'onglet
+  la maison (tout à droite quand la barre est en haut) ouvrent chacun son
+  panneau, avec une recherche. Sous macOS et Windows, les panneaux flottent
+  par-dessus la page, qui reste visible. L'étoile (dans la barre de recherche, ou dans l'onglet
   actif quand la barre est en haut) ou `Ctrl+D` ajoute la page aux favoris, qui
   s'affichent aussi sur l'accueil. L'historique est rangé par jour et oublié
   après la durée choisie dans les paramètres. Les fichiers téléchargés vont
@@ -82,6 +83,9 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     bureau, flouté, se voit à travers la barre et le fond des sites ; le texte,
     les images et les vidéos ne changent pas. Un bouton dans la barre de
     recherche (ou le menu de l'onglet) retire la transparence d'un site.
+  - **Barre latérale à la largeur voulue** : à gauche ou à droite, on tire sur
+    son bord (côté page) pour l'élargir ; le titre des pages apparaît peu à peu
+    à côté des pastilles. Double-clic sur le bord : taille d'origine.
   - **Recherche dans le texte des pages** : l'historique retrouve une page par
     un mot de son contenu, avec un extrait (`contenu.json`, désactivable).
 
@@ -130,13 +134,17 @@ Pour lancer les tests : `cargo test`.
 | `src/sitedata.rs` | Zoom et autorisations retenus par site (`sites.json`). |
 | `src/trackers.rs` | Liste des traqueurs et blocage (WebKit sous macOS, WebView2 sous Windows). |
 | `src/weight.rs` | Poids d'un onglet (mémoire, processeur, page ralentie). |
+| `src/glass.rs` | Effet de verre derrière la fenêtre (macOS, Windows). |
+| `src/layers.rs` | Panneaux par-dessus la page : l'interface passe devant, découpée à leur forme. |
 | `assets/page.js` | Script injecté dans chaque page : raccourcis, son, recherche, menu des liens, autorisations. |
 | `assets/chrome.html` | L'interface (pastilles, barre, commandes, paramètres) en HTML/CSS. |
 | `assets/home.html` | La page d'accueil. |
 
 L'interface est une webview placée sous les pages : elle dessine la colonne de
-gauche, et la page de l'onglet actif occupe le reste. Quand la barre de
-recherche ou les paramètres s'ouvrent, la page est masquée le temps de la saisie.
+gauche, et la page de l'onglet actif occupe le reste. Quand un panneau s'ouvre
+(barre de recherche, paramètres, favoris…), l'interface passe devant la page
+(macOS, Windows ; voir `layers.rs`) ou la masque (Linux). Un nouveau panneau
+n'a qu'à porter la classe `card` et ouvrir un mode avec `setMode`.
 L'interface et les pages parlent au code Rust par des messages JSON ; Rust
 renvoie l'état (liste des onglets, paramètres) à l'interface.
 
@@ -164,6 +172,9 @@ leur onglet et envoient des messages.
   (Google Docs, Figma, jeux) ou qui ont une image de fond ne deviennent pas
   transparents ; un texte foncé sur un bureau sombre peut être difficile à lire.
 - Suggestions sous la barre : seulement avec la barre à gauche ou à droite.
+- Panneaux par-dessus la page : la page est floutée derrière eux sous macOS
+  seulement ; sous Windows, ils restent opaques ; sous Linux, la page est
+  cachée pendant qu'un panneau est ouvert.
 - Icônes : Feather télécharge l'icône que le site indique lui-même (ou
   `/favicon.ico`), jamais via un service tiers, sans envoyer l'adresse de la
   page d'origine. Elle n'est gardée que pour les onglets ouverts.

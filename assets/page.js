@@ -452,4 +452,7 @@
   const askGlass = () => post({ glass: true });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', askGlass);
   else askGlass();
+
+  // Clic dans la page : Feather ferme le panneau ouvert par-dessus, s'il y en a un.
+  if (window.top === window) window.addEventListener('pointerdown', () => post({ pressed: true }), true);
 })();

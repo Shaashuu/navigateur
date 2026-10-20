@@ -7,6 +7,7 @@
   :root {
     --bg: #f4f3ef;
     --bg-rgb: 244, 243, 239;
+    --surface-rgb: 255, 255, 255;
     --surface: #ffffff;
     --text: #1d1d1f;
     --muted: #8a8a8e;
@@ -21,6 +22,7 @@
   :root[data-mode="dark"] {
     --bg: #17171a;
     --bg-rgb: 23, 23, 26;
+    --surface-rgb: 34, 34, 38;
     --surface: #222226;
     --text: #ececef;
     --muted: #7d7d85;
@@ -32,18 +34,18 @@
 
   /* Effet de verre (macOS et Windows) : la fenêtre est transparente, l'interface
      peint elle-même son fond. --glass : opacité du voile (curseur Transparence). */
-  :root { --glass: 1; }
+  :root { --glass: 1; --side: 56px; --label: 0; }
   body.glass { background: transparent; }
   body.glass #sidebar { background: var(--bg); }
   body.glass.glass-bar #sidebar { background: rgba(var(--bg-rgb), var(--glass)); }
   body.glass.glass-bar[data-pos="top"] #sidebar { border-bottom-color: rgba(255, 255, 255, .25); }
   /* Sous la page : blanc (fond par défaut d'un site), ou le voile quand le fond
      de la page est en verre. Sous un panneau ouvert : le fond de l'interface. */
-  #backdrop { position: fixed; left: 56px; right: 0; top: 0; bottom: 0; background: #fff; display: none; }
+  #backdrop { position: fixed; left: var(--side); right: 0; top: 0; bottom: 0; background: #fff; display: none; }
   body.glass #backdrop { display: block; }
   body.glass.panel #backdrop { background: var(--bg); }
   body.glass.glass-page #backdrop, body.glass.glass-pages.panel #backdrop { background: rgba(var(--bg-rgb), var(--glass)); }
-  body[data-pos="right"] #backdrop { left: 0; right: 56px; }
+  body[data-pos="right"] #backdrop { left: 0; right: var(--side); }
   body[data-pos="top"] #backdrop { left: 0; top: 44px; }
   body.glass.glass-bar #strip { background: rgba(var(--bg-rgb), var(--glass)); }
   #glass-site.off { color: var(--muted); opacity: .6; }
@@ -62,7 +64,7 @@
 
   /* Colonne de gauche (56 px, voir ui.rs) : paramètres, recherche, onglets */
   #sidebar {
-    position: fixed; left: 0; top: 0; bottom: 0; width: 56px;
+    position: fixed; left: 0; top: 0; bottom: 0; width: var(--side);
     display: flex; flex-direction: column; align-items: center; padding: 12px 0;
   }
   #top { display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -149,7 +151,7 @@
   #ctx button:hover { background: var(--accent-soft); color: var(--text); }
   /* Barre à droite ou en haut (réglage « Position de la barre ») */
   body[data-pos="right"] #sidebar { left: auto; right: 0; }
-  body[data-pos="right"] #overlay, body[data-pos="right"] #settings { left: 0; right: 56px; }
+  body[data-pos="right"] #overlay, body[data-pos="right"] #settings { left: 0; right: var(--side); }
   body[data-pos="right"] #ctx { left: auto; right: 3px; }
   body[data-pos="top"] #sidebar {
     left: 0; right: 0; bottom: auto; width: auto; height: 44px; flex-direction: row;
@@ -202,8 +204,8 @@
 
   /* Barre de recherche ouverte par-dessus la page (la page est cachée pendant ce temps) */
   #overlay, #settings {
-    position: fixed; left: 56px; right: 0; top: 0; bottom: 0; display: none;
-    flex-direction: column; align-items: center; justify-content: center; padding: 0 24px;
+    position: fixed; left: var(--side); right: 0; top: 0; bottom: 0; display: none;
+    flex-direction: column; align-items: center; justify-content: center; padding: 12px 24px;
   }
   body.bar #overlay, body.settings #settings { display: flex; }
   #overlay { justify-content: flex-start; padding-top: 22vh; }
@@ -291,24 +293,23 @@
   .tab .star:hover { background: var(--surface); color: var(--text); }
   .tab .star.on { color: #e8a317; }
 
-  /* Bibliothèque */
-  #library {
-    position: fixed; left: 56px; right: 0; top: 0; bottom: 0; display: none;
-    flex-direction: column; align-items: center; padding: 6vh 24px 24px;
-  }
-  body.library #library { display: flex; }
-  body[data-pos="right"] #library { left: 0; right: 56px; }
-  body[data-pos="top"] #library { left: 0; right: 0; top: 44px; }
+  /* Favoris, historique, téléchargements : trois panneaux séparés, chacun ouvert
+     par son bouton, flottant au bord de la page, du côté de la barre. */
+  #library { position: fixed; inset: 0; display: none; pointer-events: none; }
+  body.library #library { display: block; }
   #library .panel {
-    width: min(720px, 100%); max-height: 100%; display: flex; flex-direction: column;
+    position: fixed; top: 12px; bottom: 12px; left: calc(var(--side) + 12px); width: min(440px, calc(100vw - var(--side) - 24px));
+    display: flex; flex-direction: column; pointer-events: auto;
     background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
   }
-  #library .head { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px; }
-  #lib-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: var(--bg); }
-  #lib-tabs button { height: 30px; padding: 0 14px; border-radius: 9px; color: var(--muted); font-size: 13px; }
-  #lib-tabs button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
+  body[data-pos="right"] #library .panel { left: auto; right: calc(var(--side) + 12px); }
+  body[data-pos="top"] #library .panel { top: 56px; left: auto; right: 12px; width: min(440px, calc(100vw - 24px)); }
+  #library .head { display: flex; align-items: center; gap: 10px; padding: 16px 14px 8px 18px; }
+  #lib-title { flex: 1; margin: 0; font-size: 17px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  #lib-title svg { color: var(--accent); }
+  #library .search { padding: 0 14px 8px; }
   #lib-search {
-    flex: 1; min-width: 0; height: 34px; padding: 0 14px; border-radius: 17px; border: 1px solid var(--line);
+    width: 100%; height: 34px; padding: 0 14px; border-radius: 17px; border: 1px solid var(--line);
     background: var(--bg); color: var(--text); font: inherit; outline: none; user-select: text;
   }
   #lib-search:focus { border-color: var(--accent); }
@@ -369,11 +370,11 @@
 
   /* Bandeau du bas (48 px, voir ui.rs) : recherche dans la page, question d'autorisation, avis */
   #strip {
-    position: fixed; left: 56px; right: 0; bottom: 0; height: 48px; z-index: 30; display: none;
+    position: fixed; left: var(--side); right: 0; bottom: 0; height: 48px; z-index: 30; display: none;
     align-items: center; gap: 8px; padding: 0 12px; background: var(--surface); border-top: 1px solid var(--line);
   }
   body.strip #strip { display: flex; }
-  body[data-pos="right"] #strip { left: 0; right: 56px; }
+  body[data-pos="right"] #strip { left: 0; right: var(--side); }
   body[data-pos="top"] #strip { left: 0; }
   #strip > div { display: none; flex: 1; align-items: center; gap: 8px; min-width: 0; }
   #strip > div.on { display: flex; }
@@ -407,10 +408,51 @@
   #s-perms .perm em { font-style: normal; color: var(--muted); }
   #s-perms button { height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid var(--line); }
   #s-perms .none { color: var(--muted); }
+  /* Panneaux par-dessus la page (macOS et Windows, voir layers.rs) : l'interface
+     passe devant la page, qui reste visible autour des panneaux. Tout élément
+     .card visible pendant qu'un panneau est ouvert fait partie de la forme
+     envoyée à Rust (voir reportShape) : un nouveau panneau n'a qu'à porter
+     cette classe et ouvrir un mode avec setMode. */
+  body.overlay.panel #backdrop { display: none; }
+  body.overlay.panel { background: transparent; }
+  /* macOS : la page est floutée sous les panneaux, qui deviennent translucides. */
+  /* !important : chaque panneau a sa propre règle de fond (par son id). */
+  body.overlay.blur.glass-bar .card { background: rgba(var(--surface-rgb), calc(.3 + var(--glass) * .55)) !important; }
+
+  /* Barre latérale élargie à la souris : les pastilles gardent leur colonne,
+     le titre des pages apparaît peu à peu à côté (--label : son opacité). */
+  #resizer { position: fixed; top: 0; bottom: 0; left: calc(var(--side) - 6px); width: 6px; z-index: 25; cursor: col-resize; }
+  #resizer::after { content: ''; position: absolute; top: 0; bottom: 0; right: 0; width: 2px; background: var(--accent); opacity: 0; transition: opacity .15s; }
+  #resizer:hover::after, body.resizing #resizer::after { opacity: .6; }
+  body[data-pos="right"] #resizer { left: auto; right: calc(var(--side) - 6px); }
+  body[data-pos="right"] #resizer::after { right: auto; left: 0; }
+  body[data-pos="top"] #resizer { display: none; }
+  body.resizing, body.resizing * { cursor: col-resize !important; }
+  body:not([data-pos="top"]) #sidebar { align-items: flex-start; }
+  body[data-pos="right"] #sidebar { align-items: flex-end; }
+  body:not([data-pos="top"]) #top { width: 56px; }
+  body:not([data-pos="top"]) #middle { width: 100%; align-items: flex-start; }
+  body[data-pos="right"] #middle { align-items: flex-end; }
+  body:not([data-pos="top"]) #search-pill { margin: 0 8px; }
+  body:not([data-pos="top"]) #new-tab { margin: 0 11px; }
+  body:not([data-pos="top"]) #pills { width: 100%; align-items: stretch; }
+  body:not([data-pos="top"]) .tab { width: 100%; display: flex; align-items: center; }
+  body[data-pos="right"] .tab { flex-direction: row-reverse; }
+  .pc { flex: none; width: 56px; height: 100%; display: grid; place-items: center; }
+  body[data-pos="top"] .pc { display: contents; }
+  .side-ttl {
+    flex: 1; min-width: 0; padding-right: 26px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    font-size: 13px; color: var(--muted); opacity: var(--label);
+  }
+  body[data-pos="right"] .side-ttl { padding: 0 0 0 26px; text-align: right; }
+  .tab.active .side-ttl { color: var(--text); font-weight: 500; }
+  body:not(.wide) .side-ttl { display: none; }
+  body.wide[data-pos="right"] .close, body.wide[data-pos="right"] .mute { right: auto; left: 4px; }
 </style>
 </head>
 <body data-pos="left">
   <div id="backdrop" aria-hidden="true"></div>
+  <div id="resizer" title="Glisser pour élargir la barre (double-clic : taille d'origine)" aria-hidden="true"></div>
   <nav id="sidebar" aria-label="Navigation">
     <div id="top">
       <button class="round" id="gear" title="Paramètres (Ctrl+,)" aria-label="Paramètres">
@@ -449,7 +491,7 @@
   </nav>
 
   <div id="overlay">
-    <div id="bar">
+    <div id="bar" class="card">
       <span id="lock" hidden></span>
       <svg id="loupe" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="input" spellcheck="false" autocomplete="off"
@@ -458,8 +500,8 @@
       <button class="icon" id="glass-site" hidden title="Verre sur ce site"><svg width="17" height="17" style="margin:auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 14 14 8M11 17l6-6"/></svg></button>
       <button class="icon" id="reload" title="Actualiser (F5)">&#8635;</button>
     </div>
-    <ul id="command-list"></ul>
-    <div id="cmd-result" hidden><div class="main"></div><ul></ul></div>
+    <ul id="command-list" class="card"></ul>
+    <div id="cmd-result" class="card" hidden><div class="main"></div><ul></ul></div>
     <div class="help">Entrée pour valider · Échap pour revenir à la page</div>
   </div>
 
@@ -487,16 +529,12 @@
   </div>
 
   <div id="library">
-    <div class="panel">
+    <div class="panel card" role="dialog" aria-labelledby="lib-title">
       <div class="head">
-        <div id="lib-tabs">
-          <button type="button" data-kind="bookmarks">Favoris</button>
-          <button type="button" data-kind="history">Historique</button>
-          <button type="button" data-kind="downloads">Téléchargements</button>
-        </div>
-        <input id="lib-search" type="search" spellcheck="false" autocomplete="off" placeholder="Rechercher">
+        <h2 id="lib-title"></h2>
         <button type="button" id="lib-close" title="Fermer (Échap)" aria-label="Fermer">&times;</button>
       </div>
+      <div class="search"><input id="lib-search" type="search" spellcheck="false" autocomplete="off" placeholder="Rechercher"></div>
       <div id="lib-list"></div>
       <div class="foot">
         <span id="lib-hint"></span>
@@ -506,7 +544,7 @@
   </div>
 
   <div id="settings">
-    <form id="settings-form">
+    <form id="settings-form" class="card">
       <h2>Paramètres</h2>
       <label for="s-name">Votre prénom (affiché sur l'accueil)</label>
       <input type="text" id="s-name" maxlength="40" autocomplete="off">
@@ -645,7 +683,9 @@
   const activeTab = () => state.tabs.find((t) => t.active);
   const label = (t) => t.home ? 'Accueil' : (t.title || t.url);
 
-  // Un panneau ouvert cache la page (Rust s'en charge).
+  // Un panneau ouvert passe par-dessus la page (macOS, Windows) ou la cache (Linux).
+  // La forme est envoyée avant : sous Windows, l'interface est découpée dès
+  // qu'elle passe devant la page.
   function setMode(next) {
     if (next === mode) return;
     const wasOpen = mode !== null;
@@ -655,7 +695,45 @@
     document.body.classList.toggle('settings', mode === 'settings');
     document.body.classList.toggle('library', mode === 'library');
     for (const k of ['bookmarks', 'history', 'downloads']) $('lib-' + k).classList.toggle('on', mode === 'library' && libKind === k);
+    if (mode !== null) reportShape();
     if (wasOpen !== (mode !== null)) send({ type: 'expand', open: mode !== null });
+  }
+
+  // Forme de l'interface quand elle est devant la page : la barre, le bandeau
+  // et chaque .card visible. Ailleurs, on voit (et on clique) la page.
+  let lastShape = '';
+  let shapeFrame = 0;
+  function reportShape() {
+    cancelAnimationFrame(shapeFrame);
+    if (!state.overlay || mode === null) { lastShape = ''; return; }
+    const glass = !!state.panel_blur && document.body.classList.contains('glass-bar');
+    const rects = [];
+    const add = (el, isCard) => {
+      if (!el.getClientRects().length) return; // caché
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return;
+      const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+      rects.push({ x: r.left, y: r.top, w: r.width, h: r.height, r: radius, glass: isCard && glass });
+    };
+    add($('sidebar'), false);
+    if (document.body.classList.contains('strip')) add($('strip'), false);
+    for (const el of document.querySelectorAll('.card')) add(el, true);
+    const json = JSON.stringify(rects);
+    if (json === lastShape) return;
+    lastShape = json;
+    send({ type: 'shape', rects });
+  }
+  const queueShape = () => { cancelAnimationFrame(shapeFrame); shapeFrame = requestAnimationFrame(reportShape); };
+  const shapeWatch = new ResizeObserver(queueShape);
+  for (const el of document.querySelectorAll('.card')) shapeWatch.observe(el);
+  shapeWatch.observe($('sidebar'));
+  window.addEventListener('resize', queueShape);
+
+  // Panneau ouvert par-dessus la page : un clic dans la page le ferme (Rust prévient).
+  function closePanel() {
+    if (mode === 'bar') closeBar(false);
+    else if (mode === 'settings') closeSettings();
+    else if (mode === 'library') closeLibrary();
   }
 
   let ctxTimer = 0;
@@ -770,7 +848,7 @@
       el.setAttribute('role', 'button');
       el.setAttribute('aria-label', label(tab));
       el.title = tabTitle(tab); // bulle : le titre de la page, et son état
-      el.innerHTML = '<span class="dot"></span>' +
+      el.innerHTML = '<span class="pc"><span class="dot"></span></span>' +
         '<button class="close" aria-label="Fermer l\'onglet">' +
         '<svg width="8" height="8" viewBox="0 0 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg></button>';
       if (icon) {
@@ -785,7 +863,12 @@
         box.appendChild(img);
         el.querySelector('.dot').appendChild(box);
       }
-      if (isTop()) {
+      if (!isTop()) {
+        const ttl = document.createElement('span');
+        ttl.className = 'side-ttl';
+        ttl.textContent = label(tab);
+        el.appendChild(ttl);
+      } else {
         el.classList.toggle('editing', tab.active && editing);
         if (tab.active && editing) {
           const inp = document.createElement('input');
@@ -899,6 +982,57 @@
     editing = false;
     renderSidebar();
   }
+
+  // Barre à gauche ou à droite : on l'élargit en tirant sur son bord, du côté
+  // de la page. Au moins la largeur d'origine, au plus 320 px (et la moitié de
+  // la fenêtre). Rust redimensionne la page à chaque image, enregistre au relâché.
+  const SIDE_MIN = 56;
+  const SIDE_MAX = 320;
+  let resize = null;
+  let sideFrame = 0;
+  function applySide(width) {
+    const w = Math.round(Math.min(Math.max(width || SIDE_MIN, SIDE_MIN), SIDE_MAX, Math.max(SIDE_MIN, innerWidth / 2)));
+    const root = document.documentElement.style;
+    root.setProperty('--side', w + 'px');
+    // Le titre apparaît à partir de 70 px et devient net vers 150 px.
+    root.setProperty('--label', String(Math.min(1, Math.max(0, (w - 70) / 80))));
+    document.body.classList.toggle('wide', w > 70);
+    return w;
+  }
+  function setSide(width, done) {
+    const w = applySide(width);
+    state.settings.sidebar_width = w;
+    cancelAnimationFrame(sideFrame);
+    if (done) send({ type: 'sidebar_width', width: w, done: true });
+    else sideFrame = requestAnimationFrame(() => send({ type: 'sidebar_width', width: w, done: false }));
+    queueShape();
+  }
+  const resizer = $('resizer');
+  resizer.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || isTop()) return;
+    e.preventDefault();
+    resize = { x: e.clientX, width: state.settings.sidebar_width || SIDE_MIN, current: null };
+    resizer.setPointerCapture(e.pointerId);
+    document.body.classList.add('resizing');
+  });
+  resizer.addEventListener('pointermove', (e) => {
+    if (!resize) return;
+    const dx = document.body.dataset.pos === 'right' ? resize.x - e.clientX : e.clientX - resize.x;
+    resize.current = resize.width + dx;
+    setSide(resize.current, false);
+  });
+  const endResize = () => {
+    if (!resize) return;
+    const { current } = resize;
+    resize = null;
+    document.body.classList.remove('resizing');
+    if (current !== null) setSide(current, true);
+  };
+  resizer.addEventListener('pointerup', endResize);
+  resizer.addEventListener('pointercancel', endResize);
+  resizer.addEventListener('dblclick', () => setSide(SIDE_MIN, true));
+  // Fenêtre plus étroite : la barre ne dépasse pas la moitié de la largeur.
+  window.addEventListener('resize', () => { if (!resize) applySide(state.settings.sidebar_width); });
 
   // Glisser-déposer : maintenir le clic sur un onglet pour le déplacer.
   function startDrag(e, el, tab) {
@@ -1213,6 +1347,8 @@
     b.addEventListener('click', () => { draftPos = b.dataset.value; renderPosChoices(); });
   }
   $('s-cancel').addEventListener('click', closeSettings);
+  // Clic à côté des paramètres (sur la page, visible derrière) : comme « Annuler ».
+  $('settings').addEventListener('mousedown', (e) => { if (e.target === $('settings')) closeSettings(); });
   $('settings-form').addEventListener('submit', (e) => {
     e.preventDefault();
     send({
@@ -1233,20 +1369,29 @@
         index_pages: $('s-index').checked,
         glass: draftGlass,
         glass_level: draftGlassLevel,
+        sidebar_width: state.settings.sidebar_width,
       },
     });
     setMode(null);
     send({ type: 'focus_page' });
   });
 
-  // --- Bibliothèque : favoris, historique, téléchargements ---
+  // --- Favoris, historique, téléchargements : un panneau chacun ---
+  const LIB_PANELS = {
+    bookmarks: { title: 'Favoris', search: 'Rechercher dans les favoris' },
+    history: { title: 'Historique', search: "Rechercher dans l'historique" },
+    downloads: { title: 'Téléchargements', search: 'Rechercher un téléchargement' },
+  };
   function openLibrary(kind) {
     if (mode === 'library' && libKind === kind) { closeLibrary(); return; }
     if (mode === 'bar') closeBar(false);
     if (mode === 'settings') { applyTheme(state.settings.theme); applyPos(state.settings.bar_position); applyGlass(state.settings.glass, state.settings.glass_level); }
     stopEdit();
     libKind = kind;
-    for (const b of $('lib-tabs').children) b.classList.toggle('on', b.dataset.kind === kind);
+    const info = LIB_PANELS[kind];
+    $('lib-title').innerHTML = $('lib-' + kind).innerHTML;
+    $('lib-title').append(info.title);
+    $('lib-search').placeholder = info.search;
     $('lib-search').value = '';
     libItems = kind === 'downloads' ? (state.downloads || []) : [];
     setMode('library');
@@ -1439,17 +1584,6 @@
   for (const k of ['bookmarks', 'history', 'downloads']) {
     $('lib-' + k).addEventListener('click', () => openLibrary(k));
   }
-  for (const b of $('lib-tabs').children) {
-    b.addEventListener('click', () => {
-      libKind = b.dataset.kind;
-      for (const o of $('lib-tabs').children) o.classList.toggle('on', o === b);
-      for (const k of ['bookmarks', 'history', 'downloads']) $('lib-' + k).classList.toggle('on', libKind === k);
-      libItems = [];
-      renderLibrary();
-      requestLibrary();
-      $('lib-search').focus();
-    });
-  }
   $('lib-search').addEventListener('input', () => { if (libKind === 'downloads') renderLibrary(); else requestLibrary(); });
   $('lib-search').addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeLibrary(); e.preventDefault(); } });
   $('lib-close').addEventListener('click', closeLibrary);
@@ -1619,11 +1753,14 @@
   window.navigateur = {
     setState(next) {
       state = next;
+      document.body.classList.toggle('overlay', !!state.overlay);
+      document.body.classList.toggle('blur', !!state.panel_blur);
       if (mode !== 'settings') {
         applyTheme(state.settings.theme);
         applyPos(state.settings.bar_position);
         applyGlass(state.settings.glass, state.settings.glass_level);
       }
+      if (!resize) applySide(state.settings.sidebar_width);
       // Autre onglet affiché : la recherche dans la page se ferme.
       const active = activeTab();
       const id = active ? active.id : null;
@@ -1640,6 +1777,7 @@
     },
     openBar,
     openSettings,
+    closePanel,
     openFind,
     setFind(r) {
       const c = $('find-count');
