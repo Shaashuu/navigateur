@@ -77,6 +77,11 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   - **Poids des onglets** : un anneau orange (chargé) ou rouge (lourd) autour de
     la pastille ; la bulle donne la mémoire et le processeur. Un onglet caché et
     lourd s'endort au bout de cinq minutes.
+  - **Transparence (effet de verre, macOS et Windows)** : dans les paramètres,
+    « Aucune », « Barre », « Pages » ou « Tout », et un curseur d'intensité. Le
+    bureau, flouté, se voit à travers la barre et le fond des sites ; le texte,
+    les images et les vidéos ne changent pas. Un bouton dans la barre de
+    recherche (ou le menu de l'onglet) retire la transparence d'un site.
   - **Recherche dans le texte des pages** : l'historique retrouve une page par
     un mot de son contenu, avec un extrait (`contenu.json`, désactivable).
 
@@ -155,6 +160,9 @@ leur onglet et envoient des messages.
 - Autorisations : Feather répond avant le moteur pour les fonctions que la page
   appelle directement ; une demande faite depuis un cadre (iframe) reste
   traitée par le moteur.
+- Transparence : pas sous Linux. Les sites qui dessinent tout dans un canvas
+  (Google Docs, Figma, jeux) ou qui ont une image de fond ne deviennent pas
+  transparents ; un texte foncé sur un bureau sombre peut être difficile à lire.
 - Suggestions sous la barre : seulement avec la barre à gauche ou à droite.
 - Icônes : Feather télécharge l'icône que le site indique lui-même (ou
   `/favicon.ico`), jamais via un service tiers, sans envoyer l'adresse de la

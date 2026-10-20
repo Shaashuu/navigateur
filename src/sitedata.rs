@@ -1,7 +1,7 @@
 //! Réglages retenus par site : niveau de zoom et autorisations (caméra,
 //! micro, position, notifications…). Rangés dans `sites.json`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use wry::{PermissionKind, PermissionResponse};
@@ -62,6 +62,8 @@ pub struct Decision {
 pub struct SiteData {
     zoom: BTreeMap<String, f64>,
     permissions: BTreeMap<String, BTreeMap<Permission, bool>>,
+    /// Sites où le fond des pages reste opaque malgré l'effet de verre.
+    no_glass: BTreeSet<String>,
     /// Réponses « pour cette fois » : valables jusqu'à la fermeture de Feather.
     #[serde(skip)]
     temporary: BTreeMap<(String, Permission), bool>,
@@ -99,6 +101,26 @@ impl SiteData {
             self.zoom.insert(host.to_string(), zoom);
         }
         self.changed = true;
+    }
+
+    // --- Effet de verre ---
+
+    pub fn glass_allowed(&self, host: &str) -> bool {
+        !self.no_glass.contains(host)
+    }
+
+    /// « Pas de transparence sur ce site », ou l'inverse. Renvoie le nouvel état.
+    pub fn toggle_glass(&mut self, host: &str) -> bool {
+        if host.is_empty() {
+            return true;
+        }
+        self.changed = true;
+        if self.no_glass.remove(host) {
+            true
+        } else {
+            self.no_glass.insert(host.to_string());
+            false
+        }
     }
 
     // --- Autorisations ---
@@ -183,6 +205,10 @@ mod tests {
         assert!(matches!(s.answer("visio.fr", PermissionKind::Microphone), PermissionResponse::Default));
         assert!(matches!(s.answer("pub.fr", PermissionKind::Notifications), PermissionResponse::Deny));
         assert_eq!(s.decisions().len(), 2);
+        assert!(s.glass_allowed("docs.fr"));
+        assert!(!s.toggle_glass("docs.fr"));
+        assert!(!s.glass_allowed("docs.fr"));
+        assert!(s.toggle_glass("docs.fr"));
         s.set_temporary("carte.fr", Permission::Geolocation, true);
         assert_eq!(s.permission("carte.fr", Permission::Geolocation), Some(true));
         assert_eq!(s.decisions().len(), 2);

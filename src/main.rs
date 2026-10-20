@@ -13,6 +13,7 @@ mod commands;
 mod downloads;
 mod features;
 mod fulltext;
+mod glass;
 mod library;
 #[cfg(target_os = "macos")]
 mod mac_mouse;
@@ -154,6 +155,8 @@ fn main() -> wry::Result<()> {
         .with_window_icon(window_icon())
         .with_inner_size(LogicalSize::new(1200.0, 800.0))
         .with_min_inner_size(LogicalSize::new(480.0, 360.0))
+        // Fenêtre transparente : nécessaire à l'effet de verre (macOS et Windows).
+        .with_transparent(settings::Glass::SUPPORTED)
         .build(&event_loop)
         .expect("impossible de créer la fenêtre");
 
@@ -168,6 +171,8 @@ fn main() -> wry::Result<()> {
         WebViewBuilder::new()
             .with_bounds(ui::chrome_bounds(&window))
             .with_html(ui::CHROME_HTML)
+            // L'interface dessine elle-même son fond (opaque ou en verre).
+            .with_transparent(settings::Glass::SUPPORTED)
             .with_devtools(cfg!(debug_assertions))
             .with_ipc_handler(move |request| {
                 let _ = chrome_proxy.send_event(UserEvent::Chrome(request.into_body()));
@@ -230,6 +235,7 @@ fn main() -> wry::Result<()> {
     } else {
         app.open_tab(&start_url, false);
     }
+    app.apply_window_glass();
     if check_update {
         app.start_check(false);
     }
@@ -310,6 +316,9 @@ impl App {
                     }
                 }
                 self.apply_zoom(id);
+                if !loading {
+                    self.apply_page_glass(id);
+                }
                 self.push_state();
             }
             // window.open : seules les pages web sont acceptées. Avant, une page
@@ -468,6 +477,11 @@ impl App {
                     sites.forget_permission(&host, permission);
                 }
             }
+            ChromeMessage::ToggleGlassSite { id } => {
+                if let Some(id) = id.or(self.tabs.active_id()) {
+                    self.toggle_glass_site(id);
+                }
+            }
             ChromeMessage::SleepTab { id } => {
                 self.tabs.sleep(id);
             }
@@ -522,6 +536,10 @@ impl App {
         }
         if let Some(text) = message.text {
             self.index_page(id, &text);
+        }
+        // La page vient d'être construite : elle demande si son fond doit être en verre.
+        if message.glass {
+            self.apply_page_glass(id);
         }
         if let Some(request) = message.permission {
             self.ask_permission(id, request);
@@ -764,8 +782,14 @@ impl App {
                 trackers::set_enabled(w, settings.block_trackers);
             }
         }
+        let glass_changed = (before.glass, before.glass_level, before.theme)
+            != (settings.glass, settings.glass_level, settings.theme);
         if let Ok(mut current) = self.settings.write() {
             *current = settings;
+        }
+        if glass_changed {
+            self.apply_window_glass();
+            self.apply_page_glass_all();
         }
         self.relayout();
         // Les pages d'accueil ouvertes reprennent le nouveau prénom et thème.
@@ -918,6 +942,8 @@ impl App {
             "permissions": permissions,
             "permission_prompt": self.permission_prompt(),
             "native_commands": commands,
+            "glass_supported": settings::Glass::SUPPORTED,
+            "glass_page": self.active_page_glass(),
         });
         drop(lib);
         self.chrome_call(&format!("navigateur.setState({state})"));

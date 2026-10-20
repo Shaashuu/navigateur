@@ -422,6 +422,9 @@ fn build_page(
         .with_devtools(cfg!(debug_assertions))
         // Onglet privé : stockage à part, effacé à la fermeture.
         .with_incognito(private)
+        // Transparente : l'interface, dessous, peint un fond blanc, ou le verre
+        // si l'effet est actif pour les pages (voir glass.rs).
+        .with_transparent(crate::settings::Glass::SUPPORTED)
         // macOS : un clic sur une page peu après l'avoir quittée ne doit pas servir qu'à la réactiver.
         .with_accept_first_mouse(true)
         .with_initialization_script(if std::env::var_os("FEATHER_DIAG").is_some() {
