@@ -23,13 +23,21 @@ jobs:
             (cd "ext/$n" && unzip -q -o "../$n.crx") || true
             echo "== $n"; ls "ext/$n"; head -c 1500 "ext/$n/manifest.json"; echo
           done
-      - run: clang -fobjc-arc -framework Cocoa -framework WebKit outils/sonde-extensions.m -o sonde
+      # Une vraie application (identifiant de bundle), comme Feather.
+      - name: Compiler la sonde
+        run: |
+          mkdir -p Sonde.app/Contents/MacOS
+          clang -fobjc-arc -mmacosx-version-min=15.4 -framework Cocoa -framework WebKit outils/sonde-extensions.m -o Sonde.app/Contents/MacOS/sonde
+          sed -e 's/<string>feather<\/string>/<string>sonde<\/string>/' packaging/Info.plist > Sonde.app/Contents/Info.plist
+          sed -i '' -e 's/app.feather.browser/app.feather.sonde/' Sonde.app/Contents/Info.plist || true
+          cat Sonde.app/Contents/Info.plist
+          codesign -s - --force Sonde.app || true
       - name: Proton Pass
         timeout-minutes: 3
-        run: ./sonde ext/protonpass protonpass sortie || true
+        run: Sonde.app/Contents/MacOS/sonde ext/protonpass protonpass sortie 2>&1 || true
       - name: uBlock Origin Lite
         timeout-minutes: 3
-        run: ./sonde ext/ublock ublock sortie || true
+        run: Sonde.app/Contents/MacOS/sonde ext/ublock ublock sortie 2>&1 || true
       - uses: actions/upload-artifact@v6
         if: always()
         with:

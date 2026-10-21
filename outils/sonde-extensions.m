@@ -221,6 +221,10 @@ static void run(WKWebExtension *ext) {
     });
 }
 
+static void uncaught(NSException *e) {
+    say(@"exception : %@ %@\n%@", e.name, e.reason, e.callStackSymbols);
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         if (argc < 4) { say(@"usage : sonde <dossier> <nom> <sortie>"); return 2; }
@@ -228,9 +232,12 @@ int main(int argc, const char *argv[]) {
         name = [NSString stringWithUTF8String:argv[2]];
         outDir = [NSString stringWithUTF8String:argv[3]];
         [[NSFileManager defaultManager] createDirectoryAtPath:outDir withIntermediateDirectories:YES attributes:nil error:nil];
+        NSSetUncaughtExceptionHandler(&uncaught);
+        say(@"bundle : %@, macOS %@", [NSBundle mainBundle].bundleIdentifier, [NSProcessInfo processInfo].operatingSystemVersionString);
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
         NSURL *url = [NSURL fileURLWithPath:dir isDirectory:YES];
+        say(@"lecture de %@", url);
         [WKWebExtension extensionWithResourceBaseURL:url completionHandler:^(WKWebExtension *ext, NSError *error) {
             if (!ext) { say(@"extension refusée : %@", error); [NSApp terminate:nil]; return; }
             run(ext);
