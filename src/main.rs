@@ -116,7 +116,8 @@ enum UpdateState {
     Checking,
     UpToDate,
     Available { info: update::Available },
-    Downloading { info: update::Available },
+    /// `received` : octets déjà téléchargés (mesurés chaque seconde), `speed` : par seconde.
+    Downloading { info: update::Available, received: u64, speed: u64 },
     Ready { info: update::Available },
     Error { message: String },
 }
@@ -1108,7 +1109,11 @@ impl App {
     fn start_install(&mut self) {
         let UpdateState::Available { info } = &self.update else { return };
         let info = info.clone();
-        self.update = UpdateState::Downloading { info: info.clone() };
+        // Un reste d'un essai précédent fausserait la progression.
+        if let Some(path) = update::download_path() {
+            let _ = std::fs::remove_file(path);
+        }
+        self.update = UpdateState::Downloading { info: info.clone(), received: 0, speed: 0 };
         let proxy = self.proxy.clone();
         std::thread::spawn(move || {
             let result = update::install(&info);
@@ -1129,7 +1134,7 @@ impl App {
             }
             UpdateEvent::Installed(result) => {
                 let info = match &self.update {
-                    UpdateState::Downloading { info } => Some(info.clone()),
+                    UpdateState::Downloading { info, .. } => Some(info.clone()),
                     _ => None,
                 };
                 self.update = match (result, info) {

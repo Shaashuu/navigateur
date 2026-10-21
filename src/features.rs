@@ -21,7 +21,8 @@ use crate::sitedata::Permission;
 use crate::softsleep;
 use crate::tab_manager::TabId;
 use crate::ui::{CosmeticRequest, PageMetrics, PermissionRequest};
-use crate::{App, UserEvent};
+use crate::update;
+use crate::{App, UpdateState, UserEvent};
 
 /// Niveaux de zoom proposés (Ctrl+plus / Ctrl+moins).
 const ZOOMS: [f64; 13] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
@@ -282,6 +283,7 @@ impl App {
             d.probe();
             changed |= d.received != before;
         }
+        changed |= self.probe_update();
         if self.ticks.is_multiple_of(5) {
             changed |= self.sample_weights();
             self.soft_sleep();
@@ -290,6 +292,20 @@ impl App {
         if changed {
             self.push_state();
         }
+    }
+
+    /// Mise à jour en cours de téléchargement : la taille du fichier reçu.
+    fn probe_update(&mut self) -> bool {
+        let UpdateState::Downloading { received, speed, .. } = &mut self.update else { return false };
+        let Some(size) = update::download_path().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()) else {
+            return false;
+        };
+        if size == *received {
+            return false;
+        }
+        *speed = size.saturating_sub(*received);
+        *received = size;
+        true
     }
 
     fn sample_weights(&mut self) -> bool {
