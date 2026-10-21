@@ -1,0 +1,36 @@
+# Diagnostic des extensions sur un vrai Mac (voir outils/sonde-extensions.m).
+name: Sonde des extensions
+
+on:
+  push:
+    branches: [sonde-extensions]
+  workflow_dispatch:
+
+jobs:
+  sonde:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - run: sw_vers
+      - name: Télécharger Proton Pass et uBlock Origin Lite
+        run: |
+          mkdir -p ext
+          for pair in protonpass:ghmbeldphafepmbegfdlkpapadhbakde ublock:ddkjiahejlhfcafbddmgiahcphecmpfh; do
+            n=${pair%%:*}; id=${pair##*:}
+            curl -sSL --fail -o "ext/$n.crx" "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=138.0&acceptformat=crx2,crx3&x=id%3D$id%26uc"
+            mkdir -p "ext/$n"
+            (cd "ext/$n" && unzip -q -o "../$n.crx") || true
+            echo "== $n"; ls "ext/$n"; head -c 1500 "ext/$n/manifest.json"; echo
+          done
+      - run: clang -fobjc-arc -framework Cocoa -framework WebKit outils/sonde-extensions.m -o sonde
+      - name: Proton Pass
+        timeout-minutes: 3
+        run: ./sonde ext/protonpass protonpass sortie || true
+      - name: uBlock Origin Lite
+        timeout-minutes: 3
+        run: ./sonde ext/ublock ublock sortie || true
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: sonde
+          path: sortie
