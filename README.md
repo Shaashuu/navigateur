@@ -234,6 +234,12 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   referme dès que la souris part sur la page, et la page ne « saute » plus à
   l'ouverture d'un panneau (macOS). Le clic droit est en français, et les
   boutons de l'interface n'ont plus le menu anglais de WebKit.
+- **Nouveau en 0.5.4** : sous macOS, les extensions fonctionnent dans tous les
+  onglets, même ceux ouverts avant leur installation : elles savent dans quel
+  onglet elles agissent (Proton Pass peut remplir les connexions). Leur fenêtre
+  s'ouvre une fois chargée, contre leur bouton. La barre au survol se referme
+  bien quand la souris part sur la page, et YouTube ne garde plus l'identité
+  Safari après un lien depuis Google.
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
