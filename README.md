@@ -170,6 +170,13 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   - Paramètres plus grands, avec une **vue d'ensemble** (une carte par
     catégorie et quelques réglages rapides) et des aperçus visuels pour le
     thème, la position et le style de la barre, plus un curseur de largeur.
+- **Depuis la 0.4.0 (pas encore publié)** :
+  - Progression des téléchargements : un anneau se remplit autour du bouton
+    Téléchargements (pourcentage, vitesse et temps restant dans la bulle), et
+    une petite carte s'ouvre près du bouton quand un téléchargement commence
+    (barre, Annuler, Afficher dans le dossier ; pas sous Linux).
+  - Mise à jour : barre de progression dans « À propos et mise à jour »
+    (Mo reçus, pourcentage, vitesse) et anneau autour de la roue dentée.
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente

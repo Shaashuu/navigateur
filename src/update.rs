@@ -194,10 +194,26 @@ pub fn install(update: &Available) -> Result<Restart, String> {
     install_for_os(update, sha256, &exe)
 }
 
+/// Fichier où la mise à jour est téléchargée : sa taille, mesurée chaque
+/// seconde, donne la progression affichée dans les paramètres.
+pub fn download_path() -> Option<PathBuf> {
+    if cfg!(windows) {
+        Some(std::env::current_exe().ok()?.parent()?.join("feather-update.exe"))
+    } else if cfg!(target_os = "macos") {
+        Some(work_dir().join("Feather.dmg"))
+    } else {
+        None
+    }
+}
+
+/// Dossier temporaire de la mise à jour sous macOS (image disque et volume monté).
+fn work_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("feather-update-{}", std::process::id()))
+}
+
 #[cfg(windows)]
 fn install_for_os(update: &Available, sha256: &str, exe: &Path) -> Result<Restart, String> {
-    let dir = exe.parent().ok_or("dossier introuvable")?;
-    let new = dir.join("feather-update.exe");
+    let new = download_path().ok_or("dossier introuvable")?;
     let result = (|| {
         download(&update.url, &new, sha256)?;
         swap_executable(exe, &new).map_err(|e| {
@@ -223,10 +239,10 @@ fn install_for_os(update: &Available, sha256: &str, exe: &Path) -> Result<Restar
         .ok_or("Feather n'est pas dans une application (.app) : mise à jour impossible.")?
         .to_path_buf();
     let parent = bundle.parent().ok_or("dossier introuvable")?;
-    let work = std::env::temp_dir().join(format!("feather-update-{}", std::process::id()));
+    let work = work_dir();
     let _ = fs::remove_dir_all(&work);
     fs::create_dir_all(&work).map_err(|e| format!("dossier temporaire : {e}"))?;
-    let dmg = work.join("Feather.dmg");
+    let dmg = download_path().ok_or("dossier introuvable")?;
     let mount = work.join("volume");
     let new_bundle = parent.join("Feather.app.new");
     let result = (|| {

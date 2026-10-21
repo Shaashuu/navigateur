@@ -297,6 +297,35 @@
   #lib-btns .round.on { background: var(--accent-soft); color: var(--accent); }
   #lib-downloads { position: relative; }
   #lib-downloads.busy { color: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  /* Anneau de progression autour du bouton (téléchargements, mise à jour). */
+  .ring { --p: 0; }
+  #lib-downloads.busy.ring { animation: none; }
+  .ring::before {
+    content: ''; position: absolute; inset: 1px; border-radius: 50%; pointer-events: none;
+    background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+    transition: background .3s;
+  }
+  #gear { position: relative; }
+  /* Carte des téléchargements, près du bouton, à chaque nouveau téléchargement. */
+  #dl-pop {
+    position: fixed; display: none; z-index: 40; width: 360px; padding: 8px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+  }
+  body.dlpop #dl-pop { display: block; }
+  #dl-pop .head { display: flex; justify-content: space-between; align-items: center; padding: 2px 6px 6px; font-size: 13px; font-weight: 600; }
+  #dl-pop .head button { height: 26px; padding: 0 10px; border-radius: 13px; color: var(--accent); font-size: 12px; font-weight: 600; }
+  #dl-pop .head button:hover { background: var(--accent-soft); }
+  #dl-pop .row { padding: 6px; }
+  #dl-pop .row:hover { background: none; }
+  /* Place étroite : les boutons passent sous la barre. */
+  #dl-pop .row { flex-wrap: wrap; row-gap: 4px; }
+  #dl-pop .row .txt { flex-basis: calc(100% - 38px); }
+  #dl-pop .row .acts { width: 100%; padding-left: 32px; }
+  #settings .update .bar { height: 6px; margin-top: 8px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  #settings .update .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  #settings .update .bar[hidden] { display: none; }
   #lib-downloads.fresh::after {
     content: ''; position: absolute; top: 5px; right: 5px; width: 8px; height: 8px;
     border-radius: 50%; background: var(--accent); border: 1.5px solid var(--bg);
@@ -841,6 +870,10 @@
   </div>
 
   <div id="ctx" class="card"></div>
+  <div id="dl-pop" class="card" role="dialog" aria-label="Téléchargements en cours">
+    <div class="head"><span id="dl-pop-title">Téléchargement</span><button type="button" id="dl-pop-all">Tout voir</button></div>
+    <div id="dl-pop-list"></div>
+  </div>
 
   <div id="strip" role="region" aria-label="Bandeau">
     <div id="st-find">
@@ -1085,6 +1118,7 @@
             <div class="row"><span>Version actuelle</span><b id="u-current"></b></div>
             <div class="row" id="u-new-row" hidden><span>Nouvelle version</span><b id="u-new"></b></div>
             <p class="status" id="u-status"></p>
+            <div class="bar" id="u-bar" hidden><i></i></div>
             <div class="buttons">
               <button type="button" id="u-check">Rechercher une mise à jour</button>
               <button type="button" id="u-install" class="primary" hidden>Télécharger</button>
@@ -1177,6 +1211,7 @@
     document.body.classList.toggle('site', mode === 'site');
     document.body.classList.toggle('group', mode === 'group');
     document.body.classList.toggle('import', mode === 'import');
+    document.body.classList.toggle('dlpop', mode === 'dlpop');
     for (const k of LIB_KINDS) $('lib-' + k).classList.toggle('on', mode === 'library' && libKind === k);
     if (mode !== null) reportShape();
     if (wasOpen !== (mode !== null)) send({ type: 'expand', open: mode !== null });
@@ -1220,6 +1255,7 @@
     else if (mode === 'group' || mode === 'import') closeSheet();
     else if (mode === 'menu') closeTabMenu();
     else if (mode === 'hover') endHover();
+    else if (mode === 'dlpop') closeDlPop();
   }
 
   let ctxTimer = 0;
@@ -1846,7 +1882,9 @@
       ['donnees', 'Données', '⟲', '', (s.history_days ?? 90) ? 'Historique gardé ' + (s.history_days ?? 90) + ' jours' : 'Historique non gardé',
         on(s.index_pages) ? 'Recherche dans le texte des pages visitées' : 'Pages visitées non indexées'],
       ['apropos', 'Mise à jour', '↑', u.state === 'available' ? '' : 'ok', 'Feather ' + (state.version || ''),
-        u.state === 'available' ? 'Une nouvelle version est disponible' : on(s.auto_update_check) ? 'Vérifiée au démarrage' : 'Vérification manuelle'],
+        u.state === 'available' ? 'Une nouvelle version est disponible'
+          : u.state === 'downloading' ? 'Téléchargement de la mise à jour' + (u.info && u.info.size ? ' : ' + percent(u.received || 0, u.info.size) + ' %' : '…')
+          : u.state === 'ready' ? 'Redémarrez pour mettre à jour' : on(s.auto_update_check) ? 'Vérifiée au démarrage' : 'Vérification manuelle'],
     ];
     const box = $('ov-tiles');
     box.textContent = '';
@@ -2501,8 +2539,10 @@
     : n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' Mo' : Math.max(1, Math.round(n / 1024)) + ' ko';
   function progressText(d) {
     if (d.received == null) return 'Téléchargement en cours…';
-    let t = size(d.received) + (d.total ? ' sur ' + size(d.total) : '');
+    let t = size(d.received) + (d.total ? ' sur ' + size(d.total) + ' · ' + percent(d.received, d.total) + ' %' : '');
     if (d.speed) t += ' · ' + size(d.speed) + '/s';
+    // Temps restant, quand on connaît la taille et la vitesse.
+    if (d.speed && d.total && d.total > d.received) t += ' · ' + remaining((d.total - d.received) / d.speed);
     return t;
   }
   // Gestionnaire des onglets : une ligne par onglet, avec sa mémoire, son
@@ -2625,14 +2665,92 @@
     clear.hidden = libKind === 'bookmarks' || !items.length || !!q;
     if (!clear.dataset.armed) disarm(clear, clear.dataset.label);
   }
+  const percent = (done, total) => Math.min(100, Math.floor((done / total) * 100));
+  function remaining(seconds) {
+    if (seconds < 60) return 'moins d\'1 min';
+    const m = Math.round(seconds / 60);
+    return m < 60 ? m + ' min restante' + (m > 1 ? 's' : '') : Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' restantes';
+  }
+  // Anneau : la part déjà reçue de tous les téléchargements dont on connaît la taille.
+  function setRing(el, p) {
+    el.classList.toggle('ring', p != null);
+    if (p != null) el.style.setProperty('--p', String(p));
+  }
   function renderDownloadsButton() {
     const dls = state.downloads || [];
     const b = $('lib-downloads');
-    const busy = dls.some((d) => d.state === 'progress');
+    const running = dls.filter((d) => d.state === 'progress');
+    const busy = running.length > 0;
     b.classList.toggle('busy', busy);
     b.classList.toggle('fresh', !busy && dls.filter((d) => d.state !== 'progress').length > seenDownloads);
-    b.title = busy ? 'Téléchargements (en cours)' : 'Téléchargements';
+    const sized = running.filter((d) => d.total && d.received != null);
+    const p = sized.length ? percent(sized.reduce((a, d) => a + d.received, 0), sized.reduce((a, d) => a + d.total, 0)) : null;
+    setRing(b, busy ? p : null);
+    b.title = !busy ? 'Téléchargements'
+      : running.length === 1 ? running[0].name + '\n' + progressText(running[0])
+      : running.length + ' téléchargements en cours' + (p != null ? ' · ' + p + ' %' : '');
+    renderDlPop();
   }
+
+  // Carte des téléchargements : elle s'ouvre seule quand un téléchargement
+  // commence (sauf sous Linux, où elle cacherait la page), et se referme après
+  // quelques secondes si la souris n'est pas dessus.
+  const seenIds = new Set();
+  let dlPopTimer = 0;
+  let dlPopReady = false;   // les téléchargements déjà là au premier état ne comptent pas
+  function watchNewDownloads() {
+    const dls = state.downloads || [];
+    let fresh = false;
+    for (const d of dls) {
+      if (seenIds.has(d.id)) continue;
+      seenIds.add(d.id);
+      if (d.state === 'progress') fresh = true;
+    }
+    if (fresh && dlPopReady && state.overlay && mode === null) openDlPop();
+    dlPopReady = true;
+  }
+  function placeDlPop() {
+    const r = $('lib-downloads').getBoundingClientRect();
+    const box = $('dl-pop');
+    const w = 360;
+    if (isTop()) {
+      box.style.top = (r.bottom + 8) + 'px';
+      box.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w)) + 'px';
+    } else {
+      box.style.top = Math.max(8, Math.min(innerHeight - box.offsetHeight - 8, r.top - 8)) + 'px';
+      box.style.left = document.body.dataset.pos === 'right' ? (r.left - w - 10) + 'px' : (r.right + 10) + 'px';
+    }
+  }
+  function renderDlPop() {
+    if (mode !== 'dlpop') return;
+    const dls = state.downloads || [];
+    // Les téléchargements en cours, puis ceux qui viennent de finir (3 au plus).
+    const shown = dls.filter((d) => d.state === 'progress').concat(dls.filter((d) => d.state !== 'progress').reverse()).slice(0, 3);
+    const running = dls.filter((d) => d.state === 'progress').length;
+    $('dl-pop-title').textContent = running > 1 ? running + ' téléchargements en cours' : running ? 'Téléchargement en cours' : 'Téléchargements';
+    const list = $('dl-pop-list');
+    list.textContent = '';
+    for (const d of shown) list.appendChild(downloadRow(d));
+    placeDlPop();
+    queueShape();
+  }
+  function openDlPop() {
+    if (mode !== null && mode !== 'dlpop') return;
+    setMode('dlpop');
+    renderDlPop();
+    autoCloseDlPop();
+  }
+  function autoCloseDlPop() {
+    clearTimeout(dlPopTimer);
+    dlPopTimer = setTimeout(() => { if (mode === 'dlpop' && !$('dl-pop').matches(':hover')) closeDlPop(); }, 5000);
+  }
+  function closeDlPop() {
+    clearTimeout(dlPopTimer);
+    if (mode === 'dlpop') setMode(null);
+  }
+  $('dl-pop').addEventListener('pointerleave', autoCloseDlPop);
+  $('dl-pop').addEventListener('pointerenter', () => clearTimeout(dlPopTimer));
+  $('dl-pop-all').addEventListener('click', () => { closeDlPop(); openLibrary('downloads'); });
   for (const k of LIB_KINDS) {
     $('lib-' + k).addEventListener('click', () => openLibrary(k));
   }
@@ -2829,7 +2947,10 @@
       available: canInstall
         ? 'Une nouvelle version est disponible' + (info.size ? ' (' + mb(info.size) + ').' : '.')
         : 'Une nouvelle version est disponible, mais pas de téléchargement automatique sur ce système.',
-      downloading: 'Téléchargement et installation…',
+      downloading: info && info.size && u.received
+        ? 'Téléchargement : ' + mb(u.received) + ' sur ' + mb(info.size) + ' · ' + percent(u.received, info.size) + ' %' +
+          (u.received >= info.size ? ' · installation…' : u.speed ? ' · ' + mb(u.speed) + '/s' : '')
+        : 'Téléchargement et installation…',
       ready: 'Mise à jour installée. Redémarrez Feather pour l\'utiliser.',
       error: u.message || 'Erreur.',
     };
@@ -2843,6 +2964,12 @@
     $('u-restart').hidden = u.state !== 'ready';
     $('u-page').hidden = !(u.state === 'available' && !canInstall);
     $('gear').classList.toggle('has-update', u.state === 'available' || u.state === 'ready' || u.state === 'downloading');
+    // Progression : une barre dans les paramètres, un anneau autour de la roue dentée.
+    const p = u.state === 'downloading' && info && info.size ? percent(u.received || 0, info.size) : null;
+    $('u-bar').hidden = p == null;
+    if (p != null) $('u-bar').firstChild.style.width = p + '%';
+    setRing($('gear'), p);
+    $('gear').title = p != null ? 'Paramètres · mise à jour : ' + p + ' %' : 'Paramètres (Ctrl+,)';
   }
   $('u-check').addEventListener('click', () => send({ type: 'check_update' }));
   $('u-install').addEventListener('click', () => send({ type: 'install_update' }));
@@ -2911,6 +3038,7 @@
       renderSidebar();
       renderUpdate();
       renderStrip();
+      watchNewDownloads();
       document.body.classList.toggle('eco', !!state.settings.economy);
       if (mode === 'library' && LOCAL_KINDS.includes(libKind)) renderLibrary();
       if (mode === 'site') renderSite();
