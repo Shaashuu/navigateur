@@ -245,6 +245,12 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   est à 15 minutes par défaut. Un bouton d'accueil apparaît, l'utilisation de la
   mémoire s'affiche en direct, et la pastille à la loupe ouvre une recherche au
   milieu de la page (dans l'onglet actif ou un nouvel onglet, au choix).
+- **Nouveau en 0.5.7** : actualiser une page lourde (YouTube…) la recrée à
+  neuf et rend toute sa mémoire : avant, chaque rechargement gardait celle de
+  la page précédente. L'utilisation de la mémoire affiche le même chiffre que
+  le Moniteur d'activité. Quand une extension bloque déjà les publicités
+  (uBlock Origin Lite…), le bloqueur intégré se met en pause pour ne pas
+  bloquer deux fois, sauf dans les onglets privés.
 - **Nouveau en 0.5.6** : sous macOS, Proton Pass s'ouvre à sa taille normale
   au lieu de se croire dans un onglet, et son arrière-plan démarre sans
   s'arrêter (fini le message « ne parvient pas à activer Proton Pass »). Les
