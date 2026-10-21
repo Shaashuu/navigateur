@@ -33,6 +33,7 @@ static NSString *const kProbe =
      " w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight,"
      " chrome: typeof chrome, browser: typeof browser,"
      " runtime: typeof (window.chrome && chrome.runtime && chrome.runtime.sendMessage),"
+     " rt: (() => { const k = []; try { for (const x in (window.chrome && chrome.runtime) || {}) k.push(x); } catch (e) { k.push(String(e)); } return k.join(','); })(),"
      " body: (document.body && document.body.innerHTML || '').slice(0, 600),"
      " errs: (window.__e || []).slice(0, 30)})";
 
