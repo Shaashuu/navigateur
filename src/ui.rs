@@ -184,6 +184,11 @@ pub enum ChromeMessage {
     },
     /// Met en veille tous les onglets cachés (gestionnaire des onglets).
     SleepHidden,
+    /// Le panneau de la mémoire s'ouvre ou se ferme : tant qu'il est ouvert, la
+    /// mémoire affichée suit celle des onglets.
+    WatchMemory {
+        on: bool,
+    },
     /// Change une autorisation retenue pour un site (fiche du site).
     SetPermission {
         host: String,
@@ -696,6 +701,10 @@ mod tests {
         assert!(matches!(
             serde_json::from_str::<ChromeMessage>(r#"{"type":"sleep_hidden"}"#).unwrap(),
             ChromeMessage::SleepHidden
+        ));
+        assert!(matches!(
+            serde_json::from_str::<ChromeMessage>(r#"{"type":"watch_memory","on":true}"#).unwrap(),
+            ChromeMessage::WatchMemory { on: true }
         ));
     }
 

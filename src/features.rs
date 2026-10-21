@@ -254,10 +254,25 @@ impl App {
         let Some(tab) = self.tabs.get_mut(id) else { return };
         tab.weight.lag_ms = metrics.lag_ms;
         // La mémoire mesurée par le système (macOS) est plus juste que celle du JavaScript.
+        let before = tab.weight.memory_mb;
         if cfg!(not(target_os = "macos")) {
             tab.weight.memory_mb = metrics.heap_mb;
         }
         tab.weight.update_level();
+        // Panneau de la mémoire ouvert : le nouveau chiffre s'affiche tout de suite.
+        if self.memory_watched && tab.weight.memory_mb != before {
+            self.push_state();
+        }
+    }
+
+    /// Le panneau « Utilisation de la mémoire » s'ouvre ou se ferme. Ouvert, la
+    /// mémoire est relevée toutes les deux secondes (au lieu de cinq) et
+    /// envoyée à chaque changement ; fermé, rien de plus que d'habitude.
+    pub(crate) fn watch_memory(&mut self, on: bool) {
+        self.memory_watched = on;
+        if on && self.sample_weights() {
+            self.push_state();
+        }
     }
 
     /// Le texte d'une page chargée rejoint la recherche dans l'historique.
@@ -289,6 +304,8 @@ impl App {
             changed |= self.sample_weights();
             self.soft_sleep();
             changed |= self.auto_sleep();
+        } else if self.memory_watched && self.ticks.is_multiple_of(2) {
+            changed |= self.sample_weights();
         }
         if changed {
             self.push_state();
@@ -309,7 +326,11 @@ impl App {
         true
     }
 
+    /// Relève la mémoire et le processeur de chaque page. Vrai si l'interface
+    /// doit être mise à jour : un niveau de poids a changé, ou une mémoire
+    /// pendant que le panneau de la mémoire est ouvert.
     fn sample_weights(&mut self) -> bool {
+        let watched = self.memory_watched;
         let mut changed = false;
         for tab in self.tabs.iter_mut() {
             let Some(w) = tab.webview() else { continue };
@@ -318,7 +339,7 @@ impl App {
             tab.weight.memory_mb = Some(memory);
             tab.weight.cpu = cpu;
             tab.weight.update_level();
-            changed |= tab.weight.level != before.level;
+            changed |= tab.weight.level != before.level || (watched && tab.weight.memory_mb != before.memory_mb);
         }
         changed
     }
