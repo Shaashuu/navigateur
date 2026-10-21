@@ -45,7 +45,7 @@
             const s = Date.now();
             let done = false;
             setTimeout(() => { if (!done) note(name + ' toujours sans réponse après 5 s'); }, 5000);
-            r.then(() => { done = true; const d = Date.now() - s; if (d > 800 || space === 'declarativeNetRequest') note(name + ' : ' + d + ' ms'); },
+            r.then(() => { done = true; const d = Date.now() - s; if (d > 800) note(name + ' : ' + d + ' ms'); },
               (e) => { done = true; note(name + ' refusé : ' + e); });
           }
           return r;
@@ -53,6 +53,32 @@
         try { o[k] = w; } catch (e) {}
         if (o[k] !== w) try { Object.defineProperty(o, k, { value: w, configurable: true, writable: true }); } catch (e) {}
       }
+    }
+  }
+  // Messages et connexions reçus (les 40 premiers).
+  let seen = 0;
+  const short = (x) => { try { return JSON.stringify(x).slice(0, 160); } catch (e) { return String(x); } };
+  for (const root of [globalThis.browser, globalThis.chrome]) {
+    const rt = root && root.runtime;
+    if (!rt || rt.__sondeEv) continue;
+    try { Object.defineProperty(rt, '__sondeEv', { value: true }); } catch (e) {}
+    for (const ev of ['onMessage', 'onConnect']) {
+      const target = rt[ev];
+      if (!target || !target.addListener) continue;
+      const add = target.addListener.bind(target);
+      const w = (f) => add((...a) => {
+        if (seen++ < 40) {
+          if (ev === 'onConnect') {
+            const port = a[0];
+            note('connexion ' + port.name + ' de ' + (port.sender && port.sender.url));
+            port.onMessage.addListener((m) => { if (seen++ < 40) note('port ' + port.name + ' : ' + short(m)); });
+            port.onDisconnect.addListener(() => note('port ' + port.name + ' fermé'));
+          } else note('message ' + short(a[0]) + ' de ' + (a[1] && a[1].url));
+        }
+        return f(...a);
+      });
+      try { target.addListener = w; } catch (e) {}
+      if (target.addListener !== w) try { Object.defineProperty(target, 'addListener', { value: w, configurable: true, writable: true }); } catch (e) { note('écoute ' + ev + ' : ' + e); }
     }
   }
   note('sonde prête');

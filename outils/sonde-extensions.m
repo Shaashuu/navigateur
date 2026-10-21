@@ -24,7 +24,9 @@ static NSString *const kCatch =
     @"window.__e = [];"
      "addEventListener('error', (e) => __e.push('error ' + e.message + ' @' + e.filename + ':' + e.lineno), true);"
      "addEventListener('unhandledrejection', (e) => __e.push('rejet ' + String(e.reason && (e.reason.stack || e.reason.message) || e.reason)));"
-     "(() => { const o = console.error; console.error = (...a) => { __e.push('console ' + a.map(String).join(' ')); o.apply(console, a); }; })();";
+     "for (const lvl of ['error', 'warn', 'log', 'info', 'debug']) { const o = console[lvl]; console[lvl] = (...a) => { if (__e.length < 80) __e.push(lvl + ' ' + a.map((x) => { try { return typeof x === 'object' ? JSON.stringify(x).slice(0, 200) : String(x); } catch (e) { return String(x); } }).join(' ').slice(0, 300)); o.apply(console, a); }; }"
+     "window.__c0 = globalThis.chrome; window.__b0 = globalThis.browser;"
+     "window.__start = 'chrome=' + typeof globalThis.chrome + ' runtime=' + typeof (globalThis.chrome && chrome.runtime) + ' browser.runtime=' + typeof (globalThis.browser && browser.runtime) + ' browser.storage=' + typeof (globalThis.browser && browser.storage);";
 
 static NSString *const kProbe =
     @"JSON.stringify({href: location.href, ready: document.readyState,"
@@ -35,7 +37,8 @@ static NSString *const kProbe =
      " runtime: typeof (window.chrome && chrome.runtime && chrome.runtime.sendMessage),"
      " rt: (() => { const k = []; try { for (const x in (window.chrome && chrome.runtime) || {}) k.push(x); } catch (e) { k.push(String(e)); } return k.join(','); })(),"
      " body: (document.body && document.body.innerHTML || '').slice(0, 600),"
-     " errs: (window.__e || []).slice(0, 30)})";
+     " start: window.__start, same: window.__c0 === globalThis.chrome && window.__b0 === globalThis.browser,"
+     " errs: (window.__e || []).slice(0, 60)})";
 
 // Ce que l'arrière-plan a noté (voir l'enveloppe ajoutée par le flux de travail).
 static NSString *const kStorage =
@@ -45,7 +48,7 @@ static NSString *const kStorage =
 
 // L'arrière-plan répond-il ? Et l'onglet actif est-il visible depuis la page ?
 static NSString *const kMessages =
-    @"const api = (typeof browser !== 'undefined' ? browser : chrome);"
+    @"const api = window.__b0 || window.__c0 || (typeof browser !== 'undefined' ? browser : chrome);"
      "const wait = (p) => Promise.race([p.then((r) => 'ok ' + JSON.stringify(r).slice(0, 300), (e) => 'erreur ' + e), new Promise((r) => setTimeout(() => r('rien en 4 s'), 4000))]);"
      "const out = {};"
      "out.tabs = await wait(api.tabs.query({active: true, currentWindow: true}).then((t) => t.map((x) => x.id + ' ' + x.url)));"

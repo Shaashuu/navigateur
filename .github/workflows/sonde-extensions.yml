@@ -53,16 +53,7 @@ jobs:
         run: Sonde.app/Contents/MacOS/sonde ext/protonpass protonpass sortie 2>&1 || true
       - name: Proton Pass avec les compléments
         timeout-minutes: 3
-        run: Sonde.app/Contents/MacOS/sonde ext/protonpass2 protonpass2 sortie 2>&1 || true
-      - name: Proton Pass, compléments, sans webRequest
-        timeout-minutes: 3
-        run: Sonde.app/Contents/MacOS/sonde ext/protonpass3 protonpass3 sortie 2>&1 || true
-      - name: uBlock Origin Lite tel quel
-        timeout-minutes: 5
-        run: Sonde.app/Contents/MacOS/sonde ext/ublock ublock sortie 90 2>&1 || true
-      - name: uBlock Origin Lite avec les compléments
-        timeout-minutes: 3
-        run: Sonde.app/Contents/MacOS/sonde ext/ublock2 ublock2 sortie 2>&1 || true
+        run: Sonde.app/Contents/MacOS/sonde ext/protonpass2 protonpass2 sortie 30 2>&1 || true
       - uses: actions/upload-artifact@v6
         if: always()
         with:
