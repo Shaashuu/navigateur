@@ -181,6 +181,11 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     « Enregistrer dans Photos » l'ajoute directement à l'app Photos (macOS
     demande l'autorisation la première fois) ; « Enregistrer l'image » la range
     dans les téléchargements, sous macOS, Windows et Linux.
+  - Barre latérale : « Au survol » s'ouvre en douceur sans déplacer les
+    onglets ni les boutons ; la palette sort de l'onglet actif (fenêtre
+    blanche avec une flèche) au lieu du milieu de l'écran ; changer de style
+    remet la barre à sa largeur d'origine (la plus étroite, ou 240 px pour la
+    barre large).
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente

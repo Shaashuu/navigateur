@@ -682,17 +682,26 @@
 
   /* 2b, 2d · Barre large (en permanence ou au survol) : boutons en ligne, adresse en tête */
   #side-addr { display: none; }
-  body[data-style="wide"]:not([data-pos="top"]):not(.focus) #top, body.hovering #top {
+  body[data-style="wide"]:not([data-pos="top"]):not(.focus) #top {
     width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 10px;
   }
-  body[data-style="wide"]:not([data-pos="top"]):not(.focus) #nav, body.hovering #nav { flex-direction: row; }
-  body[data-style="wide"]:not([data-pos="top"]):not(.focus) #lib-btns, body.hovering #lib-btns {
+  body[data-style="wide"]:not([data-pos="top"]):not(.focus) #nav { flex-direction: row; }
+  body[data-style="wide"]:not([data-pos="top"]):not(.focus) #lib-btns {
     flex-direction: row; border-top: 0; padding-top: 0; margin: 0; order: 3;
   }
-  body[data-style="wide"]:not([data-pos="top"]):not(.focus) #side-addr, body.hovering #side-addr { display: flex; width: 100%; order: 2; }
+  body[data-style="wide"]:not([data-pos="top"]):not(.focus) #side-addr { display: flex; width: 100%; order: 2; }
+  /* Au survol, rien ne change de place : la barre s'élargit en douceur par-dessus
+     la page, les boutons restent en colonne et les titres apparaissent à côté
+     des pastilles. */
+  body[data-style="hover"]:not([data-pos="top"]) #sidebar, body.focus #sidebar {
+    transition: width .2s cubic-bezier(.2, .8, .2, 1), box-shadow .2s, border-radius .2s;
+  }
+  body.resizing #sidebar { transition: none; }
   body.hovering #sidebar {
     width: 300px; z-index: 26; background: var(--bg); box-shadow: 8px 0 32px rgba(0, 0, 0, .16); border-radius: 0 14px 14px 0;
   }
+  body.hovering #pills .side-ttl, body.hovering .grp .n { animation: fade-in .2s ease-out both; }
+  @keyframes fade-in { from { opacity: 0; transform: translateX(-6px); } }
   body.hovering[data-pos="right"] #sidebar { box-shadow: -8px 0 32px rgba(0, 0, 0, .16); border-radius: 14px 0 0 14px; }
   body.hovering .side-ttl { display: block; opacity: 1; }
   body.hovering .grp .n { display: inline; }
@@ -707,6 +716,31 @@
   }
   body.focus[data-pos="right"]:not(.hovering) #sidebar::after { left: auto; right: 4px; }
   body.focus #resizer { display: none; }
+
+  /* 2c · Palette : une fenêtre blanche qui sort de l'onglet actif, avec l'adresse,
+     les actions de la page puis les suggestions. --pal-top et --pal-arrow sont
+     calculés en JS (placePalette). */
+  body.anchored #overlay {
+    left: calc(var(--side) + 14px); right: auto; top: var(--pal-top, 40px); bottom: auto;
+    width: min(640px, calc(100vw - var(--side) - 28px)); padding: 14px; gap: 12px;
+    align-items: stretch; justify-content: flex-start;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 20px 56px rgba(0, 0, 0, .24);
+  }
+  body.anchored[data-pos="right"] #overlay { left: auto; right: calc(var(--side) + 14px); }
+  #pal-arrow { display: none; }
+  body.anchored #pal-arrow {
+    display: block; position: absolute; left: -9px; top: var(--pal-arrow, 30px); width: 9px; height: 20px;
+    background: var(--surface); clip-path: polygon(100% 0, 0 50%, 100% 100%);
+  }
+  body.anchored[data-pos="right"] #pal-arrow { left: auto; right: -9px; clip-path: polygon(0 0, 100% 50%, 0 100%); }
+  body.anchored #bar { width: auto; height: 52px; border-radius: 12px; background: var(--bg); border: 1px solid transparent; box-shadow: none; }
+  body.anchored #bar:focus-within { border-color: var(--accent); }
+  body.anchored #bar-acts, body.anchored #command-list, body.anchored #cmd-result {
+    width: auto; margin: 0; border: 0; box-shadow: none; border-radius: 0; padding: 0;
+  }
+  body.anchored #cmd-result { padding: 4px 8px; }
+  body.anchored #overlay .help { margin: 0; padding: 10px 8px 0; border-top: 1px solid var(--line); }
+  body.anchored #command-list { max-height: 46vh; overflow-y: auto; }
 
   /* 2c · Palette : les actions de la page sous l'adresse */
   #bar-acts { display: none; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: min(660px, 100%); margin-top: 10px; padding: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
@@ -847,6 +881,7 @@
   </div>
 
   <div id="overlay">
+    <i id="pal-arrow" aria-hidden="true"></i>
     <div id="bar" class="card">
       <span id="lock" hidden role="button" tabindex="-1"></span>
       <svg id="loupe" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -1234,6 +1269,7 @@
     };
     add($('sidebar'));
     if (document.body.classList.contains('strip')) add($('strip'));
+    if (mode === 'bar' && document.body.classList.contains('anchored')) { add($('overlay')); add($('pal-arrow')); }
     for (const el of document.querySelectorAll('.card')) add(el);
     const json = JSON.stringify(rects);
     if (json === lastShape) return;
@@ -1728,6 +1764,22 @@
       li.addEventListener('mousedown', (e) => { e.preventDefault(); runCommand(c); });
       ul.appendChild(li);
     });
+    placePalette();
+  }
+
+  // Palette : en face de l'onglet actif, sans sortir de la fenêtre ; la flèche
+  // garde la pointe sur la pastille même quand la fenêtre est poussée vers le haut.
+  function placePalette() {
+    if (mode !== 'bar' || !document.body.classList.contains('anchored')) return;
+    const box = $('overlay');
+    const pill = document.querySelector('#pills .tab.active');
+    const r = pill && pill.getBoundingClientRect();
+    const center = r && r.height ? r.top + r.height / 2 : 64;
+    const h = box.offsetHeight;
+    const top = Math.round(Math.max(8, Math.min(center - 40, innerHeight - h - 8)));
+    box.style.setProperty('--pal-top', top + 'px');
+    box.style.setProperty('--pal-arrow', Math.round(Math.max(14, Math.min(center - top - 10, h - 34))) + 'px');
+    queueShape();
   }
 
   // Commandes natives (calcul, conversion…) : aperçu pendant la frappe, calculé par Rust.
@@ -1740,7 +1792,7 @@
   }
   function showResult(r) {
     const box = $('cmd-result');
-    if (!r || !r.texte) { box.hidden = true; return; }
+    if (!r || !r.texte) { box.hidden = true; placePalette(); return; }
     box.hidden = false;
     box.classList.toggle('err', !!r.erreur);
     box.querySelector('.main').textContent = r.texte;
@@ -1770,6 +1822,8 @@
       if (field) { if (mode !== null) closePanel(); field.focus(); field.select(); return; }
     }
     stopEdit();
+    // Style palette : la fenêtre sort de l'onglet actif au lieu du milieu de l'écran.
+    document.body.classList.toggle('anchored', sideStyle() === 'palette' && !isTop() && !state.focus);
     setMode('bar');
     const tab = activeTab();
     // Sans texte tapé, sur une page : les actions de la page sous l'adresse.
@@ -1788,6 +1842,7 @@
   function closeBar(focusPage) {
     if (mode !== 'bar') return;
     $('bar-acts').classList.remove('on');
+    document.body.classList.remove('anchored');
     input.value = '';
     suggestions = [];
     showResult(null);
@@ -2196,29 +2251,42 @@
   // Sous Linux, la page serait cachée : la barre reste fermée.
   let hoverTimer = 0;
   const canHover = () => !isTop() && !!state.overlay && (sideStyle() === 'hover' || state.focus);
-  function endHover() {
+  // La barre se referme en 0,2 s (transition CSS) : on la laisse passer
+  // par-dessus la page jusqu'à la fin, sinon l'animation serait coupée.
+  let unhoverTimer = 0;
+  function endHover(now) {
     clearTimeout(hoverTimer);
-    if (!document.body.classList.contains('hovering')) return;
+    hoverArmed = false;
+    clearTimeout(unhoverTimer);
+    if (!document.body.classList.contains('hovering')) { if (mode === 'hover') setMode(null); return; }
     document.body.classList.remove('hovering');
-    if (mode === 'hover') setMode(null);
-    queueShape();
+    const done = () => { if (mode === 'hover' && !document.body.classList.contains('hovering')) setMode(null); queueShape(); };
+    if (now === true) done(); else unhoverTimer = setTimeout(done, 220);
   }
-  $('sidebar').addEventListener('pointerenter', () => {
-    clearTimeout(hoverTimer);
+  let hoverArmed = false;   // ouverture prévue dans 120 ms
+  function armHover() {
+    if (hoverArmed || document.body.classList.contains('hovering')) return;
     if (!canHover() || (mode !== null && mode !== 'hover')) return;
+    hoverArmed = true;
     hoverTimer = setTimeout(() => {
+      hoverArmed = false;
       if (mode !== null && mode !== 'hover') return;
-      document.body.classList.add('hovering');
+      clearTimeout(unhoverTimer);
+      // D'abord par-dessus la page, puis l'élargissement (animé).
       setMode('hover');
-      queueShape();
+      requestAnimationFrame(() => { document.body.classList.add('hovering'); queueShape(); });
     }, 120);
-  });
+  }
+  $('sidebar').addEventListener('pointerenter', armHover);
+  // La souris déjà sur la barre quand le style change : le premier mouvement suffit.
+  $('sidebar').addEventListener('pointermove', armHover);
   // Fil du mode concentration : un clic le quitte (sans survol, sous Linux, c'est le seul moyen à la souris).
   $('sidebar').addEventListener('click', (e) => {
     if (e.target === $('sidebar') && document.body.classList.contains('focus') && !document.body.classList.contains('hovering')) shortcut('focus');
   });
   $('sidebar').addEventListener('pointerleave', () => {
     clearTimeout(hoverTimer);
+    hoverArmed = false;
     if (!document.body.classList.contains('hovering') || drag) return;
     hoverTimer = setTimeout(() => {
       // Le menu d'un onglet, ouvert depuis la barre, la garde ouverte.
@@ -2352,7 +2420,14 @@
 
   // --- Paramètres ---
   for (const id of ['s-theme', 's-pos', 's-style', 's-startup']) {
-    for (const b of $(id).children) b.addEventListener('click', () => { choose(id, b.dataset.value); saveSettings(); fillSettings(); });
+    for (const b of $(id).children) b.addEventListener('click', () => {
+      // Nouveau style de barre : elle reprend sa largeur d'origine (la plus
+      // étroite, ou celle de la barre large), même après un élargissement à la main.
+      if (id === 's-style' && b.dataset.value !== chosen('s-style')) state.settings.sidebar_width = b.dataset.value === 'wide' ? WIDE_MIN : SIDE_MIN;
+      choose(id, b.dataset.value);
+      saveSettings();
+      fillSettings();
+    });
   }
   // Largeur de la barre : comme en tirant sur son bord.
   $('s-width').addEventListener('input', () => { setSide(Number($('s-width').value), false); $('s-width-v').textContent = state.settings.sidebar_width + ' px'; });
