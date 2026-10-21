@@ -9,6 +9,7 @@
     if (ctrl && e.shiftKey && k === 't') a = 'reopen_tab';
     else if (ctrl && e.shiftKey && k === 's') a = 'capture';
     else if (ctrl && e.shiftKey && k === 'n') a = 'new_private_tab';
+    else if (ctrl && e.shiftKey && k === 'f') a = 'focus';
     else if (ctrl && !e.shiftKey && k === 'f') a = 'find';
     else if (ctrl && !e.shiftKey && k === 'p') a = 'print';
     else if (ctrl && (k === '+' || k === '=')) a = 'zoom_in';

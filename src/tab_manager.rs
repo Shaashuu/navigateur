@@ -663,8 +663,12 @@ fn build_page(
                 reader::render(&uri, article, &settings)
             } else {
                 match library.read() {
-                    Ok(lib) if settings.bookmarks_on_home => ui::home_page(&settings, lib.bookmarks()),
-                    _ => ui::home_page(&settings, &[]),
+                    // Un onglet privé ne montre pas les dernières pages visitées.
+                    Ok(lib) if settings.bookmarks_on_home => {
+                        let recent = if private { Vec::new() } else { lib.search_history("", 20) };
+                        ui::home_page(&settings, lib.bookmarks(), &recent)
+                    }
+                    _ => ui::home_page(&settings, &[], &[]),
                 }
             };
             Response::builder()

@@ -155,6 +155,21 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     recherche (« veille », « cookies »…). Chaque changement est enregistré tout
     de suite : plus de bouton « Enregistrer ». `/parametres veille` ouvre les
     paramètres déjà filtrés ; la fiche du site mène à « Vie privée et sites ».
+- **Depuis la 0.3.8 (pas encore publié)** : refonte « Plume ».
+  - Fond papier, pastilles carrées arrondies (l'initiale du site quand il n'a
+    pas d'icône), nouvelle page d'accueil : date et heure, salutation, favoris
+    en tuiles et « Reprendre » (les dernières pages visitées).
+  - **Quatre styles pour la barre latérale** (Paramètres → Apparence) :
+    *Palette* (par défaut : un clic sur l'onglet actif ouvre l'adresse et les
+    actions de la page : copier, favori, lecture, capture, réglages du site,
+    imprimer), *Bandeau* (l'adresse toujours au-dessus de la page), *Au survol*
+    (la barre s'ouvre par-dessus la page quand la souris approche ; pas sous
+    Linux) et *Barre large* (adresse et titres en permanence).
+  - **Mode concentration** (`Ctrl+Maj+F` ou `/concentration`) : la barre se
+    réduit à un fil, la page prend presque toute la fenêtre.
+  - Paramètres plus grands, avec une **vue d'ensemble** (une carte par
+    catégorie et quelques réglages rapides) et des aperçus visuels pour le
+    thème, la position et le style de la barre, plus un curseur de largeur.
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
@@ -162,7 +177,7 @@ ou suivante, `F5` ou `Ctrl+R` actualiser, `Ctrl+M` couper le son de l'onglet,
 `Ctrl+D` ajouter aux favoris, `Ctrl+,` paramètres, `Ctrl+F` chercher dans la
 page, `Ctrl++` / `Ctrl+-` / `Ctrl+0` zoom, `Ctrl+Maj+T` rouvrir l'onglet fermé,
 `Ctrl+Maj+N` onglet privé, `Ctrl+P` imprimer, `Maj+Échap` mémoire des onglets,
-`Ctrl+Maj+S` capture de la page.
+`Ctrl+Maj+S` capture de la page, `Ctrl+Maj+F` mode concentration.
 
 ## Lancer le navigateur
 
