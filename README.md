@@ -177,6 +177,10 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     (barre, Annuler, Afficher dans le dossier ; pas sous Linux).
   - Mise à jour : barre de progression dans « À propos et mise à jour »
     (Mo reçus, pourcentage, vitesse) et anneau autour de la roue dentée.
+  - **Enregistrer une image** (clic droit sur l'image) : sous macOS,
+    « Enregistrer dans Photos » l'ajoute directement à l'app Photos (macOS
+    demande l'autorisation la première fois) ; « Enregistrer l'image » la range
+    dans les téléchargements, sous macOS, Windows et Linux.
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente

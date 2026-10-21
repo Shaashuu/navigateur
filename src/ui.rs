@@ -284,6 +284,8 @@ pub struct PageMessage {
     pub find_result: Option<FindResult>,
     /// Choix fait dans le menu d'un lien (clic droit).
     pub link: Option<LinkAction>,
+    /// Choix fait dans le menu d'une image (clic droit).
+    pub image: Option<ImageAction>,
     /// Mesures de la page (voir `weight.rs`).
     pub metrics: Option<PageMetrics>,
     /// Texte lisible de la page, pour la recherche dans l'historique.
@@ -315,6 +317,21 @@ pub struct CosmeticRequest {
 pub struct FindResult {
     pub current: u32,
     pub total: u32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImageAction {
+    pub url: String,
+    pub how: ImageHow,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageHow {
+    /// Dans le dossier des téléchargements.
+    Save,
+    /// Dans l'app Photos (macOS).
+    Photos,
 }
 
 #[derive(Debug, Deserialize)]

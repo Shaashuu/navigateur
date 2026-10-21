@@ -12,5 +12,6 @@
   <key>CFBundleShortVersionString</key><string>0.4.0</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSPhotoLibraryAddUsageDescription</key><string>Feather ajoute à Photos les images que vous enregistrez depuis une page.</string>
 </dict>
 </plist>
