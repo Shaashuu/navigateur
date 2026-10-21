@@ -186,7 +186,7 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     blanche avec une flèche) au lieu du milieu de l'écran ; changer de style
     remet la barre à sa largeur d'origine (la plus étroite, ou 240 px pour la
     barre large).
-- **Depuis la 0.4.1 (pas encore publié)** : vérification complète du code.
+- **Nouveau en 0.5.0** : vérification complète du code.
   - Sécurité : une page ne peut plus déposer n'importe quel fichier dans les
     téléchargements en se faisant passer pour une image (le fichier est vérifié
     et prend l'extension de son vrai format, sinon il est supprimé), ni
@@ -202,7 +202,7 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     seconde, et les réglages sont lus sans être recopiés.
   - Interface : le bouton du son reste au coin de la pastille en barre large ;
     un onglet épinglé sans icône montre son initiale en haut.
-- **Extensions (pas encore publié)** : bouton pièce de puzzle sous les outils,
+- **Extensions (0.5.0)** : bouton pièce de puzzle sous les outils,
   ou `/extensions`. On colle le lien d'une extension du Chrome Web Store ou de
   Firefox Add-ons (ou on choisit un fichier `.crx`, `.xpi`, `.zip`) ; Feather la
   télécharge, la décompresse dans le dossier `extensions` de sa configuration
