@@ -236,7 +236,9 @@ int main(int argc, const char *argv[]) {
         say(@"bundle : %@, macOS %@", [NSBundle mainBundle].bundleIdentifier, [NSProcessInfo processInfo].operatingSystemVersionString);
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-        NSURL *url = [NSURL fileURLWithPath:dir isDirectory:YES];
+        // Adresse absolue, comme dans Feather (une adresse relative fait planter WebKit ?).
+        NSString *full = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:dir];
+        NSURL *url = [[NSURL fileURLWithPath:full isDirectory:YES] URLByStandardizingPath];
         say(@"lecture de %@", url);
         [WKWebExtension extensionWithResourceBaseURL:url completionHandler:^(WKWebExtension *ext, NSError *error) {
             if (!ext) { say(@"extension refusée : %@", error); [NSApp terminate:nil]; return; }
