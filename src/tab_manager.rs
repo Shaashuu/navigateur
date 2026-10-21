@@ -604,6 +604,86 @@ fn stop_page(webview: &WebView) {
     let _ = webview.load_url("about:blank");
 }
 
+/// Vrai pour les sites de Google (google.fr, www.google.com, news.google.co.uk…).
+/// Sur macOS, WKWebView s'annonce sans « Version/… Safari/… » : Google prend alors
+/// Feather pour un vieux navigateur et sert une recherche dépouillée (sans l'IA).
+/// L'identité Safari avait été mise partout le 19/10 puis retirée, car YouTube se
+/// comportait autrement : on ne la prend donc que sur Google.
+#[cfg(any(target_os = "macos", test))]
+pub fn is_google(url: &str) -> bool {
+    let Some(host) = network::host_of(url) else { return false };
+    let labels: Vec<&str> = host.split('.').collect();
+    // « google » suivi d'un domaine de premier niveau court : « fr », « com », « co.uk », « com.br ».
+    labels.iter().position(|l| *l == "google").is_some_and(|i| {
+        let tld = &labels[i + 1..];
+        (1..=2).contains(&tld.len()) && tld.iter().all(|l| (2..=3).contains(&l.len()))
+    })
+}
+
+/// Identité Safari, avec la version de Safari installée (même moteur que Feather).
+#[cfg(target_os = "macos")]
+fn safari_agent() -> &'static str {
+    use std::sync::OnceLock;
+    static UA: OnceLock<String> = OnceLock::new();
+    UA.get_or_init(|| {
+        let version = safari_version().unwrap_or_else(|| "18.0".into());
+        format!(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 \
+             (KHTML, like Gecko) Version/{version} Safari/605.1.15"
+        )
+    })
+}
+
+/// Version de Safari installée (ex. « 18.5 »), lue dans son Info.plist.
+#[cfg(target_os = "macos")]
+fn safari_version() -> Option<String> {
+    use objc2_foundation::{NSBundle, NSString, ns_string};
+    let bundle = NSBundle::bundleWithPath(ns_string!("/Applications/Safari.app"))?;
+    let value = bundle.objectForInfoDictionaryKey(ns_string!("CFBundleShortVersionString"))?;
+    let version = value.downcast::<NSString>().ok()?.to_string();
+    // Seulement « chiffres.chiffres(.chiffres) », pour ne rien glisser d'étrange dans l'en-tête.
+    let parts: Vec<&str> = version.split('.').collect();
+    (parts.len() <= 3 && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())))
+        .then_some(version)
+}
+
+/// Identité de départ d'une page, selon sa première adresse. Windows (WebView2 = Edge)
+/// et Linux (WebKitGTK) envoient déjà un identifiant complet : on le garde.
+fn page_user_agent(url: &str) -> Option<&'static str> {
+    #[cfg(target_os = "macos")]
+    if is_google(url) {
+        return Some(safari_agent());
+    }
+    let _ = url;
+    None
+}
+
+/// macOS, au début de chaque chargement : un onglet qui arrive sur Google, ou qui en
+/// sort, change d'identité puis recharge l'adresse (la première requête est déjà
+/// partie avec l'ancienne). Vrai si la page est rechargée.
+#[cfg(target_os = "macos")]
+pub fn match_identity(webview: &WebView, url: &str) -> bool {
+    use objc2_foundation::NSString;
+    use wry::WebViewExtMacOS;
+    let wanted = is_google(url);
+    let wk = webview.webview();
+    // SAFETY : fil principal (boucle d'évènements), vue vivante.
+    let current = unsafe { wk.customUserAgent() }.is_some_and(|ua| ua.length() > 0);
+    if wanted == current {
+        return false;
+    }
+    let agent = wanted.then(|| NSString::from_str(safari_agent()));
+    // SAFETY : idem ; `nil` rend l'identité par défaut de WebKit.
+    unsafe { wk.setCustomUserAgent(agent.as_deref()) };
+    let _ = webview.load_url(url);
+    true
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn match_identity(_webview: &WebView, _url: &str) -> bool {
+    false
+}
+
 fn build_page(
     id: TabId,
     url: &str,
@@ -723,6 +803,11 @@ fn build_page(
             NewWindowResponse::Deny
         });
 
+    // Identité Safari sur Google seulement (voir `is_google`).
+    let builder = match page_user_agent(url) {
+        Some(agent) => builder.with_user_agent(agent),
+        None => builder,
+    };
     // Les extensions agissent sur les pages, sauf dans les onglets privés.
     let builder = extensions::prepare_builder(builder, !private);
     let webview = ctx.surface.attach(builder, ctx.window)?;
@@ -734,6 +819,16 @@ fn build_page(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn google_seulement() {
+        for url in ["https://www.google.com/search?q=a", "https://google.fr/", "https://news.google.co.uk/", "https://www.google.com.br/"] {
+            assert!(is_google(url), "{url}");
+        }
+        for url in ["https://www.youtube.com/", "https://google.exemple.org/", "https://googleusercontent.com/", "navigateur://accueil/", "pas une adresse"] {
+            assert!(!is_google(url), "{url}");
+        }
+    }
 
     fn order(m: &TabManager) -> Vec<TabId> {
         m.tabs.iter().map(|t| t.id).collect()

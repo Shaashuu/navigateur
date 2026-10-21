@@ -412,6 +412,11 @@ impl App {
                 // réveillait sur une page blanche.
                 let tab = self.tabs.get_mut(id).filter(|t| !t.is_asleep() && url != "about:blank");
                 if let Some(tab) = tab {
+                    // macOS : identité Safari sur Google seulement (la page est
+                    // rechargée si l'onglet entre sur Google ou en sort).
+                    if loading && let Some(webview) = tab.webview() {
+                        tab_manager::match_identity(webview, &url);
+                    }
                     // Page d'erreur demandée par Feather : l'onglet garde l'adresse en
                     // échec (barre, « Réessayer », session). Une page d'erreur ouverte
                     // autrement (lien d'un site) garde la sienne : rien à usurper.
