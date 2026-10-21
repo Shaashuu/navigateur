@@ -686,6 +686,14 @@ pub fn add_compat(dir: &Path) -> Result<(), String> {
         return Err("manifest.json illisible".into());
     };
     fs::write(dir.join(COMPAT_FILE), COMPAT_JS).map_err(|e| e.to_string())?;
+    // La fenêtre (popup) et la page d'options reçoivent aussi les compléments.
+    if let Ok(info) = read_manifest(dir) {
+        for page in [info.popup, info.options].into_iter().flatten() {
+            if let Some(file) = page.split(['?', '#']).next() {
+                compat_page(&dir.join(file))?;
+            }
+        }
+    }
     let Some(Value::Object(background)) = manifest.get_mut("background") else { return Ok(()) };
     if let Some(worker) = background.get("service_worker").and_then(Value::as_str) {
         if worker.trim_start_matches(['.', '/']) == WRAPPER_FILE {
@@ -710,6 +718,28 @@ pub fn add_compat(dir: &Path) -> Result<(), String> {
         return Ok(());
     }
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+    fs::write(path, text).map_err(|e| e.to_string())
+}
+
+/// Balise qui charge les compléments en tête d'une page de l'extension.
+const COMPAT_TAG: &str = "<script src=\"/feather-compat.js\"></script>";
+
+/// Ajoute les compléments en premier script d'une page (juste après `<head>`,
+/// sinon au tout début). Sans effet la deuxième fois.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn compat_page(path: &Path) -> Result<(), String> {
+    let html = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    if html.contains(COMPAT_TAG) {
+        return Ok(());
+    }
+    let lower = html.to_ascii_lowercase();
+    // `<head>` ou `<head …>`, pas `<header>`.
+    let at = lower
+        .match_indices("<head")
+        .find(|(i, _)| matches!(lower.as_bytes().get(i + 5), Some(b'>' | b' ' | b'\t' | b'\n' | b'\r')))
+        .and_then(|(i, _)| lower[i..].find('>').map(|end| i + end + 1))
+        .unwrap_or(0);
+    let text = format!("{}{COMPAT_TAG}{}", &html[..at], &html[at..]);
     fs::write(path, text).map_err(|e| e.to_string())
 }
 
@@ -2404,6 +2434,18 @@ mod tests {
         add_compat(&dir).unwrap();
         add_compat(&dir).unwrap();
         assert_eq!(manifest()["background"]["scripts"], serde_json::json!([COMPAT_FILE, "a.js", "b.js"]));
+        // Fenêtre et page d'options : les compléments en premier script, une seule fois.
+        write(r#"{"name":"e","action":{"default_popup":"popup.html"},"options_ui":{"page":"opt/options.html?x=1"}}"#);
+        fs::write(dir.join("popup.html"), "<!doctype html><html><HEAD lang=\"fr\"><style></style></head><body></body></html>").unwrap();
+        fs::create_dir_all(dir.join("opt")).unwrap();
+        fs::write(dir.join("opt/options.html"), "<header></header><p>x</p>").unwrap();
+        add_compat(&dir).unwrap();
+        add_compat(&dir).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join("popup.html")).unwrap(),
+            format!("<!doctype html><html><HEAD lang=\"fr\">{COMPAT_TAG}<style></style></head><body></body></html>")
+        );
+        assert_eq!(fs::read_to_string(dir.join("opt/options.html")).unwrap(), format!("{COMPAT_TAG}<header></header><p>x</p>"));
         // Sans arrière-plan : manifeste intact.
         write(r#"{"name":"d"}"#);
         add_compat(&dir).unwrap();
