@@ -170,7 +170,7 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   - Paramètres plus grands, avec une **vue d'ensemble** (une carte par
     catégorie et quelques réglages rapides) et des aperçus visuels pour le
     thème, la position et le style de la barre, plus un curseur de largeur.
-- **Depuis la 0.4.0 (pas encore publié)** :
+- **Nouveau en 0.4.1** :
   - Progression des téléchargements : un anneau se remplit autour du bouton
     Téléchargements (pourcentage, vitesse et temps restant dans la bulle), et
     une petite carte s'ouvre près du bouton quand un téléchargement commence
