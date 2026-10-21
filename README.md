@@ -202,6 +202,18 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     seconde, et les réglages sont lus sans être recopiés.
   - Interface : le bouton du son reste au coin de la pastille en barre large ;
     un onglet épinglé sans icône montre son initiale en haut.
+- **Extensions (pas encore publié)** : bouton pièce de puzzle sous les outils,
+  ou `/extensions`. On colle le lien d'une extension du Chrome Web Store ou de
+  Firefox Add-ons (ou on choisit un fichier `.crx`, `.xpi`, `.zip`) ; Feather la
+  télécharge, la décompresse dans le dossier `extensions` de sa configuration
+  et la confie au moteur. Le panneau liste les extensions avec un interrupteur,
+  leurs options et « Retirer ». Le bouton de chaque extension active se range
+  dans la colonne : un clic ouvre sa petite fenêtre par-dessus la page.
+  - Windows : extensions Chrome (WebView2). Les extensions Firefox n'y marchent
+    qu'en partie.
+  - macOS 15.4 ou plus récent : extensions Chrome et Firefox (WebKit, comme
+    Safari). Avant 15.4 : pas d'extensions.
+  - Linux : impossible, WebKitGTK ne fait pas tourner d'extensions.
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
@@ -256,6 +268,7 @@ Pour lancer les tests : `cargo test`.
 | `src/reader.rs` | Mode lecture : extraction de l'article et page `navigateur://lecture/`. |
 | `src/import.rs` | Import des favoris (Chrome, Edge, Brave, fichier HTML). |
 | `src/capture.rs` | Capture de la page visible (WebView2, WebKit). |
+| `src/extensions.rs` | Extensions : téléchargement, décompression, manifeste, moteur (WebView2, WebKit), petite fenêtre. |
 | `outils/banc-memoire.*` | Banc de mesure de la mémoire (macOS et Windows). |
 | `src/layers.rs` | Panneaux par-dessus la page : l'interface passe devant, découpée à leur forme. |
 | `assets/page.js` | Script injecté dans chaque page : raccourcis, son, recherche, menu des liens, autorisations. |
@@ -320,6 +333,14 @@ leur onglet et envoient des messages.
   après un redémarrage, la page de lecture renvoie vers la page d'origine.
 - L'icône de son repère les balises vidéo et audio de la page, pas les sons
   produits par Web Audio ni ceux des vidéos intégrées dans un cadre (iframe).
+- Extensions : pas sous Linux (WebKitGTK), ni avant macOS 15.4, ni dans les
+  onglets privés. Les permissions demandées sont accordées à l'installation,
+  comme dans Chrome. Sous Windows, la taille de la petite fenêtre est devinée
+  d'après son contenu ; sous macOS, une extension n'agit que sur les onglets
+  ouverts après son installation, et ce qui dépend de l'onglet (`tabs`,
+  `activeTab`) reste limité. Les raccourcis clavier des extensions, leur menu
+  du clic droit et les badges (nombre sur le bouton) ne sont pas pris en
+  charge. Pas de mise à jour automatique : réinstaller par le même lien.
 
 ## Mesurer la mémoire
 

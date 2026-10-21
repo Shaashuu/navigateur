@@ -14,6 +14,7 @@ mod capture;
 mod commands;
 mod downloads;
 mod errorpage;
+mod extensions;
 mod features;
 mod fulltext;
 mod images;
@@ -106,6 +107,14 @@ pub enum UserEvent {
     AdFilters(Option<Box<adblock::Filters>>, adblock::Status),
     /// macOS : les listes compilées par WebKit sont prêtes à être posées sur les pages.
     AdRulesReady,
+    /// Une extension est téléchargée et décompressée (ou la raison de l'échec).
+    ExtensionPrepared(Result<Box<extensions::Extension>, String>),
+    /// Le moteur a chargé une extension (avec son identifiant WebView2), ou l'a refusée.
+    ExtensionLoaded { id: String, result: Result<Option<String>, String> },
+    /// Message de la petite fenêtre d'une extension (Windows).
+    ExtensionPopup(String),
+    /// Lien ouvert depuis la fenêtre d'une extension (Windows).
+    ExtensionOpen(String),
 }
 
 /// Résultat d'un travail de mise à jour fait en arrière-plan.
@@ -187,6 +196,8 @@ struct App {
     ticks: u64,
     /// Listes du bloqueur de publicités (affiché dans les paramètres).
     adblock: adblock::Status,
+    /// Extensions installées et leur petite fenêtre ouverte.
+    extensions: extensions::Extensions,
 }
 
 fn main() -> wry::Result<()> {
@@ -208,8 +219,9 @@ fn main() -> wry::Result<()> {
 
     // L'interface est créée en premier pour rester sous les pages.
     let chrome_proxy = proxy.clone();
+    // Sous Windows, toutes les webviews ont le même réglage des extensions (voir extensions.rs).
     let chrome = surface.attach(
-        WebViewBuilder::new()
+        extensions::prepare_builder(WebViewBuilder::new()
             .with_bounds(ui::chrome_bounds(&window))
             .with_html(ui::CHROME_HTML)
             // Transparente là où les panneaux laissent voir la page (voir `layers.rs`).
@@ -217,7 +229,7 @@ fn main() -> wry::Result<()> {
             .with_devtools(cfg!(debug_assertions))
             .with_ipc_handler(move |request| {
                 let _ = chrome_proxy.send_event(UserEvent::Chrome(request.into_body()));
-            }),
+            }), false),
         &window,
     )?;
 
@@ -272,7 +284,9 @@ fn main() -> wry::Result<()> {
         reader: reader::Store::default(),
         ticks: 0,
         adblock: adblock::Status::default(),
+        extensions: extensions::Extensions::load(),
     };
+    extensions::start(&app.chrome, app.extensions.list(), &app.proxy);
     adblock::set_enabled(app.settings().blocks_ads());
     adblock::set_sites_off(app.sites.read().map(|s| s.ads_off()).unwrap_or_default());
     adblock::load(app.proxy.clone(), false);
@@ -493,6 +507,16 @@ impl App {
                 self.reapply_ads();
                 adblock::applied_everywhere();
             }
+            UserEvent::ExtensionPrepared(result) => {
+                self.extension_prepared(result);
+                self.push_state();
+            }
+            UserEvent::ExtensionLoaded { id, result } => {
+                self.extension_loaded(&id, result);
+                self.push_state();
+            }
+            UserEvent::ExtensionPopup(raw) => self.extension_popup_message(&raw),
+            UserEvent::ExtensionOpen(url) => self.extension_open(&url),
         }
         // L'onglet affiché a pu changer : s'il était en veille, on recharge sa page.
         self.wake_active();
@@ -542,7 +566,10 @@ impl App {
                     self.close_unpinned(id);
                 }
             }
-            ChromeMessage::ActivateTab { id } => self.tabs.activate(id, self.page_visible()),
+            ChromeMessage::ActivateTab { id } => {
+                self.close_extension_popup();
+                self.tabs.activate(id, self.page_visible());
+            }
             // Mêmes actions que les raccourcis des pages : un seul endroit pour les deux.
             ChromeMessage::Back => self.handle_shortcut(None, Shortcut::Back),
             ChromeMessage::Forward => self.handle_shortcut(None, Shortcut::Forward),
@@ -552,6 +579,9 @@ impl App {
                 self.load_in_active(&url);
             }
             ChromeMessage::Expand { open } => {
+                if open {
+                    self.close_extension_popup();
+                }
                 self.expanded = open;
                 if layers::SUPPORTED {
                     self.layers.set_on_top(&self.window, &self.chrome, open);
@@ -701,6 +731,14 @@ impl App {
             ChromeMessage::Reader => self.toggle_reader(),
             ChromeMessage::ImportSources => self.send_import_sources(),
             ChromeMessage::Import { sources, files } => self.import(&sources, &files),
+            ChromeMessage::InstallExtension { input } => self.install_extension(&input),
+            ChromeMessage::InstallExtensionFile { name, data } => self.install_extension_file(&name, &data),
+            ChromeMessage::SetExtension { id, enabled } => self.set_extension(&id, enabled),
+            ChromeMessage::RemoveExtension { id } => self.remove_extension(&id),
+            ChromeMessage::ExtensionOptions { id } => self.extension_options(&id),
+            ChromeMessage::ExtensionAction { id, x, y, w, h } => self.extension_action(&id, (x, y, w, h)),
+            ChromeMessage::CloseExtensionPopup => self.close_extension_popup(),
+            ChromeMessage::ClearExtensionError => self.extensions.error = None,
         }
         // L'interface a pu changer sa copie de l'état sans attendre (réglages,
         // liste vidée…) : on lui renvoie tout, pour qu'elle reparte du vrai.
@@ -788,6 +826,10 @@ impl App {
         // Clic dans la page pendant qu'un panneau est ouvert par-dessus : il se ferme.
         if message.pressed && self.expanded {
             self.chrome_call("navigateur.closePanel()");
+        }
+        // Comme dans Chrome, la fenêtre d'une extension se ferme au clic dans la page.
+        if message.pressed {
+            self.close_extension_popup();
         }
         if let Some(request) = message.permission {
             self.ask_permission(id, request);
@@ -1172,7 +1214,8 @@ impl App {
         self.settings.read().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn relayout(&self) {
+    fn relayout(&mut self) {
+        self.close_extension_popup();
         let _ = self.chrome.set_bounds(ui::chrome_bounds(&self.window));
         self.tabs.set_bounds(self.page_bounds());
     }
@@ -1285,6 +1328,7 @@ impl App {
             "groups": self.tabs.groups(),
             "adblock": self.adblock,
             "focus": self.focus,
+            "extensions": self.extensions.snapshot(),
         });
         drop(lib);
         let serde_json::Value::Object(state) = state else { return };

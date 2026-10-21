@@ -237,6 +237,38 @@ pub enum ChromeMessage {
         #[serde(default)]
         files: Vec<String>,
     },
+    /// Installe une extension depuis un lien (Chrome Web Store, Firefox Add-ons).
+    InstallExtension {
+        input: String,
+    },
+    /// Installe une extension depuis un fichier choisi (`data:` URL).
+    InstallExtensionFile {
+        name: String,
+        data: String,
+    },
+    /// Active ou désactive une extension.
+    SetExtension {
+        id: String,
+        enabled: bool,
+    },
+    RemoveExtension {
+        id: String,
+    },
+    /// Ouvre la page d'options d'une extension.
+    ExtensionOptions {
+        id: String,
+    },
+    /// Clic sur le bouton d'une extension : sa petite fenêtre, contre ce rectangle.
+    ExtensionAction {
+        id: String,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    },
+    CloseExtensionPopup,
+    /// Le panneau a montré l'erreur d'installation : on l'oublie.
+    ClearExtensionError,
     /// Annule un téléchargement en cours.
     CancelDownload {
         id: u32,

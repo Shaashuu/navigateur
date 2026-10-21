@@ -21,6 +21,7 @@ use wry::{NewWindowResponse, PageLoadEvent, Rect, WebView, WebViewBuilder};
 use crate::UserEvent;
 use crate::downloads;
 use crate::errorpage::{self, ErrorKind};
+use crate::extensions;
 use crate::library::{Library, Session, TabGroup};
 use crate::network;
 use crate::reader;
@@ -722,6 +723,8 @@ fn build_page(
             NewWindowResponse::Deny
         });
 
+    // Les extensions agissent sur les pages, sauf dans les onglets privés.
+    let builder = extensions::prepare_builder(builder, !private);
     let webview = ctx.surface.attach(builder, ctx.window)?;
     trackers::install(&webview, host, block_trackers);
     errorpage::install(&webview, id, ctx.proxy.clone());
