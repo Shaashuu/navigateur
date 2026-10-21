@@ -32,6 +32,17 @@ pub fn round_page(page: &WebView) {
     platform::round(page, PAGE_RADIUS);
 }
 
+/// Position de la souris sur l'interface, en pixels CSS depuis le coin haut
+/// gauche ; `None` hors de la fenêtre (ou sous Linux).
+///
+/// Lue directement auprès du système : sous macOS, l'interface passée devant la
+/// page ne reçoit pas toujours les mouvements de la souris (ni sa sortie de la
+/// barre), et la barre au survol restait ouverte. Rust la lit donc lui-même
+/// tant qu'un panneau est ouvert (voir `App::watch_pointer`).
+pub fn pointer(chrome: &WebView) -> Option<(f64, f64)> {
+    platform::pointer(chrome)
+}
+
 /// Au plus ce nombre de rectangles (la barre, le bandeau, quelques panneaux).
 const MAX_RECTS: usize = 16;
 
@@ -110,11 +121,13 @@ impl Layers {
 
 #[cfg(windows)]
 mod platform {
-    use windows::Win32::Foundation::RECT;
-    use windows::Win32::Graphics::Gdi::{CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, RGN_OR, SetWindowRgn};
+    use windows::Win32::Foundation::{POINT, RECT};
+    use windows::Win32::Graphics::Gdi::{
+        CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, RGN_OR, ScreenToClient, SetWindowRgn,
+    };
     use windows::Win32::UI::HiDpi::GetDpiForWindow;
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetClientRect, HWND_BOTTOM, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos,
+        GetClientRect, GetCursorPos, HWND_BOTTOM, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos,
     };
     use wry::{WebView, WebViewExtWindows};
 
@@ -134,6 +147,24 @@ mod platform {
             let region = CreateRoundRectRgn(0, 0, rect.right + 1, rect.bottom + 1, d, d);
             // Windows garde la région : on ne la libère pas nous-mêmes.
             SetWindowRgn(hwnd, Some(region), true);
+        }
+    }
+
+    pub fn pointer(chrome: &WebView) -> Option<(f64, f64)> {
+        let hwnd = chrome.hwnd();
+        unsafe {
+            let mut at = POINT::default();
+            GetCursorPos(&mut at).ok()?;
+            if !ScreenToClient(hwnd, &mut at).as_bool() {
+                return None;
+            }
+            let mut rect = RECT::default();
+            GetClientRect(hwnd, &mut rect).ok()?;
+            if at.x < 0 || at.y < 0 || at.x >= rect.right || at.y >= rect.bottom {
+                return None;
+            }
+            let scale = f64::from(GetDpiForWindow(hwnd).max(96)) / 96.0;
+            Some((f64::from(at.x) / scale, f64::from(at.y) / scale))
         }
     }
 
@@ -181,8 +212,28 @@ mod platform {
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
     use objc2_app_kit::NSView;
-    use objc2_foundation::NSArray;
+    use objc2_foundation::{NSArray, NSPoint};
     use wry::{WebView, WebViewExtMacOS};
+
+    /// `mouseLocationOutsideOfEventStream` : la position actuelle, même si
+    /// aucun événement de souris n'est arrivé jusqu'à l'interface.
+    pub fn pointer(chrome: &WebView) -> Option<(f64, f64)> {
+        let webview = chrome.webview();
+        let view: &NSView = &webview;
+        let window: *mut AnyObject = unsafe { msg_send![view, window] };
+        if window.is_null() {
+            return None;
+        }
+        let in_window: NSPoint = unsafe { msg_send![window, mouseLocationOutsideOfEventStream] };
+        let at = view.convertPoint_fromView(in_window, None);
+        let size = view.bounds().size;
+        // Vue non retournée : l'origine est en bas à gauche.
+        let y = if view.isFlipped() { at.y } else { size.height - at.y };
+        if at.x < 0.0 || y < 0.0 || at.x >= size.width || y >= size.height {
+            return None;
+        }
+        Some((at.x, y))
+    }
 
     /// Coins arrondis par le calque de la vue : ils suivent les changements de taille.
     pub fn round(page: &WebView, radius: f64) {
@@ -224,6 +275,10 @@ mod platform {
     use wry::WebView;
 
     use super::ShapeRect;
+
+    pub fn pointer(_chrome: &WebView) -> Option<(f64, f64)> {
+        None
+    }
 
     pub fn raise(_chrome: &WebView, _top: bool) {}
 

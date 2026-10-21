@@ -68,6 +68,10 @@ const PAGE_TAB_WINDOW: Duration = Duration::from_secs(10);
 /// Au plus un envoi par seconde pour des titres : certains sites font défiler
 /// le leur (« (3) Nouveau message… ») plusieurs fois par seconde.
 const TITLE_PAUSE: Duration = Duration::from_secs(1);
+/// Lecture de la position de la souris pendant qu'un panneau est ouvert
+/// (voir `App::watch_pointer`) : assez souvent pour que la barre au survol se
+/// referme sans attendre, sans réveiller le programme pour rien.
+const POINTER_POLL: Duration = Duration::from_millis(60);
 
 /// Événements envoyés par les webviews à la boucle principale.
 #[derive(Debug)]
@@ -148,6 +152,11 @@ struct App {
     proxy: EventLoopProxy<UserEvent>,
     /// Un panneau de l'interface (commandes, paramètres) recouvre la page.
     expanded: bool,
+    /// Dernière position de la souris envoyée à l'interface (en pixels CSS
+    /// arrondis ; `None` : hors de la fenêtre) et prochaine lecture prévue,
+    /// tant qu'un panneau est ouvert par-dessus la page (voir `watch_pointer`).
+    pointer_sent: Option<Option<(i32, i32)>>,
+    pointer_due: Option<Instant>,
     /// Mode concentration (Ctrl+Maj+F) : la barre se réduit à un rail.
     focus: bool,
     /// L'interface passe au-dessus des pages quand un panneau est ouvert.
@@ -259,6 +268,8 @@ fn main() -> wry::Result<()> {
         settings: Arc::new(RwLock::new(settings)),
         proxy,
         expanded: false,
+        pointer_sent: None,
+        pointer_due: None,
         focus: false,
         layers: layers::Layers::default(),
         strip: false,
@@ -348,8 +359,17 @@ fn main() -> wry::Result<()> {
             } => app.relayout(),
             Event::UserEvent(event) => app.handle(event),
             // Tous les événements en attente sont traités : un seul envoi de l'état.
-            Event::MainEventsCleared => app.flush_state(),
+            Event::MainEventsCleared => {
+                app.flush_state();
+                app.watch_pointer();
+            }
             _ => {}
+        }
+        // Panneau ouvert : la boucle se réveille pour relire la position de la souris.
+        if *control_flow == ControlFlow::Wait
+            && let Some(due) = app.pointer_due
+        {
+            *control_flow = ControlFlow::WaitUntil(due);
         }
     });
 }
@@ -588,6 +608,9 @@ impl App {
                     self.close_extension_popup();
                 }
                 self.expanded = open;
+                // Nouvelle position envoyée dès l'ouverture, puis à chaque mouvement.
+                self.pointer_sent = None;
+                self.pointer_due = (open && layers::SUPPORTED).then(Instant::now);
                 if layers::SUPPORTED {
                     self.layers.set_on_top(&self.window, &self.chrome, open);
                     // Repassée sous la page : l'interface peut redevenir opaque.
@@ -963,6 +986,27 @@ impl App {
             focus: self.focus,
         };
         ui::page_bounds(&self.window, &frame)
+    }
+
+    /// Panneau ouvert par-dessus la page (dont la barre au survol) : la position
+    /// de la souris est relue toutes les `POINTER_POLL` et envoyée à l'interface
+    /// quand elle change. Sous macOS, l'interface ne reçoit pas toujours les
+    /// mouvements de la souris au-dessus de la page : sans ça, la barre au
+    /// survol ne savait pas que la souris l'avait quittée et restait ouverte.
+    fn watch_pointer(&mut self) {
+        let Some(due) = self.pointer_due else { return };
+        let now = Instant::now();
+        if now < due {
+            return;
+        }
+        self.pointer_due = Some(now + POINTER_POLL);
+        let at = layers::pointer(&self.chrome).map(|(x, y)| (x.round() as i32, y.round() as i32));
+        if self.pointer_sent == Some(at) {
+            return;
+        }
+        self.pointer_sent = Some(at);
+        let args = at.map_or_else(|| "null, null".to_owned(), |(x, y)| format!("{x}, {y}"));
+        self.chrome_call(&format!("navigateur.pointer && navigateur.pointer({args})"));
     }
 
     /// La page active reste affichée : toujours quand les panneaux passent

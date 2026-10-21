@@ -2502,6 +2502,15 @@
     if (!hoverOpen()) return;
     if (pointerOnBar()) stayOpen(); else leaveSoon();
   }, true);
+  // Position lue par Rust (layers::pointer) tant qu'un panneau est ouvert :
+  // elle ne dépend pas des événements que WebKit veut bien nous transmettre.
+  // Sous macOS, l'interface devant la page ne recevait plus les mouvements
+  // de la souris au-dessus de la page, et la barre élargie restait affichée.
+  function nativePointer(x, y) {
+    lastPointer = x == null ? null : { x, y };
+    if (!hoverOpen()) return;
+    if (pointerOnBar()) stayOpen(); else leaveSoon();
+  }
   // La souris sort de la fenêtre.
   document.documentElement.addEventListener('pointerleave', () => {
     lastPointer = null;
@@ -3505,6 +3514,8 @@
     openMemory() { openLibrary('memory'); },
     openExtensions() { if (mode !== 'extensions') openExtensions(); },
     closePanel,
+    // Position de la souris lue par Rust pendant qu'un panneau est ouvert.
+    pointer: nativePointer,
     // L'interface est repassée sous la page : son fond redevient opaque.
     lowered() { if (mode === null) document.body.classList.remove('lowering'); },
     openFind,
