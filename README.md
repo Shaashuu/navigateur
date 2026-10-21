@@ -64,7 +64,7 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     rien dans l'historique ni sur le disque ; chaque onglet privé a sa propre
     session, oubliée à sa fermeture.
   - **Téléchargements** : progression, vitesse et bouton Annuler.
-  - **Veille des onglets** : un onglet caché depuis longtemps (30 minutes par
+  - **Veille des onglets** : un onglet caché depuis longtemps (15 minutes par
     défaut, réglable) libère sa mémoire et se recharge au clic. Au démarrage,
     seuls les onglets affichés sont chargés. Aussi : clic droit → Veille.
   - **Blocage des traqueurs** (macOS et Windows) : une liste courte de domaines

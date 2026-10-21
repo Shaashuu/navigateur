@@ -1158,8 +1158,10 @@
             </div></div>
           <div class="srow" id="row-width"><label class="lab" for="s-width">Largeur de la barre<small>Les pastilles seules, ou avec le titre des pages</small></label>
             <input type="range" id="s-width" min="56" max="300" step="2"><span id="s-width-v"></span></div>
-          <div class="srow"><label class="lab" for="s-bmhome">Favoris sur la page d'accueil<small>Avec les dernières pages visitées (« Reprendre »)</small></label>
+          <div class="srow"><label class="lab" for="s-bmhome">Favoris sur la page d'accueil<small>Les vignettes de vos sites favoris, sous la recherche</small></label>
             <input type="checkbox" class="tg" id="s-bmhome"></div>
+          <div class="srow"><label class="lab" for="s-recent">Dernières pages visitées sur la page d'accueil<small>La rubrique « Reprendre » ; jamais dans un onglet privé</small></label>
+            <input type="checkbox" class="tg" id="s-recent"></div>
         </section>
         <section data-cat="recherche">
           <h3>Recherche</h3>
@@ -2065,13 +2067,14 @@
     $('s-history').value = String(s.history_days ?? 90);
     if (!$('s-history').value) $('s-history').value = '90';
     $('s-bmhome').checked = s.bookmarks_on_home !== false;
+    $('s-recent').checked = s.recent_on_home !== false;
     set('s-dldir', s.download_dir || '');
     $('s-trackers').checked = s.block_trackers !== false;
     $('s-ads').checked = s.block_ads !== false;
     renderAdLists();
     $('s-index').checked = s.index_pages !== false;
-    $('s-sleep').value = String(s.sleep_minutes ?? 30);
-    if (!$('s-sleep').value) $('s-sleep').value = '30';
+    $('s-sleep').value = String(s.sleep_minutes ?? 15);
+    if (!$('s-sleep').value) $('s-sleep').value = '15';
     $('s-economy').checked = !!s.economy;
     choose('s-startup', s.startup || 'home');
     choose('s-theme', s.theme || 'auto');
@@ -2116,7 +2119,7 @@
         on(s.block_ads) && on(s.block_trackers) ? 'Publicités et traqueurs bloqués' : on(s.block_trackers) ? 'Traqueurs bloqués' : on(s.block_ads) ? 'Publicités bloquées' : 'Rien n\'est bloqué',
         'Autorisations des sites, listes de blocage'],
       ['onglets', 'Mémoire', s.economy ? '❧' : '☾', s.economy ? 'ok' : '',
-        s.economy ? 'Mode économie actif' : 'Veille après ' + (s.sleep_minutes ?? 30) + ' min',
+        s.economy ? 'Mode économie actif' : (s.sleep_minutes ?? 15) ? 'Veille après ' + (s.sleep_minutes ?? 15) + ' min' : 'Pas de mise en veille',
         'Onglets cachés mis en veille pour libérer la mémoire'],
       ['donnees', 'Données', '⟲', '', (s.history_days ?? 90) ? 'Historique gardé ' + (s.history_days ?? 90) + ' jours' : 'Historique non gardé',
         on(s.index_pages) ? 'Recherche dans le texte des pages visitées' : 'Pages visitées non indexées'],
@@ -2194,6 +2197,7 @@
       startup: chosen('s-startup'),
       history_days: Number($('s-history').value),
       bookmarks_on_home: $('s-bmhome').checked,
+      recent_on_home: $('s-recent').checked,
       download_dir: $('s-dldir').value,
       block_trackers: $('s-trackers').checked,
       block_ads: $('s-ads').checked,
@@ -2798,7 +2802,7 @@
   for (const q of document.querySelectorAll('#ov-quick input')) {
     q.addEventListener('change', () => { $(q.dataset.for).checked = q.checked; saveSettings(); renderOverview(); });
   }
-  for (const id of ['s-engine', 's-history', 's-sleep', 's-bmhome', 's-trackers', 's-ads', 's-index', 's-economy', 's-autoupdate']) {
+  for (const id of ['s-engine', 's-history', 's-sleep', 's-bmhome', 's-recent', 's-trackers', 's-ads', 's-index', 's-economy', 's-autoupdate']) {
     $(id).addEventListener('change', saveSettings);
   }
   // Champs de texte : enregistrés en quittant le champ ou avec Entrée.

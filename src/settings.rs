@@ -31,6 +31,8 @@ pub struct Settings {
     pub history_days: u32,
     /// Les favoris s'affichent sous la recherche de la page d'accueil.
     pub bookmarks_on_home: bool,
+    /// Les dernières pages visitées (« Reprendre ») s'affichent sur la page d'accueil.
+    pub recent_on_home: bool,
     /// Dossier des téléchargements (vide : le dossier Téléchargements du système).
     pub download_dir: String,
     /// Bloquer les traqueurs connus (mesure d'audience, régies publicitaires).
@@ -49,6 +51,11 @@ pub struct Settings {
     /// automatique bloquée, traqueurs bloqués (voir `sleep_after` et `assets/page.js`).
     pub economy: bool,
 }
+
+/// Délai de veille par défaut d'un onglet caché, en minutes.
+pub const DEFAULT_SLEEP_MINUTES: u32 = 15;
+/// L'ancien délai par défaut (jusqu'à la 0.5.4), remplacé à la migration.
+const OLD_DEFAULT_SLEEP_MINUTES: u32 = 30;
 
 /// En mode économie, un onglet caché passe en veille au plus tard après ce délai.
 pub const ECONOMY_SLEEP_MINUTES: u32 = 5;
@@ -70,10 +77,11 @@ impl Default for Settings {
             startup: Startup::Home,
             history_days: 90,
             bookmarks_on_home: true,
+            recent_on_home: true,
             download_dir: String::new(),
             block_trackers: true,
             block_ads: true,
-            sleep_minutes: 30,
+            sleep_minutes: DEFAULT_SLEEP_MINUTES,
             index_pages: true,
             sidebar_width: SIDEBAR_MIN,
             sidebar_style: SidebarStyle::Palette,
@@ -152,9 +160,27 @@ pub enum Theme {
 impl Settings {
     /// Lit les paramètres ; en cas d'absence ou d'erreur, on repart des valeurs par défaut.
     pub fn load() -> Self {
-        storage::read_json::<Settings>(FILE)
+        storage::read_json::<serde_json::Value>(FILE)
+            .and_then(Settings::from_saved)
             .map(Settings::cleaned)
             .unwrap_or_default()
+    }
+
+    /// Lit un fichier de paramètres et le met au goût du jour. Un fichier
+    /// écrit avant la 0.5.5 n'a pas `recent_on_home` : la case des favoris
+    /// valait alors aussi pour « Reprendre », et la veille à 30 minutes y
+    /// était la valeur par défaut, désormais 15. Une fois réenregistré, le
+    /// fichier a la clé et les choix faits ensuite ne sont plus touchés.
+    fn from_saved(value: serde_json::Value) -> Option<Self> {
+        let old = value.get("recent_on_home").is_none();
+        let mut settings: Settings = serde_json::from_value(value).ok()?;
+        if old {
+            settings.recent_on_home = settings.bookmarks_on_home;
+            if settings.sleep_minutes == OLD_DEFAULT_SLEEP_MINUTES {
+                settings.sleep_minutes = DEFAULT_SLEEP_MINUTES;
+            }
+        }
+        Some(settings)
     }
 
     /// Enregistre les paramètres (écriture sûre, voir `storage::write_json`).
@@ -243,5 +269,25 @@ mod tests {
         // « Jamais » devient 5 minutes ; un délai plus court est gardé.
         assert_eq!(Settings { sleep_minutes: 0, ..eco.clone() }.sleep_after(), ECONOMY_SLEEP_MINUTES);
         assert_eq!(Settings { sleep_minutes: 2, ..eco }.sleep_after(), 2);
+    }
+
+    #[test]
+    fn migration_ancien_fichier() {
+        // Avant la 0.5.5 : une seule case pour les favoris et « Reprendre »,
+        // et la veille à 30 minutes par défaut.
+        let ancien = serde_json::json!({ "bookmarks_on_home": false, "sleep_minutes": 30 });
+        let s = Settings::from_saved(ancien).unwrap();
+        assert!(!s.bookmarks_on_home && !s.recent_on_home);
+        assert_eq!(s.sleep_minutes, DEFAULT_SLEEP_MINUTES);
+        // Un autre délai choisi à l'époque est gardé.
+        let s = Settings::from_saved(serde_json::json!({ "sleep_minutes": 60 })).unwrap();
+        assert_eq!(s.sleep_minutes, 60);
+        assert!(s.bookmarks_on_home && s.recent_on_home);
+        // Un fichier récent n'est pas touché : 30 minutes choisi exprès reste 30.
+        let recent = serde_json::json!({ "bookmarks_on_home": true, "recent_on_home": false, "sleep_minutes": 30 });
+        let s = Settings::from_saved(recent).unwrap();
+        assert!(s.bookmarks_on_home && !s.recent_on_home);
+        assert_eq!(s.sleep_minutes, 30);
+        assert_eq!(Settings::default().sleep_minutes, 15);
     }
 }
