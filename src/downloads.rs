@@ -68,13 +68,8 @@ pub fn content_length(url: &str) -> Option<u64> {
     if !crate::network::is_web(url) {
         return None;
     }
-    let mut cmd = Command::new("curl");
-    cmd.args(["-sIL", "--max-time", "10", "--proto", "=http,https"]).arg(url);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
-    }
+    let mut cmd = crate::network::command("curl");
+    cmd.args(["-sIL", "--max-time", "10", "--proto", "=http,https", "--proto-redir", "=http,https"]).arg(url);
     let output = cmd.output().ok()?;
     // Après une redirection, c'est la dernière réponse qui compte.
     String::from_utf8_lossy(&output.stdout)
@@ -128,7 +123,7 @@ pub fn destination(suggested: &Path, chosen_dir: &str) -> PathBuf {
 /// Extensions doubles gardées entières : « archive.tar.gz » → « archive (1).tar.gz ».
 const DOUBLE_EXTENSIONS: [&str; 4] = [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst"];
 
-fn unique(dir: &Path, name: &str) -> PathBuf {
+pub fn unique(dir: &Path, name: &str) -> PathBuf {
     // On coupe au dernier point (et non au premier) : « Rapport v1.2.pdf »
     // devenait « Rapport v1 (1).2.pdf ».
     let lower = name.to_ascii_lowercase();

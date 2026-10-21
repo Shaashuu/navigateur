@@ -717,9 +717,10 @@ impl App {
         let _ = std::fs::File::create(&dest);
         self.download_started(url.clone(), dest.clone(), private);
         std::thread::spawn(move || {
-            let result = images::fetch(&url, &referer, &dest);
-            let path = if result.is_ok() { images::fix_extension(&dest) } else { dest };
-            let _ = proxy.send_event(UserEvent::DownloadDone { url, path: Some(path), success: result.is_ok() });
+            let result = images::fetch(&url, &referer, &dest).and_then(|()| images::checked_name(&dest));
+            let success = result.is_ok();
+            let path = result.unwrap_or(dest);
+            let _ = proxy.send_event(UserEvent::DownloadDone { url, path: Some(path), success });
         });
     }
 

@@ -77,8 +77,27 @@ impl FullText {
         if !is_web(url) {
             return;
         }
-        // Espaces regroupés : un texte de page en contient beaucoup.
-        let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(MAX_TEXTE).collect();
+        // Espaces regroupés : un texte de page en contient beaucoup. On s'arrête
+        // à `MAX_TEXTE` caractères sans parcourir le reste (la page peut en envoyer beaucoup).
+        let mut kept = String::with_capacity(MAX_TEXTE.min(text.len()));
+        let mut count = 0;
+        for word in text.split_whitespace() {
+            if count > 0 {
+                if count == MAX_TEXTE {
+                    break;
+                }
+                kept.push(' ');
+                count += 1;
+            }
+            for c in word.chars() {
+                if count == MAX_TEXTE {
+                    break;
+                }
+                kept.push(c);
+                count += 1;
+            }
+        }
+        let text = kept;
         if text.is_empty() {
             return;
         }
