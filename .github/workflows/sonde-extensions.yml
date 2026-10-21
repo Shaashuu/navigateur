@@ -1,6 +1,9 @@
 # Diagnostic des extensions sur un vrai Mac (voir outils/sonde-extensions.m).
 name: Sonde des extensions
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [sonde-extensions]
@@ -23,6 +26,23 @@ jobs:
             (cd "ext/$n" && unzip -q -o "../$n.crx") || true
             echo "== $n"; ls "ext/$n"; head -c 1500 "ext/$n/manifest.json"; echo
           done
+      # Arrière-plan classique enveloppé : son erreur est notée dans le stockage de
+      # l'extension (WebKit dit seulement « le chargement a échoué »).
+      - name: Envelopper l'arrière-plan de Proton Pass
+        run: |
+          cd ext/protonpass
+          cat > sonde-bg.js <<'JS'
+          const note = (m) => { try { chrome.storage.local.set({ __bgerr: String(m) }); } catch (e) {} };
+          self.addEventListener('error', (e) => note('error ' + e.message + ' @' + e.filename + ':' + e.lineno));
+          self.addEventListener('unhandledrejection', (e) => note('rejet ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason)));
+          try { importScripts('background.js'); note('ok'); } catch (e) { note('throw ' + (e && (e.stack || e.message) || e)); }
+          JS
+          python3 - <<'PY'
+          import json
+          m = json.load(open('manifest.json'))
+          m['background']['service_worker'] = 'sonde-bg.js'
+          json.dump(m, open('manifest.json', 'w'), indent=1)
+          PY
       # Une vraie application (identifiant de bundle), comme Feather.
       - name: Compiler la sonde
         run: |
@@ -43,3 +63,12 @@ jobs:
         with:
           name: sonde
           path: sortie
+      # Les captures sur une branche à part (lisibles sans télécharger l'archive).
+      - name: Publier les captures
+        if: always()
+        run: |
+          git config user.name sonde; git config user.email sonde@users.noreply.github.com
+          git checkout --orphan sonde-resultats
+          git rm -rfq --cached . >/dev/null
+          git add -f sortie
+          git commit -qm "Résultats de la sonde" && git push -fq origin sonde-resultats

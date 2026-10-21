@@ -33,7 +33,14 @@ static NSString *const kProbe =
      " w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight,"
      " chrome: typeof chrome, browser: typeof browser,"
      " runtime: typeof (window.chrome && chrome.runtime && chrome.runtime.sendMessage),"
+     " body: (document.body && document.body.innerHTML || '').slice(0, 600),"
      " errs: (window.__e || []).slice(0, 30)})";
+
+// Ce que l'arrière-plan a noté (voir l'enveloppe ajoutée par le flux de travail).
+static NSString *const kStorage =
+    @"const api = (typeof browser !== 'undefined' ? browser : chrome);"
+     "const all = await api.storage.local.get(null);"
+     "return JSON.stringify({bgerr: all.__bgerr || null, keys: Object.keys(all).slice(0, 20)});";
 
 @class Win;
 @interface Tab : NSObject <WKWebExtensionTab>
@@ -115,6 +122,10 @@ static void probe(WKWebView *web, NSString *what) {
     [web evaluateJavaScript:kProbe completionHandler:^(id result, NSError *error) {
         say(@"%@ : %@%@", what, result ?: @"", error ? error.localizedDescription : @"");
     }];
+    if ([web.URL.scheme isEqualToString:@"webkit-extension"])
+        [web callAsyncJavaScript:kStorage arguments:nil inFrame:nil inContentWorld:WKContentWorld.pageWorld completionHandler:^(id result, NSError *error) {
+            say(@"%@ stockage : %@%@", what, result ?: @"", error ? error.localizedDescription : @"");
+        }];
     snapshot(web, what);
 }
 
@@ -201,8 +212,10 @@ static void run(WKWebExtension *ext) {
         NSURL *options = context.optionsPageURL;
         say(@"page d'options : %@", options);
         if (!options) return;
-        WKWebViewConfiguration *oc = [WKWebViewConfiguration new];
-        oc.webExtensionController = controller;
+        // Configuration du contexte : celle que WebKit demande pour les pages de l'extension.
+        WKWebViewConfiguration *oc = context.webViewConfiguration;
+        say(@"configuration du contexte : %@ (contrôleur %@)", oc, oc.webExtensionController);
+        if (!oc) { oc = [WKWebViewConfiguration new]; oc.webExtensionController = controller; }
         [oc.userContentController addUserScript:[[WKUserScript alloc] initWithSource:kCatch injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO]];
         optionsWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(150, 150, 1000, 700) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
         optionsView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 1000, 700) configuration:oc];
