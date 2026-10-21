@@ -656,7 +656,7 @@ fn build_page(
         // La page d'accueil intégrée est générée à chaque visite avec les paramètres
         // actuels ; `navigateur://erreur/` sert les pages d'erreur (voir errorpage.rs).
         .with_custom_protocol("navigateur".into(), move |_id, request| {
-            let settings = settings.read().map(|s| s.clone()).unwrap_or_default();
+            let settings = settings.read().unwrap_or_else(std::sync::PoisonError::into_inner);
             let uri = request.uri().to_string();
             let html = if request.uri().host() == Some("erreur") {
                 errorpage::render(&uri, &settings)
