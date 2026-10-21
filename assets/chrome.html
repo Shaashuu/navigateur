@@ -188,6 +188,7 @@
   }
   body.bar #overlay, body.settings #settings { display: flex; }
   #overlay { justify-content: flex-start; padding-top: 22vh; }
+  body.searching #overlay { padding-top: 32vh; }
   #bar {
     width: min(660px, 100%); height: 52px; border-radius: 26px;
     display: flex; align-items: center; gap: 6px; padding: 0 8px 0 20px;
@@ -913,7 +914,7 @@
         <button class="round" id="lib-downloads" title="Téléchargements" aria-label="Téléchargements">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>
         </button>
-        <button class="round" id="lib-memory" title="Mémoire des onglets (Maj+Échap)" aria-label="Mémoire des onglets">
+        <button class="round" id="lib-memory" title="Utilisation de la mémoire (Maj+Échap)" aria-label="Utilisation de la mémoire">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M10 10h4v4h-4zM9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></svg>
         </button>
         <button class="round" id="lib-ext" title="Extensions" aria-label="Extensions">
@@ -924,7 +925,7 @@
       <label class="addr" id="side-addr"><span class="lk" id="s-lock"></span><input id="side-input" spellcheck="false" autocomplete="off" aria-label="Adresse de la page" placeholder="Rechercher ou saisir une adresse"></label>
     </div>
     <div id="middle">
-      <button id="search-pill" hidden aria-label="Rechercher ou aller à une adresse (Ctrl+L)">
+      <button id="search-pill" hidden title="Rechercher" aria-label="Rechercher">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <span class="leaf" aria-hidden="true"><svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4C10 4 4 9 4 16c0 1.4.3 2.7.8 3.8C6 15 9 11.5 14 9.5 10 12 7.6 15.4 6.6 20.4 8 21.4 9.6 22 11.4 22 18 22 21 15 20 4z"/></svg></span>
       </button>
@@ -1133,7 +1134,7 @@
               <button type="button" data-value="home">Ouvrir l'accueil</button>
               <button type="button" data-value="restore">Restaurer les onglets</button>
             </div></div>
-          <div class="srow"><label class="lab" for="s-home">Adresse du bouton maison<small>Vide : l'accueil Feather, avec l'heure et la recherche</small></label>
+          <div class="srow"><label class="lab" for="s-home">Bouton d'accueil<small>Vide : l'accueil Feather, avec l'heure et la recherche</small></label>
             <input type="text" id="s-home" placeholder="exemple.fr" autocomplete="off"></div>
         </section>
         <section data-cat="apparence">
@@ -1176,6 +1177,11 @@
               <option value="google">Google</option>
               <option value="bing">Bing</option>
             </select></div>
+          <div class="srow"><span class="lab">Recherche de la loupe<small>Où s'ouvre ce qu'on cherche depuis la pastille à la loupe</small></span>
+            <div class="choices" id="s-searchtab">
+              <button type="button" data-value="active">Dans l'onglet actif</button>
+              <button type="button" data-value="new">Dans un nouvel onglet</button>
+            </div></div>
         </section>
         <section data-cat="onglets">
           <h3>Onglets et mémoire</h3>
@@ -1264,7 +1270,7 @@
   const COMMANDS = [
     { name: '/nouveau', desc: 'Ouvrir un nouvel onglet', run: () => send({ type: 'new_tab' }) },
     { name: '/fermer', desc: "Fermer l'onglet actuel", run: () => send({ type: 'close_tab', id: null }) },
-    { name: '/accueil', desc: 'Aller à la page du bouton maison', run: () => send({ type: 'home' }) },
+    { name: '/accueil', desc: "Aller à la page du bouton d'accueil", run: () => send({ type: 'home' }) },
     { name: '/retour', desc: 'Page précédente', run: () => send({ type: 'back' }) },
     { name: '/suivant', desc: 'Page suivante', run: () => send({ type: 'forward' }) },
     { name: '/actualiser', desc: 'Recharger la page', run: () => send({ type: 'reload' }) },
@@ -1273,7 +1279,7 @@
     { name: '/rouvrir', desc: 'Rouvrir le dernier onglet fermé (Ctrl+Maj+T)', run: () => shortcut('reopen_tab') },
     { name: '/chercher', desc: 'Chercher dans la page (Ctrl+F)', run: () => openFind() },
     { name: '/imprimer', desc: 'Imprimer la page (Ctrl+P)', run: () => shortcut('print') },
-    { name: '/memoire', desc: 'Mémoire des onglets (Maj+Échap)', run: () => openLibrary('memory') },
+    { name: '/memoire', desc: 'Utilisation de la mémoire (Maj+Échap)', run: () => openLibrary('memory') },
     { name: '/extensions', desc: 'Installer et gérer les extensions', run: () => openExtensions() },
     { name: '/economie', desc: 'Activer ou couper le mode économie', run: () => toggleEconomy() },
     { name: '/site', desc: 'Fiche du site : autorisations, zoom, données', run: () => openSite() },
@@ -1349,6 +1355,17 @@
     placePop();
     if (mode !== null) reportShape();
     if (wasOpen !== (mode !== null)) sendExpand(mode !== null);
+    watchMemory();
+  }
+
+  // Panneau de la mémoire ouvert : Rust relève la mémoire plus souvent et
+  // l'envoie dès qu'elle change. Fermé, il n'en fait pas plus que d'habitude.
+  let memoryWatched = false;
+  function watchMemory() {
+    const on = mode === 'library' && libKind === 'memory';
+    if (on === memoryWatched) return;
+    memoryWatched = on;
+    send({ type: 'watch_memory', on });
   }
 
   // L'interface ne passe devant la page qu'une fois dessinée transparente :
@@ -1959,7 +1976,11 @@
       if (selected < 0 || selected >= matches.length) selected = 0;
     } else {
       matches = suggestions.map((p) => ({ name: p.title || p.url, desc: p.url, page: true, bookmark: p.bookmark,
-        run: () => { closeBar(false); send({ type: 'open_url', url: p.url, new_tab: false }); } }));
+        run: () => {
+          const newTab = searchNewTab();
+          closeBar(false);
+          send(newTab ? { type: 'navigate', input: p.url, new_tab: true } : { type: 'open_url', url: p.url, new_tab: false });
+        } }));
       if (selected >= matches.length) selected = -1;
     }
     const ul = $('command-list');
@@ -2024,7 +2045,12 @@
   }
 
   // Ouvre la barre par-dessus la page, avec l'adresse actuelle (ou un texte donné).
-  function openBar(text, overlay) {
+  // `search` : la fenêtre de recherche de la pastille à la loupe, au milieu de
+  // la page, vide et sans les actions de la page. Le réglage « Recherche de la
+  // loupe » dit si elle s'ouvre dans l'onglet actif ou dans un nouvel onglet.
+  let searchOnly = false;
+  const searchNewTab = () => searchOnly && !!state.settings.search_new_tab;
+  function openBar(text, overlay, search) {
     if (!overlay && isTop() && startEdit(text)) return;
     // Bandeau ou barre large : l'adresse se modifie là où elle est affichée.
     if (!text && !overlay && hasAddr() && !state.focus) {
@@ -2032,14 +2058,16 @@
       if (field) { if (mode !== null) closePanel(); field.focus(); field.select(); return; }
     }
     stopEdit();
+    searchOnly = !!search;
+    document.body.classList.toggle('searching', searchOnly);
     // Style palette : la fenêtre sort de l'onglet actif au lieu du milieu de l'écran.
-    document.body.classList.toggle('anchored', sideStyle() === 'palette' && !isTop() && !state.focus);
+    document.body.classList.toggle('anchored', !searchOnly && sideStyle() === 'palette' && !isTop() && !state.focus);
     setMode('bar');
     const tab = activeTab();
     // Sans texte tapé, sur une page : les actions de la page sous l'adresse.
-    $('bar-acts').classList.toggle('on', !text && !!tab && !tab.home);
+    $('bar-acts').classList.toggle('on', !searchOnly && !text && !!tab && !tab.home);
     renderActs();
-    input.value = text || (tab && !tab.home ? tab.url : '');
+    input.value = text || (!searchOnly && tab && !tab.home ? tab.url : '');
     selected = 0;
     suggestions = [];
     showResult(null);
@@ -2052,7 +2080,8 @@
   function closeBar(focusPage) {
     if (mode !== 'bar') return;
     $('bar-acts').classList.remove('on');
-    document.body.classList.remove('anchored');
+    document.body.classList.remove('anchored', 'searching');
+    searchOnly = false;
     input.value = '';
     suggestions = [];
     showResult(null);
@@ -2101,6 +2130,7 @@
     if (!$('s-sleep').value) $('s-sleep').value = '15';
     $('s-economy').checked = !!s.economy;
     choose('s-startup', s.startup || 'home');
+    choose('s-searchtab', s.search_new_tab ? 'new' : 'active');
     choose('s-theme', s.theme || 'auto');
     choose('s-pos', s.bar_position || 'left');
     choose('s-style', s.sidebar_style || 'palette');
@@ -2219,6 +2249,7 @@
       sidebar_style: chosen('s-style'),
       auto_update_check: $('s-autoupdate').checked,
       startup: chosen('s-startup'),
+      search_new_tab: chosen('s-searchtab') === 'new',
       history_days: Number($('s-history').value),
       bookmarks_on_home: $('s-bmhome').checked,
       recent_on_home: $('s-recent').checked,
@@ -2246,7 +2277,7 @@
     ['Rouvrir l\'onglet fermé', 'Ctrl+Maj+T'], ['Onglet privé', 'Ctrl+Maj+N'], ['Onglet suivant / précédent', 'Ctrl+Tab · Ctrl+Maj+Tab'],
     ['Page précédente / suivante', 'Alt+← · Alt+→'], ['Actualiser', 'F5 · Ctrl+R'], ['Chercher dans la page', 'Ctrl+F'],
     ['Ajouter aux favoris', 'Ctrl+D'], ['Couper le son de l\'onglet', 'Ctrl+M'], ['Imprimer', 'Ctrl+P'],
-    ['Zoom', 'Ctrl++ · Ctrl+- · Ctrl+0'], ['Capture de la page', 'Ctrl+Maj+S'], ['Mémoire des onglets', 'Maj+Échap'],
+    ['Zoom', 'Ctrl++ · Ctrl+- · Ctrl+0'], ['Capture de la page', 'Ctrl+Maj+S'], ['Utilisation de la mémoire', 'Maj+Échap'],
     ['Mode concentration', 'Ctrl+Maj+F'], ['Paramètres', 'Ctrl+,'],
   ];
   for (const [what, keys] of KEYS) {
@@ -2335,7 +2366,7 @@
       const wanted = text.match(/^\/param[eè]tres\s+(.+)$/i);
       if (wanted) { closeBar(false); openSettings(); $('s-search').value = wanted[1]; filterSettings(); }
       else if (text.startsWith('/') && isNative(text)) send({ type: 'command', input: text, run: true });
-      else if (text) { closeBar(false); send({ type: 'navigate', input: text }); }
+      else if (text) { const newTab = searchNewTab(); closeBar(false); send({ type: 'navigate', input: text, new_tab: newTab }); }
       e.preventDefault();
     } else if (e.key === 'Escape') {
       closeBar(true);
@@ -2364,7 +2395,13 @@
     if (e.target === $('overlay')) { e.preventDefault(); closeBar(true); }
   });
 
-  $('search-pill').addEventListener('click', () => openBar(''));
+  // La pastille à la loupe ouvre une simple recherche au milieu de la page ;
+  // Ctrl+L ouvre toujours la barre d'adresse.
+  $('search-pill').addEventListener('click', () => {
+    if (mode === 'bar' && searchOnly) { closeBar(true); return; }
+    if (mode === 'bar') closeBar(false);
+    openBar('', true, true);
+  });
 
   // Actions de la page, sous la palette.
   function renderActs() {
@@ -2810,7 +2847,7 @@
   $('new-tab').addEventListener('click', () => send({ type: 'new_tab' }));
 
   // --- Paramètres ---
-  for (const id of ['s-theme', 's-pos', 's-style', 's-startup']) {
+  for (const id of ['s-theme', 's-pos', 's-style', 's-startup', 's-searchtab']) {
     for (const b of $(id).children) b.addEventListener('click', () => {
       // Nouveau style de barre : elle reprend sa largeur d'origine (la plus
       // étroite, ou celle de la barre large), même après un élargissement à la main.
@@ -2865,7 +2902,7 @@
     bookmarks: { title: 'Favoris', search: 'Rechercher dans les favoris' },
     history: { title: 'Historique', search: "Rechercher dans l'historique" },
     downloads: { title: 'Téléchargements', search: 'Rechercher un téléchargement' },
-    memory: { title: 'Mémoire des onglets', search: 'Rechercher un onglet' },
+    memory: { title: 'Utilisation de la mémoire', search: 'Rechercher un onglet' },
   };
   // Listes tenues à jour par l'état envoyé par Rust (pas de demande à part).
   const LOCAL_KINDS = ['downloads', 'memory'];
@@ -2882,6 +2919,7 @@
     $('lib-search').value = '';
     libItems = kind === 'downloads' ? (state.downloads || []) : [];
     setMode('library');
+    watchMemory();   // d'un autre panneau de la bibliothèque à celui-ci
     for (const k of LIB_KINDS) $('lib-' + k).classList.toggle('on', libKind === k);
     placePop();   // autre bouton, même fenêtre : la flèche suit
     renderLibrary();

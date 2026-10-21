@@ -18,10 +18,12 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   (recherche avec le moteur choisi), ou `/` pour la liste des commandes :
   `/nouveau`, `/fermer`, `/accueil`, `/retour`, `/suivant`, `/actualiser`, `/parametres`.
 - **Pastille de recherche** : dès qu'on quitte l'accueil, la recherche se range
-  dans un ovale avec une loupe, au-dessus des onglets. Un clic (ou `Ctrl+L`)
-  ouvre la barre par-dessus la page ; `Échap` y revient.
+  dans un ovale avec une loupe, au-dessus des onglets. Un clic ouvre une
+  fenêtre de recherche au milieu de la page ; ce qu'on y cherche s'ouvre dans
+  l'onglet actif ou dans un nouvel onglet (réglage « Recherche de la loupe »).
+  `Ctrl+L` ouvre la barre d'adresse par-dessus la page ; `Échap` y revient.
 - **En haut à gauche** : l'engrenage des paramètres, puis page précédente,
-  page suivante et le bouton maison (son adresse se règle dans les paramètres).
+  page suivante et le bouton d'accueil (sa page se règle dans les paramètres).
 - **Onglets en pastilles à gauche** : la longue pastille est l'onglet actif, un
   rond par autre onglet, `+` pour en ouvrir un. Chaque pastille montre l'icône
   du site (un point gris s'il n'en a pas, ou sur l'accueil). Au survol, le nom
@@ -34,7 +36,7 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   bouton discret qui apparaît en bas de l'onglet au survol, le clic droit sur
   l'onglet, ou `Ctrl+M`.
 - **Paramètres** (engrenage en haut à gauche) : prénom, moteur de recherche
-  (DuckDuckGo, Qwant, Ecosia, Google, Bing), adresse du bouton maison (ouverte
+  (DuckDuckGo, Qwant, Ecosia, Google, Bing), bouton d'accueil (sa page, ouverte
   aussi au démarrage ; les nouveaux onglets ouvrent l'accueil Feather), thème clair, sombre
   ou automatique. Ils sont enregistrés dans `parametres.json`, dans le dossier
   de configuration du système (`%APPDATA%\Feather\Feather\config` sur Windows).
@@ -96,10 +98,11 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     ouvre chaque adresse dans un onglet.
   - **Banc de mesure de la mémoire** : voir « Mesurer la mémoire » plus bas.
 - **Nouveau en 0.3.5** :
-  - **Mémoire des onglets** (bouton sous les téléchargements, `Maj+Échap` ou
+  - **Utilisation de la mémoire** (bouton sous les téléchargements, `Maj+Échap` ou
     `/memoire`) : chaque onglet avec sa mémoire, son processeur et son état
     (affiché, allégé, gelé, en veille), le total, et des boutons pour réveiller,
     mettre en veille ou fermer. En bas : « Endormir les onglets cachés ».
+    Les chiffres se mettent à jour tant que le panneau est ouvert.
   - **Mode économie** (paramètres, ou `/economie`) : veille après 5 minutes au
     plus, vidéos muettes des onglets cachés en pause (le son qu'on écoute
     continue), vidéos qui démarrent seules bloquées jusqu'au premier clic sur la
@@ -246,7 +249,7 @@ Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 ou suivante, `F5` ou `Ctrl+R` actualiser, `Ctrl+M` couper le son de l'onglet,
 `Ctrl+D` ajouter aux favoris, `Ctrl+,` paramètres, `Ctrl+F` chercher dans la
 page, `Ctrl++` / `Ctrl+-` / `Ctrl+0` zoom, `Ctrl+Maj+T` rouvrir l'onglet fermé,
-`Ctrl+Maj+N` onglet privé, `Ctrl+P` imprimer, `Maj+Échap` mémoire des onglets,
+`Ctrl+Maj+N` onglet privé, `Ctrl+P` imprimer, `Maj+Échap` utilisation de la mémoire,
 `Ctrl+Maj+S` capture de la page, `Ctrl+Maj+F` mode concentration.
 
 ## Lancer le navigateur

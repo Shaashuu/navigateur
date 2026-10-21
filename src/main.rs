@@ -202,6 +202,9 @@ struct App {
     next_permission_request: u32,
     /// Mesure du processus de chaque page (macOS).
     sampler: Sampler,
+    /// Le panneau « Utilisation de la mémoire » est ouvert : la mémoire des
+    /// onglets est relevée plus souvent et envoyée dès qu'elle change.
+    memory_watched: bool,
     /// Articles du mode lecture, un par onglet (lus par le protocole `navigateur`).
     reader: reader::Store,
     /// Secondes écoulées (pour ne mesurer le poids des onglets que toutes les 5 s).
@@ -296,6 +299,7 @@ fn main() -> wry::Result<()> {
         permission_requests: HashMap::new(),
         next_permission_request: 1,
         sampler: Sampler::default(),
+        memory_watched: false,
         reader: reader::Store::default(),
         ticks: 0,
         adblock: adblock::Status::default(),
@@ -585,10 +589,14 @@ impl App {
                     self.open_tab(&page, false);
                 }
             }
-            ChromeMessage::Navigate { input } => {
+            ChromeMessage::Navigate { input, new_tab } => {
                 let engine = self.settings().search_engine;
                 if let Some(url) = network::resolve_input(&input, engine) {
-                    self.load_in_active(&url);
+                    if new_tab {
+                        self.open_tab(&url, false);
+                    } else {
+                        self.load_in_active(&url);
+                    }
                 }
             }
             ChromeMessage::NewTab => self.open_new_tab(),
@@ -740,6 +748,10 @@ impl App {
                 if self.tabs.sleep(id) {
                     self.schedule_reap();
                 }
+            }
+            ChromeMessage::WatchMemory { on } => {
+                self.watch_memory(on);
+                return;
             }
             ChromeMessage::SleepHidden => {
                 if self.tabs.sleep_hidden() {

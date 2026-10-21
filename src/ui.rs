@@ -72,6 +72,9 @@ pub enum ChromeMessage {
     Ready,
     Navigate {
         input: String,
+        /// Recherche de la pastille à la loupe, réglée sur « nouvel onglet ».
+        #[serde(default)]
+        new_tab: bool,
     },
     NewTab,
     ToggleMute {
@@ -184,6 +187,11 @@ pub enum ChromeMessage {
     },
     /// Met en veille tous les onglets cachés (gestionnaire des onglets).
     SleepHidden,
+    /// Le panneau de la mémoire s'ouvre ou se ferme : tant qu'il est ouvert, la
+    /// mémoire affichée suit celle des onglets.
+    WatchMemory {
+        on: bool,
+    },
     /// Change une autorisation retenue pour un site (fiche du site).
     SetPermission {
         host: String,
@@ -681,7 +689,10 @@ mod tests {
     fn messages_interface() {
         let m: ChromeMessage =
             serde_json::from_str(r#"{"type":"navigate","input":"rust"}"#).unwrap();
-        assert!(matches!(m, ChromeMessage::Navigate { input } if input == "rust"));
+        assert!(matches!(m, ChromeMessage::Navigate { input, new_tab: false } if input == "rust"));
+        let m: ChromeMessage =
+            serde_json::from_str(r#"{"type":"navigate","input":"rust","new_tab":true}"#).unwrap();
+        assert!(matches!(m, ChromeMessage::Navigate { new_tab: true, .. }));
         let m: ChromeMessage = serde_json::from_str(r#"{"type":"close_tab","id":null}"#).unwrap();
         assert!(matches!(m, ChromeMessage::CloseTab { id: None }));
         assert!(serde_json::from_str::<ChromeMessage>(r#"{"type":"supprimer_tout"}"#).is_err());
@@ -696,6 +707,10 @@ mod tests {
         assert!(matches!(
             serde_json::from_str::<ChromeMessage>(r#"{"type":"sleep_hidden"}"#).unwrap(),
             ChromeMessage::SleepHidden
+        ));
+        assert!(matches!(
+            serde_json::from_str::<ChromeMessage>(r#"{"type":"watch_memory","on":true}"#).unwrap(),
+            ChromeMessage::WatchMemory { on: true }
         ));
     }
 

@@ -29,6 +29,9 @@ pub struct Settings {
     pub startup: Startup,
     /// Nombre de jours d'historique gardés (0 : tout garder).
     pub history_days: u32,
+    /// La recherche de la pastille à la loupe s'ouvre dans un nouvel onglet
+    /// (sinon dans l'onglet actif).
+    pub search_new_tab: bool,
     /// Les favoris s'affichent sous la recherche de la page d'accueil.
     pub bookmarks_on_home: bool,
     /// Les dernières pages visitées (« Reprendre ») s'affichent sur la page d'accueil.
@@ -76,6 +79,7 @@ impl Default for Settings {
             bar_position: BarPosition::Left,
             startup: Startup::Home,
             history_days: 90,
+            search_new_tab: false,
             bookmarks_on_home: true,
             recent_on_home: true,
             download_dir: String::new(),
