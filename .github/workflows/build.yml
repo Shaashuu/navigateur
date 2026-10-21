@@ -87,10 +87,21 @@ jobs:
     needs: [windows, macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v7
         with:
           path: fichiers
           merge-multiple: true
+      # Notes de version : le paragraphe « Nouveau en x.y.z » du README.
+      - name: Préparer les notes de version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          awk -v t="- **Nouveau en $version** :" '
+            index($0, t) == 1 { dedans = 1; sub(/^- /, ""); print; next }
+            dedans && /^  / { sub(/^  /, ""); print; next }
+            dedans { exit }
+          ' README.md > notes.md
+          cat notes.md
       - uses: softprops/action-gh-release@v3
         with:
           # Avec le secret RELEASES_TOKEN, la release va dans le dépôt public
@@ -99,4 +110,5 @@ jobs:
           token: ${{ secrets.RELEASES_TOKEN != '' && secrets.RELEASES_TOKEN || github.token }}
           tag_name: ${{ inputs.version || github.ref_name }}
           target_commitish: ${{ secrets.RELEASES_TOKEN != '' && 'main' || github.sha }}
+          body_path: notes.md
           files: fichiers/*

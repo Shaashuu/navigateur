@@ -245,6 +245,11 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   est à 15 minutes par défaut. Un bouton d'accueil apparaît, l'utilisation de la
   mémoire s'affiche en direct, et la pastille à la loupe ouvre une recherche au
   milieu de la page (dans l'onglet actif ou un nouvel onglet, au choix).
+- **Nouveau en 0.5.6** : sous macOS, Proton Pass s'ouvre à sa taille normale
+  au lieu de se croire dans un onglet, et son arrière-plan démarre sans
+  s'arrêter (fini le message « ne parvient pas à activer Proton Pass »). Les
+  compléments de Feather sont aussi chargés dans la fenêtre et la page
+  d'options des extensions.
 - **Nouveau en 0.5.4** : sous macOS, les extensions fonctionnent dans tous les
   onglets, même ceux ouverts avant leur installation : elles savent dans quel
   onglet elles agissent (Proton Pass peut remplir les connexions). Leur fenêtre
