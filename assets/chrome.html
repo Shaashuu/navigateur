@@ -188,6 +188,7 @@
   }
   body.bar #overlay, body.settings #settings { display: flex; }
   #overlay { justify-content: flex-start; padding-top: 22vh; }
+  body.searching #overlay { padding-top: 32vh; }
   #bar {
     width: min(660px, 100%); height: 52px; border-radius: 26px;
     display: flex; align-items: center; gap: 6px; padding: 0 8px 0 20px;
@@ -924,7 +925,7 @@
       <label class="addr" id="side-addr"><span class="lk" id="s-lock"></span><input id="side-input" spellcheck="false" autocomplete="off" aria-label="Adresse de la page" placeholder="Rechercher ou saisir une adresse"></label>
     </div>
     <div id="middle">
-      <button id="search-pill" hidden title="Nouvel onglet : accueil et favoris" aria-label="Nouvel onglet : accueil et favoris">
+      <button id="search-pill" hidden title="Rechercher" aria-label="Rechercher">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <span class="leaf" aria-hidden="true"><svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4C10 4 4 9 4 16c0 1.4.3 2.7.8 3.8C6 15 9 11.5 14 9.5 10 12 7.6 15.4 6.6 20.4 8 21.4 9.6 22 11.4 22 18 22 21 15 20 4z"/></svg></span>
       </button>
@@ -1176,6 +1177,11 @@
               <option value="google">Google</option>
               <option value="bing">Bing</option>
             </select></div>
+          <div class="srow"><span class="lab">Recherche de la loupe<small>Où s'ouvre ce qu'on cherche depuis la pastille à la loupe</small></span>
+            <div class="choices" id="s-searchtab">
+              <button type="button" data-value="active">Dans l'onglet actif</button>
+              <button type="button" data-value="new">Dans un nouvel onglet</button>
+            </div></div>
         </section>
         <section data-cat="onglets">
           <h3>Onglets et mémoire</h3>
@@ -1970,7 +1976,11 @@
       if (selected < 0 || selected >= matches.length) selected = 0;
     } else {
       matches = suggestions.map((p) => ({ name: p.title || p.url, desc: p.url, page: true, bookmark: p.bookmark,
-        run: () => { closeBar(false); send({ type: 'open_url', url: p.url, new_tab: false }); } }));
+        run: () => {
+          const newTab = searchNewTab();
+          closeBar(false);
+          send(newTab ? { type: 'navigate', input: p.url, new_tab: true } : { type: 'open_url', url: p.url, new_tab: false });
+        } }));
       if (selected >= matches.length) selected = -1;
     }
     const ul = $('command-list');
@@ -2035,7 +2045,12 @@
   }
 
   // Ouvre la barre par-dessus la page, avec l'adresse actuelle (ou un texte donné).
-  function openBar(text, overlay) {
+  // `search` : la fenêtre de recherche de la pastille à la loupe, au milieu de
+  // la page, vide et sans les actions de la page. Le réglage « Recherche de la
+  // loupe » dit si elle s'ouvre dans l'onglet actif ou dans un nouvel onglet.
+  let searchOnly = false;
+  const searchNewTab = () => searchOnly && !!state.settings.search_new_tab;
+  function openBar(text, overlay, search) {
     if (!overlay && isTop() && startEdit(text)) return;
     // Bandeau ou barre large : l'adresse se modifie là où elle est affichée.
     if (!text && !overlay && hasAddr() && !state.focus) {
@@ -2043,14 +2058,16 @@
       if (field) { if (mode !== null) closePanel(); field.focus(); field.select(); return; }
     }
     stopEdit();
+    searchOnly = !!search;
+    document.body.classList.toggle('searching', searchOnly);
     // Style palette : la fenêtre sort de l'onglet actif au lieu du milieu de l'écran.
-    document.body.classList.toggle('anchored', sideStyle() === 'palette' && !isTop() && !state.focus);
+    document.body.classList.toggle('anchored', !searchOnly && sideStyle() === 'palette' && !isTop() && !state.focus);
     setMode('bar');
     const tab = activeTab();
     // Sans texte tapé, sur une page : les actions de la page sous l'adresse.
-    $('bar-acts').classList.toggle('on', !text && !!tab && !tab.home);
+    $('bar-acts').classList.toggle('on', !searchOnly && !text && !!tab && !tab.home);
     renderActs();
-    input.value = text || (tab && !tab.home ? tab.url : '');
+    input.value = text || (!searchOnly && tab && !tab.home ? tab.url : '');
     selected = 0;
     suggestions = [];
     showResult(null);
@@ -2063,7 +2080,8 @@
   function closeBar(focusPage) {
     if (mode !== 'bar') return;
     $('bar-acts').classList.remove('on');
-    document.body.classList.remove('anchored');
+    document.body.classList.remove('anchored', 'searching');
+    searchOnly = false;
     input.value = '';
     suggestions = [];
     showResult(null);
@@ -2112,6 +2130,7 @@
     if (!$('s-sleep').value) $('s-sleep').value = '15';
     $('s-economy').checked = !!s.economy;
     choose('s-startup', s.startup || 'home');
+    choose('s-searchtab', s.search_new_tab ? 'new' : 'active');
     choose('s-theme', s.theme || 'auto');
     choose('s-pos', s.bar_position || 'left');
     choose('s-style', s.sidebar_style || 'palette');
@@ -2230,6 +2249,7 @@
       sidebar_style: chosen('s-style'),
       auto_update_check: $('s-autoupdate').checked,
       startup: chosen('s-startup'),
+      search_new_tab: chosen('s-searchtab') === 'new',
       history_days: Number($('s-history').value),
       bookmarks_on_home: $('s-bmhome').checked,
       recent_on_home: $('s-recent').checked,
@@ -2346,7 +2366,7 @@
       const wanted = text.match(/^\/param[eè]tres\s+(.+)$/i);
       if (wanted) { closeBar(false); openSettings(); $('s-search').value = wanted[1]; filterSettings(); }
       else if (text.startsWith('/') && isNative(text)) send({ type: 'command', input: text, run: true });
-      else if (text) { closeBar(false); send({ type: 'navigate', input: text }); }
+      else if (text) { const newTab = searchNewTab(); closeBar(false); send({ type: 'navigate', input: text, new_tab: newTab }); }
       e.preventDefault();
     } else if (e.key === 'Escape') {
       closeBar(true);
@@ -2375,9 +2395,13 @@
     if (e.target === $('overlay')) { e.preventDefault(); closeBar(true); }
   });
 
-  // La pastille à la loupe ouvre l'accueil Feather (recherche et favoris) dans
-  // un nouvel onglet ; Ctrl+L ouvre toujours la barre d'adresse sur la page.
-  $('search-pill').addEventListener('click', () => send({ type: 'new_tab' }));
+  // La pastille à la loupe ouvre une simple recherche au milieu de la page ;
+  // Ctrl+L ouvre toujours la barre d'adresse.
+  $('search-pill').addEventListener('click', () => {
+    if (mode === 'bar' && searchOnly) { closeBar(true); return; }
+    if (mode === 'bar') closeBar(false);
+    openBar('', true, true);
+  });
 
   // Actions de la page, sous la palette.
   function renderActs() {
@@ -2823,7 +2847,7 @@
   $('new-tab').addEventListener('click', () => send({ type: 'new_tab' }));
 
   // --- Paramètres ---
-  for (const id of ['s-theme', 's-pos', 's-style', 's-startup']) {
+  for (const id of ['s-theme', 's-pos', 's-style', 's-startup', 's-searchtab']) {
     for (const b of $(id).children) b.addEventListener('click', () => {
       // Nouveau style de barre : elle reprend sa largeur d'origine (la plus
       // étroite, ou celle de la barre large), même après un élargissement à la main.

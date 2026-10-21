@@ -589,10 +589,14 @@ impl App {
                     self.open_tab(&page, false);
                 }
             }
-            ChromeMessage::Navigate { input } => {
+            ChromeMessage::Navigate { input, new_tab } => {
                 let engine = self.settings().search_engine;
                 if let Some(url) = network::resolve_input(&input, engine) {
-                    self.load_in_active(&url);
+                    if new_tab {
+                        self.open_tab(&url, false);
+                    } else {
+                        self.load_in_active(&url);
+                    }
                 }
             }
             ChromeMessage::NewTab => self.open_new_tab(),

@@ -18,9 +18,10 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   (recherche avec le moteur choisi), ou `/` pour la liste des commandes :
   `/nouveau`, `/fermer`, `/accueil`, `/retour`, `/suivant`, `/actualiser`, `/parametres`.
 - **Pastille de recherche** : dès qu'on quitte l'accueil, la recherche se range
-  dans un ovale avec une loupe, au-dessus des onglets. Un clic ouvre l'accueil
-  (recherche et favoris) dans un nouvel onglet ; `Ctrl+L` ouvre la barre
-  par-dessus la page, `Échap` y revient.
+  dans un ovale avec une loupe, au-dessus des onglets. Un clic ouvre une
+  fenêtre de recherche au milieu de la page ; ce qu'on y cherche s'ouvre dans
+  l'onglet actif ou dans un nouvel onglet (réglage « Recherche de la loupe »).
+  `Ctrl+L` ouvre la barre d'adresse par-dessus la page ; `Échap` y revient.
 - **En haut à gauche** : l'engrenage des paramètres, puis page précédente,
   page suivante et le bouton d'accueil (sa page se règle dans les paramètres).
 - **Onglets en pastilles à gauche** : la longue pastille est l'onglet actif, un
