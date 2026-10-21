@@ -760,12 +760,14 @@ fn build_page(
                 reader::render(&uri, article, &settings)
             } else {
                 match library.read() {
-                    // Un onglet privé ne montre pas les dernières pages visitées.
-                    Ok(lib) if settings.bookmarks_on_home => {
-                        let recent = if private { Vec::new() } else { lib.search_history("", 20) };
-                        ui::home_page(&settings, lib.bookmarks(), &recent)
+                    // Favoris et dernières pages se règlent chacun de leur côté ;
+                    // un onglet privé ne montre jamais les dernières pages visitées.
+                    Ok(lib) => {
+                        let bookmarks = if settings.bookmarks_on_home { lib.bookmarks() } else { &[] };
+                        let recent = if settings.recent_on_home && !private { lib.search_history("", 20) } else { Vec::new() };
+                        ui::home_page(&settings, bookmarks, &recent)
                     }
-                    _ => ui::home_page(&settings, &[], &[]),
+                    Err(_) => ui::home_page(&settings, &[], &[]),
                 }
             };
             // Ces pages (accueil avec l'historique, lecture, erreur) ne s'affichent
