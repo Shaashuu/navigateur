@@ -85,6 +85,28 @@ jobs:
           PY
             cd ../..
           done
+      # Extraits du code des extensions, pour lire l'erreur de l'arrière-plan.
+      - name: Extraits du code
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          src = open('ext/protonpass/background.js', encoding='utf-8', errors='replace').read().split('\n')
+          print('proton background.js : %d lignes, ligne 62 : %d caractères' % (len(src), len(src[61])))
+          print('--- proton 62:38600-39700 ---'); print(src[61][38600:39700])
+          m = json.load(open('ext/ublock/manifest.json'))
+          print('ublock arrière-plan :', m.get('background'))
+          for root, dirs, files in os.walk('ext/ublock/js'):
+              for f in files:
+                  print('  ', os.path.join(root, f), os.path.getsize(os.path.join(root, f)))
+          def show(path, pat, before=300, after=900, most=4):
+              t = open(path, encoding='utf-8', errors='replace').read()
+              for i, mm in enumerate(re.finditer(pat, t)):
+                  if i >= most: break
+                  print('--- %s @%d ---' % (path, mm.start())); print(t[max(0, mm.start() - before):mm.start() + after])
+          show('ext/ublock/js/popup.js', r'popupPanelData')
+          show('ext/ublock/js/background.js', r'onMessage', most=3)
+          show('ext/ublock/js/background.js', r'async function start', before=100, after=2500, most=1)
+          PY
       # Une vraie application (identifiant de bundle), comme Feather.
       - name: Compiler la sonde
         run: |

@@ -271,7 +271,7 @@ static void run(WKWebExtension *ext) {
     after(39, ^{
         if (logView) [logView evaluateJavaScript:@"document.body.innerText" completionHandler:^(id r, NSError *e) { say(@"journal de l'arrière-plan :\n%@%@", r ?: @"", e ? e.userInfo : @""); }];
     });
-    after(41, ^{
+    after(45, ^{
         say(@"erreurs du contexte (fin) : %@", context.errors);
         [NSApp terminate:nil];
     });
