@@ -42,9 +42,9 @@ static NSString *const kProbe =
 
 // Ce que l'arrière-plan a noté (voir l'enveloppe ajoutée par le flux de travail).
 static NSString *const kStorage =
-    @"const api = (typeof browser !== 'undefined' ? browser : chrome);"
+    @"const api = window.__b0 || window.__c0 || (typeof browser !== 'undefined' ? browser : chrome);"
      "const all = await api.storage.local.get(null);"
-     "return JSON.stringify({bgerr: all.__bgerr || null, keys: Object.keys(all).slice(0, 20)});";
+     "return 'clés ' + Object.keys(all).slice(0, 30).join(',') + '\\n' + (all.__bgerr || '(pas de journal)');";
 
 // L'arrière-plan répond-il ? Et l'onglet actif est-il visible depuis la page ?
 static NSString *const kMessages =
