@@ -3107,31 +3107,38 @@
     e.preventDefault();
   });
 
+  // Ce que montrent les réglages : la page se remplit à nouveau quand l'une de ces parties change.
+  const SETTINGS_KEYS = ['settings', 'permissions', 'update', 'adblock', 'version', 'overlay'];
+  // `keys` : les parties reçues (null : l'état complet).
+  function applyState(next, keys) {
+    state = next;
+    document.body.classList.toggle('overlay', !!state.overlay);
+    applyTheme(state.settings.theme);
+    applyPos(state.settings.bar_position);
+    applyStyle();
+    document.body.classList.toggle('focus', !!state.focus && !isTop());
+    if (!canHover()) endHover();
+    if (!resize) applySide(state.settings.sidebar_width);
+    // Autre onglet affiché : la recherche dans la page se ferme.
+    const active = activeTab();
+    const id = active ? active.id : null;
+    if (id !== lastActive) { lastActive = id; if (findOpen) closeFind(); }
+    renderSidebar();
+    renderUpdate();
+    renderStrip();
+    watchNewDownloads();
+    document.body.classList.toggle('eco', !!state.settings.economy);
+    if (mode === 'library' && LOCAL_KINDS.includes(libKind)) renderLibrary();
+    if (mode === 'site') renderSite();
+    if (mode === 'group') renderGroupSheet();
+    if (mode === 'settings' && (!keys || keys.some((k) => SETTINGS_KEYS.includes(k)))) fillSettings();
+  }
+
   // --- Appelé par Rust ---
   window.navigateur = {
-    setState(next) {
-      state = next;
-      document.body.classList.toggle('overlay', !!state.overlay);
-      applyTheme(state.settings.theme);
-      applyPos(state.settings.bar_position);
-      applyStyle();
-      document.body.classList.toggle('focus', !!state.focus && !isTop());
-      if (!canHover()) endHover();
-      if (!resize) applySide(state.settings.sidebar_width);
-      // Autre onglet affiché : la recherche dans la page se ferme.
-      const active = activeTab();
-      const id = active ? active.id : null;
-      if (id !== lastActive) { lastActive = id; if (findOpen) closeFind(); }
-      renderSidebar();
-      renderUpdate();
-      renderStrip();
-      watchNewDownloads();
-      document.body.classList.toggle('eco', !!state.settings.economy);
-      if (mode === 'library' && LOCAL_KINDS.includes(libKind)) renderLibrary();
-      if (mode === 'site') renderSite();
-      if (mode === 'group') renderGroupSheet();
-      if (mode === 'settings') fillSettings();
-    },
+    setState(next) { applyState(next, null); },
+    // Seulement les parties qui ont changé (voir `send_state` côté Rust).
+    patchState(part) { applyState(Object.assign({}, state, part), Object.keys(part)); },
     setImportSources(list) { if (mode === 'import') setImportSources(list || []); },
     setLibrary(data) {
       if (mode !== 'library' || data.kind !== libKind) return;

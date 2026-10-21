@@ -64,6 +64,9 @@ use weight::Sampler;
 const PAGE_TAB_LIMIT: usize = 10;
 /// … sur cette durée : au-delà, une page malveillante pourrait en ouvrir sans fin.
 const PAGE_TAB_WINDOW: Duration = Duration::from_secs(10);
+/// Au plus un envoi par seconde pour des titres : certains sites font défiler
+/// le leur (« (3) Nouveau message… ») plusieurs fois par seconde.
+const TITLE_PAUSE: Duration = Duration::from_secs(1);
 
 /// Événements envoyés par les webviews à la boucle principale.
 #[derive(Debug)]
@@ -73,6 +76,8 @@ pub enum UserEvent {
     /// Message JSON venant d'une page (raccourci clavier, barre de l'accueil).
     Page(TabId, String),
     Title(TabId, String),
+    /// Des changements de titre retenus (voir `TITLE_PAUSE`) partent vers l'interface.
+    TitlesDue,
     /// Début (`true`) ou fin (`false`) de chargement, avec l'adresse.
     PageLoad(TabId, bool, String),
     /// Le chargement de cette adresse a échoué : on affiche une page d'erreur Feather.
@@ -159,6 +164,14 @@ struct App {
     /// L'état a changé : il partira vers l'interface une fois les événements en
     /// attente traités (voir `push_state`).
     state_dirty: Cell<bool>,
+    /// Dernier envoi dû à un titre, et envoi de titres déjà prévu (voir `TITLE_PAUSE`).
+    last_title_push: Cell<Instant>,
+    titles_waiting: Cell<bool>,
+    /// Le dernier état envoyé, pour n'envoyer ensuite que ce qui a changé.
+    sent_state: RefCell<serde_json::Map<String, serde_json::Value>>,
+    /// Le prochain envoi sera complet : après un message de l'interface, qui a
+    /// pu modifier sa copie de l'état en attendant la réponse (réglages…).
+    full_state: Cell<bool>,
     /// Dernière session écrite sur le disque, pour ne pas la réécrire à l'identique.
     saved_session: RefCell<Option<Session>>,
     /// Heures des derniers onglets ouverts à la demande d'une page (voir `PAGE_TAB_LIMIT`).
@@ -247,6 +260,10 @@ fn main() -> wry::Result<()> {
         next_download_id: 1,
         persist_pending: Cell::new(false),
         state_dirty: Cell::new(false),
+        last_title_push: Cell::new(Instant::now().checked_sub(TITLE_PAUSE).unwrap_or_else(Instant::now)),
+        titles_waiting: Cell::new(false),
+        sent_state: RefCell::new(serde_json::Map::new()),
+        full_state: Cell::new(false),
         saved_session: RefCell::new(None),
         page_opens: VecDeque::new(),
         permission_requests: HashMap::new(),
@@ -256,7 +273,7 @@ fn main() -> wry::Result<()> {
         ticks: 0,
         adblock: adblock::Status::default(),
     };
-    adblock::set_enabled(app.read_settings().blocks_ads());
+    adblock::set_enabled(app.settings().blocks_ads());
     adblock::set_sites_off(app.sites.read().map(|s| s.ads_off()).unwrap_or_default());
     adblock::load(app.proxy.clone(), false);
     let session = library::load_session();
@@ -323,6 +340,20 @@ fn main() -> wry::Result<()> {
     });
 }
 
+/// Les commandes de la barre (`/note`…), envoyées seulement avec l'état complet.
+fn native_commands() -> serde_json::Value {
+    // Les commandes de page (`features::page_command`) s'ajoutent à celles de `commands`.
+    let mut page_commands = vec![("lecture", "Afficher l'article en mode lecture")];
+    if capture::SUPPORTED {
+        page_commands.push(("capture", "Capturer la page visible (Ctrl+Maj+S) · « copier » : dans le presse-papiers"));
+    }
+    commands::liste()
+        .into_iter()
+        .chain(page_commands)
+        .map(|(name, desc)| json!({ "name": format!("/{name}"), "desc": desc }))
+        .collect()
+}
+
 /// Icône de la fenêtre : image 64×64 en RGBA brut (voir packaging/).
 fn window_icon() -> Option<Icon> {
     const RGBA: &[u8] = include_bytes!("../packaging/feather-64.rgba");
@@ -354,6 +385,11 @@ impl App {
                     }
                     tab.title = title;
                 }
+                self.title_changed();
+            }
+            UserEvent::TitlesDue => {
+                self.titles_waiting.set(false);
+                self.last_title_push.set(Instant::now());
                 self.push_state();
             }
             UserEvent::PageLoad(id, loading, url) => {
@@ -489,7 +525,7 @@ impl App {
                 }
             }
             ChromeMessage::Navigate { input } => {
-                let engine = self.read_settings().search_engine;
+                let engine = self.settings().search_engine;
                 if let Some(url) = network::resolve_input(&input, engine) {
                     self.load_in_active(&url);
                 }
@@ -512,7 +548,7 @@ impl App {
             ChromeMessage::Forward => self.handle_shortcut(None, Shortcut::Forward),
             ChromeMessage::Reload => self.handle_shortcut(None, Shortcut::Reload),
             ChromeMessage::Home => {
-                let url = self.read_settings().start_url();
+                let url = self.settings().start_url();
                 self.load_in_active(&url);
             }
             ChromeMessage::Expand { open } => {
@@ -666,6 +702,9 @@ impl App {
             ChromeMessage::ImportSources => self.send_import_sources(),
             ChromeMessage::Import { sources, files } => self.import(&sources, &files),
         }
+        // L'interface a pu changer sa copie de l'état sans attendre (réglages,
+        // liste vidée…) : on lui renvoie tout, pour qu'elle reparte du vrai.
+        self.full_state.set(true);
         self.push_state();
     }
 
@@ -762,7 +801,7 @@ impl App {
             return;
         }
         if let Some(input) = message.navigate {
-            let engine = self.read_settings().search_engine;
+            let engine = self.settings().search_engine;
             if let Some(url) = network::resolve_input(&input, engine)
                 && let Some(w) = tab.webview()
             {
@@ -852,7 +891,7 @@ impl App {
 
     /// Zone des pages selon la position et la largeur de la barre, et le bandeau du bas.
     fn page_bounds(&self) -> wry::Rect {
-        let s = self.read_settings();
+        let s = self.settings();
         let frame = ui::Frame {
             bar: s.bar_position,
             style: s.sidebar_style,
@@ -1027,7 +1066,7 @@ impl App {
         if let Err(err) = settings.save() {
             eprintln!("paramètres non enregistrés : {err}");
         }
-        let before = self.read_settings();
+        let before = self.settings().clone();
         if let Ok(mut lib) = self.library.write() {
             lib.prune(settings.history_days);
         }
@@ -1126,8 +1165,11 @@ impl App {
         }
     }
 
-    fn read_settings(&self) -> Settings {
-        self.settings.read().map(|s| s.clone()).unwrap_or_default()
+    /// Les réglages, lus sur place : avant, chaque lecture copiait tous les
+    /// réglages (textes compris) pour n'en garder qu'une valeur. Ne pas garder
+    /// ce verrou en appelant ce qui écrit les réglages.
+    fn settings(&self) -> std::sync::RwLockReadGuard<'_, Settings> {
+        self.settings.read().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn relayout(&self) {
@@ -1198,6 +1240,27 @@ impl App {
         self.state_dirty.set(true);
     }
 
+    /// Un titre a changé : envoyé tout de suite, ou à la fin de la pause s'il en
+    /// arrive trop vite. Le titre est gardé dans l'onglet dans tous les cas.
+    fn title_changed(&self) {
+        if self.titles_waiting.get() {
+            return;
+        }
+        let since = self.last_title_push.get().elapsed();
+        if since >= TITLE_PAUSE {
+            self.last_title_push.set(Instant::now());
+            self.push_state();
+            return;
+        }
+        self.titles_waiting.set(true);
+        let proxy = self.proxy.clone();
+        let wait = TITLE_PAUSE - since;
+        std::thread::spawn(move || {
+            std::thread::sleep(wait);
+            let _ = proxy.send_event(UserEvent::TitlesDue);
+        });
+    }
+
     fn flush_state(&self) {
         if self.state_dirty.replace(false) {
             self.send_state();
@@ -1209,35 +1272,42 @@ impl App {
         let active = self.tabs.active().and_then(|t| t.webview());
         let lib = self.library.read().ok();
         let permissions = self.sites.read().map(|s| s.decisions()).unwrap_or_default();
-        // Les commandes de page (`features::page_command`) s'ajoutent à celles de `commands`.
-        let mut page_commands = vec![("lecture", "Afficher l'article en mode lecture")];
-        if capture::SUPPORTED {
-            page_commands.push(("capture", "Capturer la page visible (Ctrl+Maj+S) · « copier » : dans le presse-papiers"));
-        }
-        let commands: Vec<_> = commands::liste()
-            .into_iter()
-            .chain(page_commands)
-            .map(|(name, desc)| json!({ "name": format!("/{name}"), "desc": desc }))
-            .collect();
         let state = json!({
             "tabs": self.tabs.snapshot(|url| lib.as_ref().is_some_and(|l| l.is_bookmarked(url))),
             "downloads": self.downloads,
             "can_back": active.and_then(|w| w.can_go_back().ok()).unwrap_or(false),
             "can_forward": active.and_then(|w| w.can_go_forward().ok()).unwrap_or(false),
-            "settings": self.read_settings(),
-            "version": update::CURRENT,
+            "settings": &*self.settings(),
             "update": self.update,
             "permissions": permissions,
             "permission_prompt": self.permission_prompt(),
-            "native_commands": commands,
-            "overlay": layers::SUPPORTED,
             "site": self.site_info(),
             "groups": self.tabs.groups(),
             "adblock": self.adblock,
             "focus": self.focus,
         });
         drop(lib);
-        self.chrome_call(&format!("navigateur.setState({state})"));
+        let serde_json::Value::Object(state) = state else { return };
+        let mut sent = self.sent_state.borrow_mut();
+        if self.full_state.replace(false) || sent.is_empty() {
+            // État complet, avec ce qui ne change jamais (version, commandes…).
+            let mut full = state.clone();
+            full.insert("version".into(), json!(update::CURRENT));
+            full.insert("native_commands".into(), native_commands());
+            full.insert("overlay".into(), json!(layers::SUPPORTED));
+            self.chrome_call(&format!("navigateur.setState({})", serde_json::Value::Object(full)));
+        } else {
+            // Seulement les parties qui ont changé depuis le dernier envoi : souvent
+            // un onglet (titre, chargement) ou un téléchargement, pas les réglages.
+            let changed: serde_json::Map<String, serde_json::Value> =
+                state.iter().filter(|(k, v)| sent.get(*k) != Some(*v)).map(|(k, v)| (k.clone(), v.clone())).collect();
+            if changed.is_empty() {
+                return;
+            }
+            self.chrome_call(&format!("navigateur.patchState({})", serde_json::Value::Object(changed)));
+        }
+        *sent = state;
+        drop(sent);
         self.schedule_persist();
     }
 }

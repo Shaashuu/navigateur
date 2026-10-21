@@ -262,7 +262,7 @@ impl App {
 
     /// Le texte d'une page chargée rejoint la recherche dans l'historique.
     pub(crate) fn index_page(&mut self, id: TabId, text: &str) {
-        if !self.read_settings().index_pages {
+        if !self.settings().index_pages {
             return;
         }
         let Some(tab) = self.tabs.get(id) else { return };
@@ -343,7 +343,7 @@ impl App {
     /// et plus tôt ceux qui pèsent lourd.
     fn auto_sleep(&mut self) -> bool {
         // Le mode économie raccourcit le délai (voir `Settings::sleep_after`).
-        let minutes = self.read_settings().sleep_after();
+        let minutes = self.settings().sleep_after();
         let active = self.tabs.active_id();
         let idle = Duration::from_secs(u64::from(minutes) * 60);
         let candidates: Vec<TabId> = self
@@ -372,7 +372,7 @@ impl App {
     /// automatique bloquée : voir assets/page.js). Appelé à chaque chargement,
     /// car le script injecté garde la valeur du moment où la page a été créée.
     pub(crate) fn apply_economy(&self, id: TabId) {
-        let economy = self.read_settings().economy;
+        let economy = self.settings().economy;
         if let Some(tab) = self.tabs.get(id) {
             tab.eval(&format!("window.__featherSetEconomy && __featherSetEconomy({economy})"));
         }
@@ -518,7 +518,7 @@ impl App {
         let target = if copy {
             Target::Clipboard
         } else {
-            let dir = self.read_settings().download_dir;
+            let dir = self.settings().download_dir.clone();
             Target::File(downloads::destination(std::path::Path::new(&name), &dir))
         };
         capture::capture(w, target, self.proxy.clone());
@@ -656,9 +656,9 @@ impl App {
         json!({
             "host": host,
             "zoom": (zoom * 100.0).round(),
-            "trackers": self.read_settings().blocks_trackers(),
+            "trackers": self.settings().blocks_trackers(),
             // Bloqueur de publicités : réglage général, et choix pour ce site.
-            "ads": self.read_settings().blocks_ads(),
+            "ads": self.settings().blocks_ads(),
             "ads_site": self.sites.read().is_ok_and(|s| !s.ads_off().contains(&host)),
             "error": tab.failed.is_some(),
         })
@@ -711,7 +711,7 @@ impl App {
             });
             return;
         }
-        let dir = self.read_settings().download_dir.clone();
+        let dir = self.settings().download_dir.clone();
         let dest = downloads::destination(Path::new(&images::file_name(&url)), &dir);
         // Fichier vide réservé tout de suite : deux images du même nom ne se marchent pas dessus.
         let _ = std::fs::File::create(&dest);

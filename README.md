@@ -197,6 +197,9 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     liste des onglets n'est redessinée que si elle change, les onglets cachés
     ne mesurent plus leur réactivité, et le texte des onglets privés n'est plus
     extrait.
+  - Encore plus léger : l'interface ne reçoit que les parties de l'état qui
+    ont changé, les titres qui défilent sont envoyés au plus une fois par
+    seconde, et les réglages sont lus sans être recopiés.
   - Interface : le bouton du son reste au coin de la pastille en barre large ;
     un onglet épinglé sans icône montre son initiale en haut.
 
