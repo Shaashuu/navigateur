@@ -43,6 +43,8 @@ pub struct Settings {
     pub index_pages: bool,
     /// Largeur de la barre à gauche ou à droite, en pixels (voir `SIDEBAR_MIN`).
     pub sidebar_width: u32,
+    /// Façon d'atteindre l'adresse avec la barre à gauche ou à droite (voir `SidebarStyle`).
+    pub sidebar_style: SidebarStyle,
     /// Mode économie : veille plus tôt, vidéos cachées en pause, lecture
     /// automatique bloquée, traqueurs bloqués (voir `sleep_after` et `assets/page.js`).
     pub economy: bool,
@@ -74,6 +76,7 @@ impl Default for Settings {
             sleep_minutes: 30,
             index_pages: true,
             sidebar_width: SIDEBAR_MIN,
+            sidebar_style: SidebarStyle::Palette,
             economy: false,
         }
     }
@@ -95,6 +98,24 @@ pub enum BarPosition {
     Right,
     Top,
 }
+
+/// Barre latérale à pastilles : où se trouvent l'adresse et les boutons de la page.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SidebarStyle {
+    /// Un bandeau d'adresse au-dessus de la page.
+    Banner,
+    /// La barre s'ouvre par-dessus la page au survol (adresse et titres).
+    Hover,
+    /// Un clic sur l'onglet actif ouvre la palette : adresse et actions de la page.
+    #[default]
+    Palette,
+    /// Une barre large en permanence, l'adresse en tête.
+    Wide,
+}
+
+/// Largeur minimale de la barre en style « large ».
+pub const WIDE_MIN: u32 = 240;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

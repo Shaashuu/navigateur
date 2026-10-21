@@ -130,6 +130,8 @@ struct App {
     proxy: EventLoopProxy<UserEvent>,
     /// Un panneau de l'interface (commandes, paramètres) recouvre la page.
     expanded: bool,
+    /// Mode concentration (Ctrl+Maj+F) : la barre se réduit à un rail.
+    focus: bool,
     /// L'interface passe au-dessus des pages quand un panneau est ouvert.
     layers: layers::Layers,
     /// Le bandeau du bas (recherche, question, minuteur) est ouvert : la page rétrécit.
@@ -225,6 +227,7 @@ fn main() -> wry::Result<()> {
         settings: Arc::new(RwLock::new(settings)),
         proxy,
         expanded: false,
+        focus: false,
         layers: layers::Layers::default(),
         strip: false,
         update: UpdateState::Idle,
@@ -773,6 +776,15 @@ impl App {
             Shortcut::NewPrivateTab => self.open_tab(network::HOME_URL, true),
             Shortcut::TaskManager => self.focus_chrome("navigateur.openMemory()"),
             Shortcut::Capture => self.capture(false),
+            Shortcut::Focus => {
+                self.focus = !self.focus;
+                self.relayout();
+                if self.focus
+                    && let Some(tab) = self.tabs.active()
+                {
+                    tab.eval("window.__featherToast && __featherToast('Mode concentration · Ctrl+Maj+F pour revenir')");
+                }
+            }
         }
     }
 
@@ -800,8 +812,15 @@ impl App {
 
     /// Zone des pages selon la position et la largeur de la barre, et le bandeau du bas.
     fn page_bounds(&self) -> wry::Rect {
-        let settings = self.read_settings();
-        ui::page_bounds(&self.window, settings.bar_position, settings.sidebar_width, self.strip)
+        let s = self.read_settings();
+        let frame = ui::Frame {
+            bar: s.bar_position,
+            style: s.sidebar_style,
+            side: s.sidebar_width,
+            strip: self.strip,
+            focus: self.focus,
+        };
+        ui::page_bounds(&self.window, &frame)
     }
 
     /// La page active reste affichée : toujours quand les panneaux passent
@@ -1156,6 +1175,7 @@ impl App {
             "site": self.site_info(),
             "groups": self.tabs.groups(),
             "adblock": self.adblock,
+            "focus": self.focus,
         });
         drop(lib);
         self.chrome_call(&format!("navigateur.setState({state})"));

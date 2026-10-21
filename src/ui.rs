@@ -9,7 +9,8 @@ use tao::window::Window;
 use wry::{Rect, WebView, WebViewBuilder};
 
 use crate::library::Bookmark;
-use crate::settings::{BarPosition, Settings, Theme};
+use crate::library::Visit;
+use crate::settings::{BarPosition, Settings, SidebarStyle, Theme};
 use crate::sitedata::Permission;
 use crate::tab_manager::TabId;
 
@@ -20,6 +21,12 @@ pub const TOP_BAR_HEIGHT: f64 = 44.0;
 /// Hauteur du bandeau du bas (recherche dans la page, question d'autorisation,
 /// fin d'un minuteur) : la page rétrécit pour le laisser voir.
 pub const STRIP_HEIGHT: f64 = 48.0;
+/// Hauteur du bandeau d'adresse (style « bandeau » de la barre latérale).
+pub const BANNER_HEIGHT: f64 = 44.0;
+/// Marge autour de la page : elle est posée comme une carte sur le fond.
+pub const PAGE_GAP: f64 = 8.0;
+/// Mode concentration : il ne reste qu'un mince rail d'onglets.
+pub const FOCUS_RAIL: f64 = 14.0;
 
 pub const CHROME_HTML: &str = include_str!("../assets/chrome.html");
 const HOME_HTML: &str = include_str!("../assets/home.html");
@@ -393,21 +400,46 @@ pub enum Shortcut {
     TaskManager,
     /// Ctrl+Maj+S : capture de la page visible.
     Capture,
+    /// Ctrl+Maj+F : mode concentration (la barre se réduit à un rail).
+    Focus,
 }
 
-/// Zone occupée par les pages : tout sauf la barre (à gauche, à droite ou en
-/// haut) et, s'il est ouvert, le bandeau du bas.
-/// `side` : largeur de la barre quand elle est à gauche ou à droite.
-pub fn page_bounds(window: &Window, bar: BarPosition, side: u32, strip: bool) -> Rect {
-    let size = window.inner_size().to_logical::<f64>(window.scale_factor());
-    let strip = if strip { STRIP_HEIGHT } else { 0.0 };
+/// Ce qui entoure la page : la barre (position, style, largeur), le bandeau du
+/// bas et le mode concentration.
+#[derive(Clone, Copy, Debug)]
+pub struct Frame {
+    pub bar: BarPosition,
+    pub style: SidebarStyle,
+    /// Largeur de la barre quand elle est à gauche ou à droite.
+    pub side: u32,
+    pub strip: bool,
+    pub focus: bool,
+}
+
+/// Zone des pages (x, y, largeur, hauteur) dans une fenêtre de cette taille.
+pub fn page_area(width: f64, height: f64, f: &Frame) -> (f64, f64, f64, f64) {
+    let bottom = if f.strip { STRIP_HEIGHT } else { PAGE_GAP };
+    if f.focus {
+        // Le rail reste du côté de la barre (à gauche quand elle est en haut).
+        let x = if f.bar == BarPosition::Right { PAGE_GAP / 2.0 } else { FOCUS_RAIL };
+        let bottom = if f.strip { STRIP_HEIGHT } else { PAGE_GAP / 2.0 };
+        return (x, PAGE_GAP / 2.0, width - FOCUS_RAIL - PAGE_GAP / 2.0, height - PAGE_GAP / 2.0 - bottom);
+    }
+    if f.bar == BarPosition::Top {
+        return (PAGE_GAP, TOP_BAR_HEIGHT, width - 2.0 * PAGE_GAP, height - TOP_BAR_HEIGHT - bottom);
+    }
+    let side = if f.style == SidebarStyle::Wide { f.side.max(crate::settings::WIDE_MIN) } else { f.side };
     // La barre ne prend jamais plus de la moitié de la fenêtre.
-    let side = f64::from(side).clamp(SIDEBAR_WIDTH, (size.width / 2.0).max(SIDEBAR_WIDTH));
-    let (x, y, w, h) = match bar {
-        BarPosition::Left => (side, 0.0, size.width - side, size.height - strip),
-        BarPosition::Right => (0.0, 0.0, size.width - side, size.height - strip),
-        BarPosition::Top => (0.0, TOP_BAR_HEIGHT, size.width, size.height - TOP_BAR_HEIGHT - strip),
-    };
+    let side = f64::from(side).clamp(SIDEBAR_WIDTH, (width / 2.0).max(SIDEBAR_WIDTH));
+    let top = if f.style == SidebarStyle::Banner { BANNER_HEIGHT } else { PAGE_GAP };
+    let x = if f.bar == BarPosition::Right { PAGE_GAP } else { side };
+    (x, top, width - side - PAGE_GAP, height - top - bottom)
+}
+
+/// Zone occupée par les pages : tout sauf la barre, ses bandeaux et la marge autour.
+pub fn page_bounds(window: &Window, frame: &Frame) -> Rect {
+    let size = window.inner_size().to_logical::<f64>(window.scale_factor());
+    let (x, y, w, h) = page_area(size.width, size.height, frame);
     Rect {
         position: LogicalPosition::new(x, y).into(),
         size: LogicalSize::new(w.max(1.0), h.max(1.0)).into(),
@@ -424,7 +456,7 @@ pub fn chrome_bounds(window: &Window) -> Rect {
 }
 
 /// Génère la page d'accueil (heure, date, bienvenue).
-pub fn home_page(settings: &Settings, bookmarks: &[Bookmark]) -> String {
+pub fn home_page(settings: &Settings, bookmarks: &[Bookmark], recent: &[&Visit]) -> String {
     let theme = match settings.theme {
         Theme::Auto => "auto",
         Theme::Light => "light",
@@ -436,6 +468,7 @@ pub fn home_page(settings: &Settings, bookmarks: &[Bookmark]) -> String {
             ("THEME", theme.to_string()),
             ("NAME", escape_html(&settings.name)),
             ("BOOKMARKS", bookmark_tiles(bookmarks)),
+            ("RECENT", recent_cards(recent)),
         ],
     )
 }
@@ -492,6 +525,31 @@ fn bookmark_tiles(bookmarks: &[Bookmark]) -> String {
     }
 }
 
+/// « Reprendre » : les dernières pages visitées (une fois chacune), sous les favoris.
+fn recent_cards(recent: &[&Visit]) -> String {
+    let mut seen: Vec<&str> = Vec::new();
+    let mut html = String::new();
+    for v in recent {
+        if seen.contains(&v.url.as_str()) || seen.len() == 4 {
+            continue;
+        }
+        seen.push(&v.url);
+        let host = url::Url::parse(&v.url).ok().and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_string())).unwrap_or_default();
+        let title = if v.title.is_empty() { &v.url } else { &v.title };
+        html.push_str(&format!(
+            r#"<a class="rc" href="{}"><span class="rt">{}</span><span class="rh">{}</span></a>"#,
+            escape_html(&v.url),
+            escape_html(title),
+            escape_html(&host)
+        ));
+    }
+    if html.is_empty() {
+        html
+    } else {
+        format!(r#"<section id="recent"><h2>Reprendre</h2><div class="rcs">{html}</div></section>"#)
+    }
+}
+
 pub(crate) fn escape_html(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -543,6 +601,24 @@ impl Surface {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zone_de_la_page() {
+        let f = |bar, style, side, strip, focus| Frame { bar, style, side, strip, focus };
+        let (l, t) = (BarPosition::Left, SidebarStyle::Palette);
+        // Barre à gauche : la page est posée en carte, avec une marge autour.
+        assert_eq!(page_area(1000.0, 800.0, &f(l, t, 56, false, false)), (56.0, 8.0, 936.0, 784.0));
+        // Bandeau d'adresse au-dessus de la page.
+        assert_eq!(page_area(1000.0, 800.0, &f(l, SidebarStyle::Banner, 56, false, false)), (56.0, 44.0, 936.0, 748.0));
+        // Barre large : au moins 240 px.
+        assert_eq!(page_area(1000.0, 800.0, &f(l, SidebarStyle::Wide, 56, false, false)).0, 240.0);
+        // À droite, avec le bandeau du bas.
+        assert_eq!(page_area(1000.0, 800.0, &f(BarPosition::Right, t, 100, true, false)), (8.0, 8.0, 892.0, 744.0));
+        // En haut.
+        assert_eq!(page_area(1000.0, 800.0, &f(BarPosition::Top, t, 56, false, false)), (8.0, 44.0, 984.0, 748.0));
+        // Mode concentration : un rail de 14 px.
+        assert_eq!(page_area(1000.0, 800.0, &f(l, SidebarStyle::Wide, 300, false, true)), (14.0, 4.0, 982.0, 792.0));
+    }
 
     #[test]
     fn messages_interface() {
@@ -599,7 +675,7 @@ mod tests {
             name: "<b>Léa</b>".into(),
             ..Default::default()
         };
-        let html = home_page(&s, &[]);
+        let html = home_page(&s, &[], &[]);
         assert!(html.contains("&lt;b&gt;Léa&lt;/b&gt;"));
         assert!(!html.contains("{{NAME}}"));
     }
@@ -611,7 +687,7 @@ mod tests {
             name: "{{BOOKMARKS}}".into(),
             ..Default::default()
         };
-        let html = home_page(&s, &[]);
+        let html = home_page(&s, &[], &[]);
         assert!(html.contains(r#"data-name="{{BOOKMARKS}}""#));
         assert_eq!(
             fill_template("a {{X}} b {{Y}} {{", &[("X", "1".into())]),

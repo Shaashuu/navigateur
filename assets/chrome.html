@@ -5,10 +5,11 @@
 <title>Feather</title>
 <style>
   :root {
-    --bg: #f4f3ef;
+    --bg: #efede7;
     --surface: #ffffff;
     --text: #1d1d1f;
-    --muted: #8a8a8e;
+    --muted: #6e6e73;
+    --chip: #e3e1da;
     --line: #e2e0da;
     --accent: #5b5bd6;
     --accent-soft: #e6e6fb;
@@ -18,10 +19,11 @@
   /* Une seule palette sombre : `applyTheme` choisit le mode (data-mode) selon le
      réglage et, en « automatique », selon le système. */
   :root[data-mode="dark"] {
-    --bg: #17171a;
+    --bg: #121215;
     --surface: #222226;
     --text: #ececef;
-    --muted: #7d7d85;
+    --muted: #9a9aa2;
+    --chip: #2c2c32;
     --line: #34343a;
     --accent: #8f8ff5;
     --accent-soft: #2c2c4a;
@@ -602,6 +604,160 @@
   .tab.active .side-ttl { color: var(--text); font-weight: 500; }
   body:not(.wide) .side-ttl { display: none; }
   body.wide[data-pos="right"] .close, body.wide[data-pos="right"] .mute { right: auto; left: 4px; }
+
+  /* --- Style « Plume » : la page posée en carte sur le fond (marge de 8 px,
+     voir ui::page_area), des pastilles carrées, un trait sur l'onglet actif --- */
+  body:not([data-pos="top"]) #pills .tab, body:not([data-pos="top"]) #pills .tab.active { height: 44px; }
+  body:not([data-pos="top"]) #pills .tab .dot, body:not([data-pos="top"]) #pills .tab:hover .dot {
+    width: 34px; height: 34px; border-radius: 11px; background: var(--chip); opacity: 1;
+    display: grid; place-items: center; box-shadow: none;
+  }
+  body:not([data-pos="top"]) #pills .tab:hover .dot { filter: brightness(.96); }
+  body:not([data-pos="top"]) #pills .tab.active .dot { background: var(--surface); box-shadow: 0 1px 4px rgba(0, 0, 0, .16); }
+  body:not([data-pos="top"]) #pills .tab.active::after {
+    content: ''; position: absolute; left: 0; top: 11px; bottom: 11px; width: 4px; border-radius: 0 3px 3px 0; background: var(--accent);
+  }
+  body[data-pos="right"] #pills .tab.active::after { left: auto; right: 0; border-radius: 3px 0 0 3px; }
+  body:not([data-pos="top"]) #pills .tab.asleep .dot { opacity: .45; }
+  body:not([data-pos="top"]) #pills .tab.w1 .dot { box-shadow: 0 0 0 2.5px #e8a317; }
+  body:not([data-pos="top"]) #pills .tab.w2 .dot { box-shadow: 0 0 0 2.5px var(--danger); }
+  .dot .ini { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1; }
+  body[data-pos="top"] .dot .ini { display: none; }
+
+  /* Champ d'adresse du bandeau et de la barre large */
+  .addr {
+    display: flex; align-items: center; gap: 8px; min-width: 0; height: 34px; padding: 0 12px;
+    border-radius: 17px; background: var(--surface); border: 1px solid var(--line); color: var(--muted);
+  }
+  .addr:focus-within { border-color: var(--accent); }
+  .addr input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 13.5px; user-select: text; }
+  .addr .lk { flex: none; display: grid; place-items: center; color: #2f9e5b; }
+  .addr .lk.insecure { color: var(--danger); }
+  .addr kbd { font: inherit; font-size: 11px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); }
+  .shield {
+    flex: none; height: 30px; display: none; align-items: center; gap: 6px; padding: 0 12px; border-radius: 15px;
+    background: #e3f4ea; color: #17643a; font-size: 12.5px; font-weight: 600;
+  }
+  :root[data-mode="dark"] .shield { background: #1f3a2a; color: #8fe0b0; }
+  .shield.on { display: flex; }
+
+  /* 2a · Bandeau d'adresse au-dessus de la page (ui::BANNER_HEIGHT) */
+  #banner { position: fixed; top: 0; left: var(--side); right: 0; height: 44px; display: none; align-items: center; gap: 4px; padding: 0 8px 0 4px; }
+  body[data-pos="right"] #banner { left: 0; right: var(--side); padding: 0 4px 0 8px; }
+  body[data-style="banner"]:not([data-pos="top"]):not(.focus) #banner { display: flex; }
+  #banner #nav { flex-direction: row; }
+  #banner .addr { flex: 1; margin: 0 6px; }
+  body[data-style="banner"]:not([data-pos="top"]) #search-pill,
+  body[data-style="banner"]:not([data-pos="top"]) #reader-pill,
+  body[data-style="wide"]:not([data-pos="top"]) #search-pill { display: none; }
+
+  /* 2b, 2d · Barre large (en permanence ou au survol) : boutons en ligne, adresse en tête */
+  #side-addr { display: none; }
+  body[data-style="wide"]:not([data-pos="top"]):not(.focus) #top, body.hovering #top {
+    width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 10px;
+  }
+  body[data-style="wide"]:not([data-pos="top"]):not(.focus) #nav, body.hovering #nav { flex-direction: row; }
+  body[data-style="wide"]:not([data-pos="top"]):not(.focus) #lib-btns, body.hovering #lib-btns {
+    flex-direction: row; border-top: 0; padding-top: 0; margin: 0; order: 3;
+  }
+  body[data-style="wide"]:not([data-pos="top"]):not(.focus) #side-addr, body.hovering #side-addr { display: flex; width: 100%; order: 2; }
+  body.hovering #sidebar {
+    width: 300px; z-index: 26; background: var(--bg); box-shadow: 8px 0 32px rgba(0, 0, 0, .16); border-radius: 0 14px 14px 0;
+  }
+  body.hovering[data-pos="right"] #sidebar { box-shadow: -8px 0 32px rgba(0, 0, 0, .16); border-radius: 14px 0 0 14px; }
+  body.hovering .side-ttl { display: block; opacity: 1; }
+  body.hovering .grp .n { display: inline; }
+  body.hovering .grp .c::before { content: ' · '; }
+  body.hovering .grp { max-width: 260px; }
+
+  /* 3b · Mode concentration : un rail de 14 px (ui::FOCUS_RAIL) ; la barre revient au survol */
+  body.focus:not(.hovering) #sidebar { width: 14px; padding: 0; }
+  body.focus:not(.hovering) #sidebar > * { visibility: hidden; }
+  body.focus:not(.hovering) #sidebar::after {
+    content: ''; position: absolute; left: 4px; top: 50%; width: 6px; height: 44px; margin-top: -22px; border-radius: 3px; background: var(--accent); opacity: .7;
+  }
+  body.focus[data-pos="right"]:not(.hovering) #sidebar::after { left: auto; right: 4px; }
+  body.focus #resizer { display: none; }
+
+  /* 2c · Palette : les actions de la page sous l'adresse */
+  #bar-acts { display: none; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: min(660px, 100%); margin-top: 10px; padding: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+  #bar-acts.on { display: grid; }
+  #bar-acts button { display: flex; align-items: center; justify-content: center; gap: 8px; height: 42px; border-radius: 11px; border: 1px solid var(--line); font-size: 13.5px; }
+  #bar-acts button:hover { border-color: var(--accent); background: var(--accent-soft); }
+  #bar-acts button svg { color: var(--muted); flex: none; }
+  #bar-acts button.on svg { color: #e8a317; fill: currentColor; }
+  #bar-acts button:disabled { opacity: .45; cursor: default; border-color: var(--line); background: none; }
+
+  /* --- Paramètres agrandis, avec des aperçus pour les choix visuels --- */
+  #settings-form { width: min(1130px, 100%); height: min(730px, 100%); }
+  .set-nav { width: 260px; padding: 24px 14px; }
+  .set-nav h2 { font-size: 22px; font-weight: 700; margin: 0 8px 16px; }
+  .set-search { height: 40px; border-radius: 20px; padding: 0 14px; margin-bottom: 12px; }
+  .set-search input { font-size: 14px; }
+  .navbtn { padding: 11px 12px; font-size: 14.5px; border-radius: 10px; }
+  .set-body { padding: 28px 36px 34px; }
+  .set-body h3 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .set-body .desc { font-size: 14px; margin-bottom: 14px; }
+  .srow { min-height: 56px; }
+  .srow .lab { font-size: 15px; }
+  .srow .lab small { font-size: 13px; }
+  #settings .choices.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: 100%; }
+  #settings .choices.cards.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #settings .choices.cards button {
+    height: auto; padding: 8px; border-radius: 12px; border: 1px solid var(--line); display: flex; flex-direction: column;
+    gap: 8px; text-align: left; font-size: 14px; font-weight: 600; white-space: normal;
+  }
+  #settings .choices.cards button:hover { border-color: var(--accent); }
+  #settings .choices.cards button.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--surface); color: var(--accent); }
+  #settings .choices.cards button small { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--muted); }
+  #settings .choices.cards button > span:last-child { padding: 0 4px 2px; }
+  #s-width { flex: 1; max-width: 320px; accent-color: var(--accent); }
+  #s-width-v { width: 60px; text-align: right; font-variant-numeric: tabular-nums; }
+  /* Miniatures : une fenêtre de Feather en petit (toujours en couleurs claires, sauf le thème sombre) */
+  .th { position: relative; display: flex; gap: 4px; height: 76px; padding: 6px; border-radius: 8px; background: #efede7; border: 1px solid #e2e0da; overflow: hidden; }
+  .th i, .th b { display: block; }
+  .th .sb { width: 10px; display: flex; flex-direction: column; gap: 4px; padding-top: 2px; }
+  .th .sb b { width: 8px; height: 8px; border-radius: 3px; background: #d4d2ca; }
+  .th .sb b:first-child { background: #5b5bd6; }
+  .th .pg { flex: 1; border-radius: 4px; background: #fff; }
+  .th .col { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .th .bn { height: 8px; border-radius: 4px; background: #fff; border: 1px solid #d4d2ca; }
+  .th .tp { height: 10px; display: flex; gap: 3px; }
+  .th .tp b { width: 22px; border-radius: 5px; background: #d4d2ca; }
+  .th .tp b:first-child { background: #5b5bd6; }
+  .th.vert { flex-direction: column; }
+  .th.dark { background: #121215; border-color: #34343a; }
+  .th.dark .pg { background: #222226; }
+  .th.dark .sb b { background: #3a3a40; }
+  .th.dark .sb b:first-child { background: #8f8ff5; }
+  .th.auto { background: linear-gradient(90deg, #efede7 50%, #121215 50%); }
+  .th.auto .pg { background: linear-gradient(90deg, #fff 44%, #222226 44%); }
+  .th .wd { width: 46px; display: flex; flex-direction: column; gap: 4px; }
+  .th .wd i { height: 6px; border-radius: 3px; background: #d4d2ca; }
+  .th .wd i:first-child { height: 8px; background: #fff; border: 1px solid #d4d2ca; }
+  .th .wd i:nth-child(2) { background: #b9b7f0; }
+  .th .ov { position: absolute; left: 6px; top: 6px; bottom: 6px; width: 54px; border-radius: 4px; background: #efede7; box-shadow: 3px 0 8px rgba(0, 0, 0, .18); display: flex; flex-direction: column; gap: 4px; padding: 4px; }
+  .th .ov i { height: 5px; border-radius: 3px; background: #d4d2ca; }
+  .th .ov i:first-child { height: 8px; background: #fff; border: 1px solid #d4d2ca; }
+  .th .pal { position: absolute; left: 26px; right: 18px; top: 14px; height: 30px; border-radius: 5px; background: #fff; box-shadow: 0 3px 10px rgba(0, 0, 0, .2); padding: 4px; display: flex; flex-direction: column; gap: 4px; }
+  .th .pal i { height: 7px; border-radius: 3px; background: #efede7; border: 1px solid #d4d2ca; }
+  .th .pal i + i { height: 5px; border: 0; background: #e6e6fb; width: 70%; }
+  /* Vue d'ensemble : une carte par catégorie, puis les réglages les plus utilisés */
+  #ov-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
+  #ov-tiles button {
+    display: flex; flex-direction: column; gap: 6px; min-height: 140px; padding: 16px; border-radius: 14px;
+    border: 1px solid var(--line); text-align: left; background: var(--surface);
+  }
+  #ov-tiles button:hover { border-color: var(--accent); }
+  #ov-tiles .k { font-size: 11.5px; font-weight: 700; letter-spacing: .04em; color: var(--muted); text-transform: uppercase; }
+  #ov-tiles .ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 18px; margin: 4px 0; }
+  #ov-tiles .ic.ok { background: #e3f4ea; color: #17643a; }
+  :root[data-mode="dark"] #ov-tiles .ic.ok { background: #1f3a2a; color: #8fe0b0; }
+  #ov-tiles .ic.off { background: var(--chip); color: var(--muted); }
+  #ov-tiles .t { font-size: 15.5px; font-weight: 600; }
+  #ov-tiles .s { font-size: 13px; color: var(--muted); }
+  #ov-quick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
+  #ov-quick .srow:nth-last-child(-n+2) { border-bottom: 0; }
 </style>
 </head>
 <body data-pos="left">
@@ -640,6 +796,7 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M10 10h4v4h-4zM9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></svg>
         </button>
       </div>
+      <label class="addr" id="side-addr"><span class="lk" id="s-lock"></span><input id="side-input" spellcheck="false" autocomplete="off" aria-label="Adresse de la page" placeholder="Rechercher ou saisir une adresse"></label>
     </div>
     <div id="middle">
       <button id="search-pill" hidden aria-label="Rechercher ou aller à une adresse (Ctrl+L)">
@@ -652,6 +809,14 @@
     </div>
   </nav>
 
+  <!-- 2a · Bandeau d'adresse (le bloc #nav y est déplacé, voir applyStyle) -->
+  <div id="banner">
+    <label class="addr" id="b-addr"><span class="lk" id="b-lock"></span><input id="b-input" spellcheck="false" autocomplete="off" aria-label="Adresse de la page" placeholder="Rechercher ou saisir une adresse"><kbd id="b-kbd">Ctrl L</kbd></label>
+    <button type="button" class="shield" id="b-shield" title="Traqueurs et publicités bloqués : réglages du site"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>Protégé</button>
+    <button type="button" class="round" id="b-reader" hidden aria-label="Mode lecture"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5c-3.5-.5-6.5 0-8.5 1.5zM12 6.5v13"/></svg></button>
+    <button type="button" class="round star" id="b-star" aria-label="Ajouter aux favoris (Ctrl+D)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg></button>
+  </div>
+
   <div id="overlay">
     <div id="bar" class="card">
       <span id="lock" hidden role="button" tabindex="-1"></span>
@@ -661,6 +826,14 @@
       <button class="icon star" id="star" title="Ajouter aux favoris (Ctrl+D)"><svg width="17" height="17" style="margin:auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg></button>
       <button class="icon" id="reader-btn" hidden title="Mode lecture"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5c-3.5-.5-6.5 0-8.5 1.5zM12 6.5v13"/></svg></button>
       <button class="icon" id="reload" title="Actualiser (F5)">&#8635;</button>
+    </div>
+    <div id="bar-acts" class="card" role="toolbar" aria-label="Actions de la page">
+      <button type="button" data-act="copy"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/></svg><span>Copier l'adresse</span></button>
+      <button type="button" data-act="star"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg><span>Favori</span></button>
+      <button type="button" data-act="reader"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5c-3.5-.5-6.5 0-8.5 1.5zM12 6.5v13"/></svg><span>Mode lecture</span></button>
+      <button type="button" data-act="capture"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><circle cx="12" cy="12" r="3"/></svg><span>Capture</span></button>
+      <button type="button" data-act="site"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.5"/></svg><span>Réglages du site</span></button>
+      <button type="button" data-act="print"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V4h10v5M7 17H5a1.5 1.5 0 0 1-1.5-1.5v-5A1.5 1.5 0 0 1 5 9h14a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 19 17h-2"/><path d="M7 14h10v6H7z"/></svg><span>Imprimer</span></button>
     </div>
     <ul id="command-list" class="card"></ul>
     <div id="cmd-result" class="card" hidden><div class="main"></div><ul></ul></div>
@@ -773,6 +946,7 @@
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
           <input type="search" id="s-search" placeholder="Chercher un réglage" spellcheck="false" autocomplete="off">
         </div>
+        <button type="button" class="navbtn" data-cat="apercu"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span>Vue d'ensemble</span></button>
         <button type="button" class="navbtn" data-cat="general"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z"/></svg><span>Général</span></button>
         <button type="button" class="navbtn" data-cat="apparence"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor"/></svg><span>Apparence</span></button>
         <button type="button" class="navbtn" data-cat="recherche"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Recherche</span></button>
@@ -785,6 +959,18 @@
       </nav>
       <div class="set-body" id="set-body">
         <button type="button" class="set-close" id="s-close" title="Fermer (Échap)" aria-label="Fermer">&times;</button>
+        <section data-cat="apercu">
+          <h3>Votre Feather en un coup d'œil</h3>
+          <p class="desc">Chaque carte mène à sa catégorie.</p>
+          <div id="ov-tiles"></div>
+          <h3 class="sec">Réglages rapides</h3>
+          <div id="ov-quick">
+            <div class="srow"><label class="lab" for="q-economy">Mode économie</label><input type="checkbox" class="tg" id="q-economy" data-for="s-economy"></div>
+            <div class="srow"><label class="lab" for="q-ads">Bloquer les publicités</label><input type="checkbox" class="tg" id="q-ads" data-for="s-ads"></div>
+            <div class="srow"><label class="lab" for="q-trackers">Bloquer les traqueurs</label><input type="checkbox" class="tg" id="q-trackers" data-for="s-trackers"></div>
+            <div class="srow"><label class="lab" for="q-bmhome">Favoris sur la page d'accueil</label><input type="checkbox" class="tg" id="q-bmhome" data-for="s-bmhome"></div>
+          </div>
+        </section>
         <section data-cat="general">
           <h3>Général</h3>
           <p class="desc">Ce que Feather ouvre au démarrage et qui il salue.</p>
@@ -800,20 +986,29 @@
         </section>
         <section data-cat="apparence">
           <h3>Apparence</h3>
-          <p class="desc">Les couleurs, la place de la barre et l'accueil.</p>
-          <div class="srow"><span class="lab">Thème</span>
-            <div class="choices" id="s-theme">
-              <button type="button" data-value="auto">Automatique</button>
-              <button type="button" data-value="light">Clair</button>
-              <button type="button" data-value="dark">Sombre</button>
+          <p class="desc">Cliquez sur un aperçu : le changement se voit tout de suite.</p>
+          <div class="srow col"><span class="lab">Thème</span>
+            <div class="choices cards" id="s-theme">
+              <button type="button" data-value="auto"><span class="th auto"><i class="sb"><b></b><b></b><b></b></i><i class="pg"></i></span><span>Automatique<small>Suit le système</small></span></button>
+              <button type="button" data-value="light"><span class="th"><i class="sb"><b></b><b></b><b></b></i><i class="pg"></i></span><span>Clair</span></button>
+              <button type="button" data-value="dark"><span class="th dark"><i class="sb"><b></b><b></b><b></b></i><i class="pg"></i></span><span>Sombre</span></button>
             </div></div>
-          <div class="srow"><span class="lab">Position de la barre<small>À gauche ou à droite, tirer sur son bord l'élargit</small></span>
-            <div class="choices" id="s-pos">
-              <button type="button" data-value="left">Gauche</button>
-              <button type="button" data-value="right">Droite</button>
-              <button type="button" data-value="top">Haut</button>
+          <div class="srow col"><span class="lab">Position de la barre des onglets</span>
+            <div class="choices cards" id="s-pos">
+              <button type="button" data-value="left"><span class="th"><i class="sb"><b></b><b></b><b></b></i><i class="pg"></i></span><span>À gauche</span></button>
+              <button type="button" data-value="right"><span class="th"><i class="pg"></i><i class="sb"><b></b><b></b><b></b></i></span><span>À droite</span></button>
+              <button type="button" data-value="top"><span class="th vert"><i class="tp"><b></b><b></b><b></b></i><i class="pg"></i></span><span>En haut</span></button>
             </div></div>
-          <div class="srow"><label class="lab" for="s-bmhome">Favoris sur la page d'accueil</label>
+          <div class="srow col" id="row-style"><span class="lab">Adresse et boutons de la page<small>Avec la barre à gauche ou à droite. Ctrl+Maj+F : mode concentration, la barre se réduit à un rail.</small></span>
+            <div class="choices cards four" id="s-style">
+              <button type="button" data-value="palette"><span class="th"><i class="sb"><b></b><b></b><b></b></i><i class="pg"></i><i class="pal"><i></i><i></i></i></span><span>Palette<small>Un clic sur l'onglet actif : adresse et actions</small></span></button>
+              <button type="button" data-value="banner"><span class="th"><i class="sb"><b></b><b></b><b></b></i><i class="col"><i class="bn"></i><i class="pg"></i></i></span><span>Bandeau<small>L'adresse toujours au-dessus de la page</small></span></button>
+              <button type="button" data-value="hover"><span class="th"><i class="sb"><b></b><b></b><b></b></i><i class="pg"></i><i class="ov"><i></i><i></i><i></i><i></i></i></span><span>Au survol<small>La barre s'ouvre quand la souris s'approche</small></span></button>
+              <button type="button" data-value="wide"><span class="th"><i class="wd"><i></i><i></i><i></i><i></i></i><i class="pg"></i></span><span>Barre large<small>L'adresse et les titres en permanence</small></span></button>
+            </div></div>
+          <div class="srow" id="row-width"><label class="lab" for="s-width">Largeur de la barre<small>Les pastilles seules, ou avec le titre des pages</small></label>
+            <input type="range" id="s-width" min="56" max="300" step="2"><span id="s-width-v"></span></div>
+          <div class="srow"><label class="lab" for="s-bmhome">Favoris sur la page d'accueil<small>Avec les dernières pages visitées (« Reprendre »)</small></label>
             <input type="checkbox" class="tg" id="s-bmhome"></div>
         </section>
         <section data-cat="recherche">
@@ -926,6 +1121,7 @@
     { name: '/memoire', desc: 'Mémoire des onglets (Maj+Échap)', run: () => openLibrary('memory') },
     { name: '/economie', desc: 'Activer ou couper le mode économie', run: () => toggleEconomy() },
     { name: '/site', desc: 'Fiche du site : autorisations, zoom, données', run: () => openSite() },
+    { name: '/concentration', desc: 'Masquer la barre, ne garder que la page (Ctrl+Maj+F)', run: () => shortcut('focus') },
   ];
   const shortcut = (name) => send({ type: 'shortcut', shortcut: name });
 
@@ -935,12 +1131,12 @@
   let lastActive = null;    // onglet actif au dernier dessin
   let drag = null;          // onglet en cours de déplacement
   const badIcons = new Set(); // icônes introuvables : on garde le point gris
-  let mode = null;          // null, 'bar', 'settings', 'library', 'site', 'group' ou 'import'
+  let mode = null;          // null, 'bar', 'settings', 'library', 'site', 'group', 'import' ou 'hover'
   // Fenêtres posées sur la page, fermées dès qu'une autre s'ouvre.
   const isSheet = () => ['library', 'site', 'group', 'import'].includes(mode);
   let matches = [];
   let selected = 0;
-  let setCat = 'general';   // catégorie ouverte dans les paramètres
+  let setCat = 'apercu';    // catégorie ouverte dans les paramètres
   const LIB_KINDS = ['bookmarks', 'history', 'downloads', 'memory'];
   let libKind = 'history';   // onglet ouvert dans la bibliothèque
   let libItems = [];
@@ -950,6 +1146,18 @@
   let editing = false;      // adresse de l'onglet actif en cours de modification (barre en haut)
   const isTop = () => (state.settings.bar_position || 'left') === 'top';
   const applyPos = (pos) => { document.body.dataset.pos = pos || 'left'; };
+  // Barre latérale : pastilles et palette (par défaut), bandeau d'adresse,
+  // barre qui s'ouvre au survol, ou barre large avec l'adresse en haut.
+  const sideStyle = () => state.settings.sidebar_style || 'palette';
+  const hasAddr = () => !isTop() && ['banner', 'wide'].includes(sideStyle());
+  function applyStyle() {
+    const style = sideStyle();
+    document.body.dataset.style = style;
+    // Bandeau : les flèches passent à côté de l'adresse.
+    const nav = $('nav');
+    if (style === 'banner' && !isTop()) { if (nav.parentNode !== $('banner')) $('banner').prepend(nav); }
+    else if (nav.parentNode !== $('top')) $('gear').after(nav);
+  }
 
   const input = $('input');
   const activeTab = () => state.tabs.find((t) => t.active);
@@ -1011,6 +1219,7 @@
     else if (mode === 'site') closeSite();
     else if (mode === 'group' || mode === 'import') closeSheet();
     else if (mode === 'menu') closeTabMenu();
+    else if (mode === 'hover') endHover();
   }
 
   let ctxTimer = 0;
@@ -1139,6 +1348,8 @@
     $('star').classList.toggle('on', !!(tab && tab.bookmarked));
     $('star').title = tab && tab.bookmarked ? 'Retirer des favoris (Ctrl+D)' : 'Ajouter aux favoris (Ctrl+D)';
     renderDownloadsButton();
+    renderAddr(tab);
+    if (mode === 'bar') renderActs();
     if (drag || (editing && document.querySelector('.urlinput'))) return; // on redessine les onglets à la fin du glisser-déposer
 
     const box = $('pills');
@@ -1180,6 +1391,14 @@
         img.src = icon;
         box.appendChild(img);
         el.querySelector('.dot').appendChild(box);
+      } else if (!isTop()) {
+        // Sans icône : l'initiale du site (« wikipedia » pour fr.wikipedia.org), une maison pour l'accueil.
+        const ini = document.createElement('span');
+        ini.className = 'ini';
+        const parts = tab.home ? [] : host(tab.url).split('.');
+        const name = parts.length > 1 ? parts[parts.length - 2] : (parts[0] || tab.title || '');
+        ini.textContent = tab.home ? '⌂' : name ? name[0].toUpperCase() : '';
+        el.querySelector('.dot').appendChild(ini);
       }
       if (!isTop()) {
         const ttl = document.createElement('span');
@@ -1340,10 +1559,13 @@
   const SIDE_MAX = 300;
   let resize = null;
   let sideFrame = 0;
+  const WIDE_MIN = 240;      // barre large : la place pour l'adresse (même valeur côté Rust)
   function applySide(width) {
-    const w = Math.round(Math.min(Math.max(width || SIDE_MIN, SIDE_MIN), SIDE_MAX, Math.max(SIDE_MIN, innerWidth / 2)));
+    const min = hasAddr() && sideStyle() === 'wide' ? WIDE_MIN : SIDE_MIN;
+    const w = Math.round(Math.min(Math.max(width || SIDE_MIN, min), Math.max(min, SIDE_MAX), Math.max(SIDE_MIN, innerWidth / 2)));
     const root = document.documentElement.style;
-    root.setProperty('--side', w + 'px');
+    // Mode concentration : il ne reste qu'un fil de 14 px.
+    root.setProperty('--side', (state.focus && !isTop() ? 14 : w) + 'px');
     // Le titre apparaît à partir de 70 px et devient net vers 150 px.
     root.setProperty('--label', String(Math.min(1, Math.max(0, (w - 70) / 80))));
     document.body.classList.toggle('wide', w > 70);
@@ -1419,6 +1641,11 @@
       send({ type: 'move_tab', id: tab.id, index: at < 0 ? rest.length : at });
     } else if (tab.active && onTitle && isTop()) {
       startEdit();
+      return;
+    } else if (tab.active && !isTop()) {
+      // Pastille déjà affichée : la palette (adresse et actions), ou le champ d'adresse.
+      endHover();
+      openBar('');
       return;
     } else {
       send({ type: 'activate_tab', id: tab.id });
@@ -1501,9 +1728,17 @@
   // Ouvre la barre par-dessus la page, avec l'adresse actuelle (ou un texte donné).
   function openBar(text, overlay) {
     if (!overlay && isTop() && startEdit(text)) return;
+    // Bandeau ou barre large : l'adresse se modifie là où elle est affichée.
+    if (!text && !overlay && hasAddr() && !state.focus) {
+      const field = addrInput();
+      if (field) { if (mode !== null) closePanel(); field.focus(); field.select(); return; }
+    }
     stopEdit();
     setMode('bar');
     const tab = activeTab();
+    // Sans texte tapé, sur une page : les actions de la page sous l'adresse.
+    $('bar-acts').classList.toggle('on', !text && !!tab && !tab.home);
+    renderActs();
     input.value = text || (tab && !tab.home ? tab.url : '');
     selected = 0;
     suggestions = [];
@@ -1516,6 +1751,7 @@
 
   function closeBar(focusPage) {
     if (mode !== 'bar') return;
+    $('bar-acts').classList.remove('on');
     input.value = '';
     suggestions = [];
     showResult(null);
@@ -1565,6 +1801,19 @@
     choose('s-startup', s.startup || 'home');
     choose('s-theme', s.theme || 'auto');
     choose('s-pos', s.bar_position || 'left');
+    choose('s-style', s.sidebar_style || 'palette');
+    const top = (s.bar_position || 'left') === 'top';
+    $('row-style').hidden = top;
+    $('row-width').hidden = top;
+    $('s-width').min = String((s.sidebar_style || 'palette') === 'wide' ? WIDE_MIN : SIDE_MIN);
+    if ($('s-width') !== active) $('s-width').value = String(s.sidebar_width || SIDE_MIN);
+    $('s-width-v').textContent = (s.sidebar_width || SIDE_MIN) + ' px';
+    // Sous Linux, la barre ne peut pas passer par-dessus la page.
+    const hover = $('s-style').querySelector('[data-value="hover"]');
+    hover.disabled = !state.overlay;
+    hover.title = state.overlay ? '' : 'Pas disponible sous Linux : la barre ne peut pas passer par-dessus la page';
+    for (const q of document.querySelectorAll('#ov-quick input')) q.checked = $(q.dataset.for).checked;
+    renderOverview();
     renderPermissions();
     renderUpdate();
   }
@@ -1576,6 +1825,44 @@
     for (const sec of document.querySelectorAll('.set-body section')) sec.classList.toggle('on', sec.dataset.cat === cat);
     $('set-body').scrollTop = 0;
   }
+  // Vue d'ensemble : une carte par catégorie, avec son réglage principal.
+  function renderOverview() {
+    const s = state.settings;
+    const u = state.update || {};
+    const on = (v) => v !== false;
+    const label = (id, v) => { const b = $(id).querySelector('[data-value="' + v + '"] span:last-child'); return b ? b.firstChild.textContent.trim() : v; };
+    const engine = $('s-engine').selectedOptions[0];
+    const top = (s.bar_position || 'left') === 'top';
+    const tiles = [
+      ['apparence', 'Apparence', 'A', '', label('s-theme', s.theme || 'auto'),
+        top ? 'Barre en haut' : 'Barre ' + ((s.bar_position || 'left') === 'right' ? 'à droite' : 'à gauche') + ' · ' + label('s-style', s.sidebar_style || 'palette')],
+      ['recherche', 'Recherche', engine ? engine.textContent[0] : '?', '', engine ? engine.textContent : '', 'Moteur des recherches tapées dans la barre'],
+      ['vieprivee', 'Vie privée', '✓', on(s.block_ads) || on(s.block_trackers) ? 'ok' : 'off',
+        on(s.block_ads) && on(s.block_trackers) ? 'Publicités et traqueurs bloqués' : on(s.block_trackers) ? 'Traqueurs bloqués' : on(s.block_ads) ? 'Publicités bloquées' : 'Rien n\'est bloqué',
+        'Autorisations des sites, listes de blocage'],
+      ['onglets', 'Mémoire', s.economy ? '❧' : '☾', s.economy ? 'ok' : '',
+        s.economy ? 'Mode économie actif' : 'Veille après ' + (s.sleep_minutes ?? 30) + ' min',
+        'Onglets cachés mis en veille pour libérer la mémoire'],
+      ['donnees', 'Données', '⟲', '', (s.history_days ?? 90) ? 'Historique gardé ' + (s.history_days ?? 90) + ' jours' : 'Historique non gardé',
+        on(s.index_pages) ? 'Recherche dans le texte des pages visitées' : 'Pages visitées non indexées'],
+      ['apropos', 'Mise à jour', '↑', u.state === 'available' ? '' : 'ok', 'Feather ' + (state.version || ''),
+        u.state === 'available' ? 'Une nouvelle version est disponible' : on(s.auto_update_check) ? 'Vérifiée au démarrage' : 'Vérification manuelle'],
+    ];
+    const box = $('ov-tiles');
+    box.textContent = '';
+    for (const [cat, k, ic, cls, t, sub] of tiles) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = '<span class="k"></span><span class="ic"></span><span class="t"></span><span class="s"></span>';
+      b.querySelector('.k').textContent = k;
+      b.querySelector('.ic').textContent = ic;
+      if (cls) b.querySelector('.ic').classList.add(cls);
+      b.querySelector('.t').textContent = t;
+      b.querySelector('.s').textContent = sub;
+      b.addEventListener('click', () => showCat(cat));
+      box.appendChild(b);
+    }
+  }
   // Recherche : on garde les réglages dont le texte contient tous les mots tapés.
   const fold = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   function filterSettings() {
@@ -1584,6 +1871,8 @@
     body.classList.toggle('searching', words.length > 0);
     let any = false;
     for (const sec of body.querySelectorAll('section')) {
+      // La vue d'ensemble reprend des réglages d'ailleurs : pas de doublons dans les résultats.
+      if (sec.dataset.cat === 'apercu') { sec.classList.toggle('empty', words.length > 0); continue; }
       const title = fold(sec.querySelector('h3').textContent);
       let found = 0;
       for (const row of sec.querySelectorAll('.srow, .key, .update')) {
@@ -1623,6 +1912,7 @@
       home_page: $('s-home').value,
       theme: chosen('s-theme'),
       bar_position: chosen('s-pos'),
+      sidebar_style: chosen('s-style'),
       auto_update_check: $('s-autoupdate').checked,
       startup: chosen('s-startup'),
       history_days: Number($('s-history').value),
@@ -1638,6 +1928,8 @@
     state.settings = Object.assign({}, state.settings, settings);
     applyTheme(settings.theme);
     applyPos(settings.bar_position);
+    applyStyle();
+    applySide(state.settings.sidebar_width);
     send({ type: 'save_settings', settings });
     const tag = $('s-saved');
     tag.classList.add('show');
@@ -1649,7 +1941,8 @@
     ['Rouvrir l\'onglet fermé', 'Ctrl+Maj+T'], ['Onglet privé', 'Ctrl+Maj+N'], ['Onglet suivant / précédent', 'Ctrl+Tab · Ctrl+Maj+Tab'],
     ['Page précédente / suivante', 'Alt+← · Alt+→'], ['Actualiser', 'F5 · Ctrl+R'], ['Chercher dans la page', 'Ctrl+F'],
     ['Ajouter aux favoris', 'Ctrl+D'], ['Couper le son de l\'onglet', 'Ctrl+M'], ['Imprimer', 'Ctrl+P'],
-    ['Zoom', 'Ctrl++ · Ctrl+- · Ctrl+0'], ['Capture de la page', 'Ctrl+Maj+S'], ['Mémoire des onglets', 'Maj+Échap'], ['Paramètres', 'Ctrl+,'],
+    ['Zoom', 'Ctrl++ · Ctrl+- · Ctrl+0'], ['Capture de la page', 'Ctrl+Maj+S'], ['Mémoire des onglets', 'Maj+Échap'],
+    ['Mode concentration', 'Ctrl+Maj+F'], ['Paramètres', 'Ctrl+,'],
   ];
   for (const [what, keys] of KEYS) {
     const row = document.createElement('div');
@@ -1716,6 +2009,7 @@
     if (mode === 'bar' && document.activeElement !== input) closeBar(false);
   }, 0));
   input.addEventListener('input', () => {
+    if ($('bar-acts').classList.contains('on')) { $('bar-acts').classList.remove('on'); queueShape(); }
     selected = input.value.trim().startsWith('/') ? 0 : -1;
     requestSuggestions();
     renderCommands();
@@ -1766,6 +2060,133 @@
   });
 
   $('search-pill').addEventListener('click', () => openBar(''));
+
+  // Actions de la page, sous la palette.
+  function renderActs() {
+    const tab = activeTab();
+    const box = $('bar-acts');
+    const star = box.querySelector('[data-act="star"]');
+    star.classList.toggle('on', !!(tab && tab.bookmarked));
+    star.querySelector('span').textContent = tab && tab.bookmarked ? 'Retirer des favoris' : 'Favori';
+    const reader = box.querySelector('[data-act="reader"]');
+    reader.disabled = !(tab && (tab.readable || tab.reading));
+    reader.querySelector('span').textContent = tab && tab.reading ? 'Quitter la lecture' : 'Mode lecture';
+    box.querySelector('[data-act="site"]').disabled = !state.site;
+  }
+  for (const b of $('bar-acts').querySelectorAll('button')) {
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', () => {
+      const act = b.dataset.act;
+      if (act === 'copy') {
+        const tab = activeTab();
+        if (tab && navigator.clipboard) navigator.clipboard.writeText(tab.url).catch(() => {});
+        else { input.select(); document.execCommand('copy'); }
+        closeBar(true);
+        return;
+      }
+      if (act === 'site') { openSite(); return; }
+      closeBar(act !== 'print' && act !== 'capture');
+      if (act === 'star') send({ type: 'toggle_bookmark', id: null });
+      else if (act === 'reader') send({ type: 'reader' });
+      else shortcut(act);
+    });
+  }
+
+  // Champs d'adresse du bandeau et de la barre large.
+  const addrInput = () => {
+    if (!hasAddr()) return null;
+    return sideStyle() === 'banner' ? $('b-input') : $('side-input');
+  };
+  function renderAddr(tab) {
+    const url = tab && !tab.home ? tab.url : '';
+    const web = !!(tab && !tab.home && /^https?:/.test(tab.url));
+    for (const [inp, lock] of [[$('b-input'), $('b-lock')], [$('side-input'), $('s-lock')]]) {
+      if (document.activeElement !== inp) inp.value = url;
+      lock.innerHTML = web ? (tab.secure ? LOCK : WARN) : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+      lock.classList.toggle('insecure', web && !tab.secure);
+      lock.title = web ? (tab.secure ? 'Connexion chiffrée (https)' : 'Connexion non sécurisée') + (state.site ? '\nCliquer pour la fiche du site' : '') : '';
+    }
+    $('b-kbd').textContent = isMac ? '⌘ L' : 'Ctrl L';
+    const shield = $('b-shield');
+    shield.hidden = !(tab && !tab.home && state.site);
+    shield.classList.toggle('on', !!(state.settings.block_ads !== false || state.settings.block_trackers !== false));
+    const canRead = !!(tab && (tab.readable || tab.reading));
+    $('b-reader').hidden = !canRead;
+    $('b-reader').classList.toggle('on', !!(tab && tab.reading));
+    $('b-reader').title = tab && tab.reading ? 'Quitter le mode lecture' : 'Mode lecture';
+    $('b-star').hidden = !tab || tab.home;
+    $('b-star').classList.toggle('on', !!(tab && tab.bookmarked));
+    $('b-star').title = tab && tab.bookmarked ? 'Retirer des favoris (Ctrl+D)' : 'Ajouter aux favoris (Ctrl+D)';
+  }
+  for (const inp of [$('b-input'), $('side-input')]) {
+    inp.addEventListener('focus', () => { endHover(); inp.select(); });
+    // Ce qui est tapé passe dans la palette, pour les suggestions et les commandes.
+    inp.addEventListener('input', () => {
+      const text = inp.value;
+      if (!text.trim()) return;
+      inp.value = '';
+      renderAddr(activeTab());
+      openBar(text, true);
+      $('bar-acts').classList.remove('on');
+      input.setSelectionRange(text.length, text.length);
+      selected = text.trim().startsWith('/') ? 0 : -1;
+      requestSuggestions();
+      renderCommands();
+    });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const text = inp.value.trim();
+        const tab = activeTab();
+        inp.blur();
+        if (text && !(tab && text === tab.url)) send({ type: 'navigate', input: text });
+        else send({ type: 'focus_page' });
+        e.preventDefault();
+      } else if (e.key === 'Escape') {
+        inp.blur();
+        send({ type: 'focus_page' });
+        e.preventDefault();
+      }
+    });
+    inp.addEventListener('blur', () => renderAddr(activeTab()));
+  }
+  for (const id of ['b-lock', 's-lock']) $(id).addEventListener('click', () => { if (state.site) openSite(); });
+  $('b-shield').addEventListener('click', () => openSite());
+  $('b-reader').addEventListener('click', () => send({ type: 'reader' }));
+  $('b-star').addEventListener('click', () => send({ type: 'toggle_bookmark', id: null }));
+
+  // Barre au survol (et fil du mode concentration) : elle s'ouvre par-dessus la page.
+  // Sous Linux, la page serait cachée : la barre reste fermée.
+  let hoverTimer = 0;
+  const canHover = () => !isTop() && !!state.overlay && (sideStyle() === 'hover' || state.focus);
+  function endHover() {
+    clearTimeout(hoverTimer);
+    if (!document.body.classList.contains('hovering')) return;
+    document.body.classList.remove('hovering');
+    if (mode === 'hover') setMode(null);
+    queueShape();
+  }
+  $('sidebar').addEventListener('pointerenter', () => {
+    clearTimeout(hoverTimer);
+    if (!canHover() || (mode !== null && mode !== 'hover')) return;
+    hoverTimer = setTimeout(() => {
+      if (mode !== null && mode !== 'hover') return;
+      document.body.classList.add('hovering');
+      setMode('hover');
+      queueShape();
+    }, 120);
+  });
+  // Fil du mode concentration : un clic le quitte (sans survol, sous Linux, c'est le seul moyen à la souris).
+  $('sidebar').addEventListener('click', (e) => {
+    if (e.target === $('sidebar') && document.body.classList.contains('focus') && !document.body.classList.contains('hovering')) shortcut('focus');
+  });
+  $('sidebar').addEventListener('pointerleave', () => {
+    clearTimeout(hoverTimer);
+    if (!document.body.classList.contains('hovering') || drag) return;
+    hoverTimer = setTimeout(() => {
+      // Le menu d'un onglet, ouvert depuis la barre, la garde ouverte.
+      if (!$('sidebar').matches(':hover') && document.activeElement !== $('side-input')) endHover();
+    }, 300);
+  });
   $('reader-pill').addEventListener('click', () => send({ type: 'reader' }));
   $('reader-btn').addEventListener('mousedown', (e) => e.preventDefault());
   $('reader-btn').addEventListener('click', () => { closeBar(false); send({ type: 'reader' }); });
@@ -1892,8 +2313,15 @@
   $('new-tab').addEventListener('click', () => send({ type: 'new_tab' }));
 
   // --- Paramètres ---
-  for (const id of ['s-theme', 's-pos', 's-startup']) {
-    for (const b of $(id).children) b.addEventListener('click', () => { choose(id, b.dataset.value); saveSettings(); });
+  for (const id of ['s-theme', 's-pos', 's-style', 's-startup']) {
+    for (const b of $(id).children) b.addEventListener('click', () => { choose(id, b.dataset.value); saveSettings(); fillSettings(); });
+  }
+  // Largeur de la barre : comme en tirant sur son bord.
+  $('s-width').addEventListener('input', () => { setSide(Number($('s-width').value), false); $('s-width-v').textContent = state.settings.sidebar_width + ' px'; });
+  $('s-width').addEventListener('change', () => { setSide(Number($('s-width').value), true); fillSettings(); });
+  // Réglages rapides de la vue d'ensemble : ils cochent la vraie case.
+  for (const q of document.querySelectorAll('#ov-quick input')) {
+    q.addEventListener('change', () => { $(q.dataset.for).checked = q.checked; saveSettings(); renderOverview(); });
   }
   for (const id of ['s-engine', 's-history', 's-sleep', 's-bmhome', 's-trackers', 's-ads', 's-index', 's-economy', 's-autoupdate']) {
     $(id).addEventListener('change', saveSettings);
@@ -2446,6 +2874,7 @@
     if (e.shiftKey && k === 't') shortcut('reopen_tab');
     else if (e.shiftKey && k === 's') shortcut('capture');
     else if (e.shiftKey && k === 'n') shortcut('new_private_tab');
+    else if (e.shiftKey && k === 'f') shortcut('focus');
     else if (k === 'f' && !e.shiftKey) openFind();
     else if (k === 'p' && !e.shiftKey) shortcut('print');
     else if (k === '+' || k === '=') shortcut('zoom_in');
@@ -2471,6 +2900,9 @@
       document.body.classList.toggle('overlay', !!state.overlay);
       applyTheme(state.settings.theme);
       applyPos(state.settings.bar_position);
+      applyStyle();
+      document.body.classList.toggle('focus', !!state.focus && !isTop());
+      if (!canHover()) endHover();
       if (!resize) applySide(state.settings.sidebar_width);
       // Autre onglet affiché : la recherche dans la page se ferme.
       const active = activeTab();
