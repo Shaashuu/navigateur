@@ -236,8 +236,8 @@ impl TabManager {
         let webview = build_page(id, &tab.url, ctx, tab.private, Arc::clone(&tab.host))?;
         crate::layers::round_page(&webview);
         let host = tab.host();
-        adblock::apply(&webview, &host);
-        tab.ads = Some(adblock::active_on(&host));
+        adblock::apply(&webview, &host, tab.private);
+        tab.ads = Some(adblock::active_on(&host, tab.private));
         let _ = webview.set_visible(visible);
         tab.webview = Some(webview);
         tab.loading = true;
@@ -265,6 +265,27 @@ impl TabManager {
         tab.weight = Weight::default();
         tab.repos = Repos::Eveille;
         stop_page(&webview);
+        self.closing.push((Instant::now(), webview));
+        true
+    }
+
+    /// Détache la page d'un onglet pour en recréer une neuve (voir `App::reload`) :
+    /// l'ancienne, et son processus WebKit, sont détruits avec la mémoire
+    /// qu'ils avaient accumulée. Contrairement à la veille, vaut aussi pour
+    /// l'onglet actif et un onglet qui joue du son. L'appelant réveille ensuite
+    /// l'onglet. Faux si l'onglet n'avait pas de page.
+    pub fn detach(&mut self, id: TabId) -> bool {
+        let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) else {
+            return false;
+        };
+        let Some(webview) = tab.webview.take() else {
+            return false;
+        };
+        tab.weight = Weight::default();
+        tab.audible = false;
+        // Pas de passage par about:blank : son titre vide remplacerait celui de la
+        // page dans l'historique, puisque l'onglet est aussitôt réveillé.
+        silence_page(&webview);
         self.closing.push((Instant::now(), webview));
         true
     }
@@ -603,12 +624,17 @@ fn clean_name(name: &str) -> String {
 
 /// Coupe le son et vide une page avant de la détruire.
 fn stop_page(webview: &WebView) {
+    silence_page(webview);
+    let _ = webview.load_url("about:blank");
+}
+
+/// Cache une page qui va être détruite et coupe ses vidéos et musiques.
+fn silence_page(webview: &WebView) {
     errorpage::forget(webview);
     let _ = webview.set_visible(false);
     let _ = webview.evaluate_script(
         "document.querySelectorAll('video, audio').forEach((m) => { m.pause(); m.removeAttribute('src'); m.load(); })",
     );
-    let _ = webview.load_url("about:blank");
 }
 
 /// Vrai pour les sites de Google (google.fr, www.google.com, news.google.co.uk…).
@@ -823,7 +849,7 @@ fn build_page(
     // Les extensions agissent sur les pages, sauf dans les onglets privés.
     let builder = extensions::prepare_builder(builder, !private, url);
     let webview = ctx.surface.attach(builder, ctx.window)?;
-    trackers::install(&webview, host, block_trackers);
+    trackers::install(&webview, host, block_trackers, private);
     errorpage::install(&webview, id, ctx.proxy.clone());
     Ok(webview)
 }

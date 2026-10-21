@@ -30,6 +30,8 @@ const ZOOMS: [f64; 13] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 
 
 /// Un onglet caché et lourd est mis en veille après ce délai, quel que soit le réglage.
 const HEAVY_SLEEP: Duration = Duration::from_secs(5 * 60);
+/// « Actualiser » recrée à neuf une page qui pèse au moins autant (Mo).
+const FRESH_RELOAD_MB: u32 = 300;
 
 /// Au-delà de ce nombre de questions en attente, un onglet essuie un refus
 /// (une page ne peut pas noyer l'utilisateur sous les demandes).
@@ -438,10 +440,22 @@ impl App {
     }
 
     /// Actualiser. Sur une page d'erreur, on retente l'adresse en échec à sa place.
-    pub(crate) fn reload(&self) {
+    ///
+    /// Une page lourde est recréée à neuf au lieu d'être rechargée : WebKit
+    /// recharge dans le même processus, qui garde la mémoire de la page
+    /// précédente (YouTube passait de 1 à 1,6 Go en quelques rechargements,
+    /// alors que la veille la rendait). En échange, l'onglet perd son historique
+    /// « Précédent ». Pas pour un onglet privé, qui perdrait sa session.
+    pub(crate) fn reload(&mut self) {
         let Some(tab) = self.tabs.active() else { return };
         if let Some((_, url)) = &tab.failed {
             tab.eval(&format!("location.replace({})", js(url)));
+        } else if !tab.private && tab.weight.memory_mb.is_some_and(|mb| mb >= FRESH_RELOAD_MB) {
+            let id = tab.id;
+            if self.tabs.detach(id) {
+                self.schedule_reap();
+                self.wake_active();
+            }
         } else if let Some(w) = tab.webview() {
             let _ = w.reload();
         }
@@ -632,8 +646,8 @@ impl App {
         for tab in self.tabs.iter_mut() {
             let host = tab.host();
             if let Some(w) = tab.webview() {
-                adblock::apply(w, &host);
-                tab.ads = Some(adblock::active_on(&host));
+                adblock::apply(w, &host, tab.private);
+                tab.ads = Some(adblock::active_on(&host, tab.private));
             }
         }
     }
@@ -659,7 +673,7 @@ impl App {
         let Some(tab) = self.tabs.get(id) else { return };
         // Une page très chargée n'envoie que ses premiers éléments.
         let tokens = &request.tokens[..request.tokens.len().min(20_000)];
-        let answer = adblock::hide(&tab.host(), tokens, request.first);
+        let answer = adblock::hide(&tab.host(), tab.private, tokens, request.first);
         tab.eval(&format!("window.__featherHide && __featherHide({})", json!(answer)));
     }
 
