@@ -632,7 +632,10 @@
   body[data-pos="right"] .side-ttl { padding: 0 0 0 26px; text-align: right; }
   .tab.active .side-ttl { color: var(--text); font-weight: 500; }
   body:not(.wide) .side-ttl { display: none; }
-  body.wide[data-pos="right"] .close, body.wide[data-pos="right"] .mute { right: auto; left: 4px; }
+  body.wide[data-pos="right"] .close { right: auto; left: 4px; }
+  /* Barre large : le bouton du son reste au coin de la pastille (colonne de 56 px),
+     pas au bout de la ligne, sous le titre. */
+  body.wide[data-pos="left"] .mute { right: auto; left: 37px; }
 
   /* --- Style « Plume » : la page posée en carte sur le fond (marge de 8 px,
      voir ui::page_area), des pastilles carrées, un trait sur l'onglet actif --- */
@@ -652,6 +655,8 @@
   body:not([data-pos="top"]) #pills .tab.w2 .dot { box-shadow: 0 0 0 2.5px var(--danger); }
   .dot .ini { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1; }
   body[data-pos="top"] .dot .ini { display: none; }
+  /* Épinglé sans icône en haut : ni titre ni icône, la case restait vide. On garde l'initiale. */
+  body[data-pos="top"] .tab.pinned .dot .ini { display: block; }
 
   /* Champ d'adresse du bandeau et de la barre large */
   .addr {
@@ -1200,6 +1205,7 @@
   let lastActive = null;    // onglet actif au dernier dessin
   let drag = null;          // onglet en cours de déplacement
   const badIcons = new Set(); // icônes introuvables : on garde le point gris
+  let pillsKey = null;      // ce que montre la liste des onglets (voir renderSidebar)
   let mode = null;          // null, 'bar', 'settings', 'library', 'site', 'group', 'import' ou 'hover'
   // Fenêtres posées sur la page, fermées dès qu'une autre s'ouvre.
   const isSheet = () => ['library', 'site', 'group', 'import'].includes(mode);
@@ -1423,6 +1429,12 @@
     renderAddr(tab);
     if (mode === 'bar') renderActs();
     if (drag || (editing && document.querySelector('.urlinput'))) return; // on redessine les onglets à la fin du glisser-déposer
+    // Rien n'a changé dans les onglets : on garde la liste telle quelle. La refaire à
+    // chaque message (chargement, son, mémoire…) rechargeait les icônes et rejouait
+    // l'apparition des titres pendant le survol.
+    const key = JSON.stringify([state.tabs, state.groups, isTop(), editing, badIcons.size]);
+    if (key === pillsKey) return;
+    pillsKey = key;
 
     const box = $('pills');
     box.textContent = '';
@@ -1463,7 +1475,7 @@
         img.src = icon;
         box.appendChild(img);
         el.querySelector('.dot').appendChild(box);
-      } else if (!isTop()) {
+      } else if (!isTop() || tab.pinned) {
         // Sans icône : l'initiale du site (« wikipedia » pour fr.wikipedia.org), une maison pour l'accueil.
         const ini = document.createElement('span');
         ini.className = 'ini';
@@ -1689,7 +1701,7 @@
     const top = isTop();
     const pos = top ? e.clientX : e.clientY;
     if (!drag.moved && Math.abs(pos - drag.y) < 6) return;
-    if (!drag.moved) { drag.moved = true; drag.el.classList.add('dragging'); drag.el.title = ''; }
+    if (!drag.moved) { drag.moved = true; pillsKey = null; drag.el.classList.add('dragging'); drag.el.title = ''; }
     const box = $('pills');
     const others = [...box.querySelectorAll('.tab')].filter((el) => el !== drag.el);
     // La position du pointeur s'appelait « c », comme l'onglet comparé : on comparait

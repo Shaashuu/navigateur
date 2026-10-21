@@ -186,6 +186,19 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     blanche avec une flèche) au lieu du milieu de l'écran ; changer de style
     remet la barre à sa largeur d'origine (la plus étroite, ou 240 px pour la
     barre large).
+- **Depuis la 0.4.1 (pas encore publié)** : vérification complète du code.
+  - Sécurité : une page ne peut plus déposer n'importe quel fichier dans les
+    téléchargements en se faisant passer pour une image (le fichier est vérifié
+    et prend l'extension de son vrai format, sinon il est supprimé), ni
+    enregistrer des images ou ouvrir des onglets à la chaîne ; seuls les
+    raccourcis de l'onglet affiché sont écoutés ; les pages internes (accueil,
+    lecture, erreur) ne s'affichent plus dans le cadre d'un autre site.
+  - Plus léger : l'état n'est envoyé qu'une fois par série d'événements, la
+    liste des onglets n'est redessinée que si elle change, les onglets cachés
+    ne mesurent plus leur réactivité, et le texte des onglets privés n'est plus
+    extrait.
+  - Interface : le bouton du son reste au coin de la pastille en barre large ;
+    un onglet épinglé sans icône montre son initiale en haut.
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente

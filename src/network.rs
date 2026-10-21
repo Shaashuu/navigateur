@@ -58,6 +58,19 @@ pub fn launch_urls(args: impl IntoIterator<Item = String>) -> Vec<String> {
         .collect()
 }
 
+/// Un programme lancé en arrière-plan (`curl`…). Sous Windows, sans la fenêtre
+/// de console qui clignoterait à chaque fois.
+pub fn command(program: &str) -> std::process::Command {
+    #[allow(unused_mut)]
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    cmd
+}
+
 /// Transforme la saisie de la barre en adresse : soit l'adresse elle-même,
 /// soit une recherche avec le moteur choisi. `None` si la saisie est vide.
 pub fn resolve_input(input: &str, engine: SearchEngine) -> Option<String> {

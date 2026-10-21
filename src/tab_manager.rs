@@ -622,8 +622,14 @@ fn build_page(
     let on_title = ctx.proxy.clone();
     let on_load = ctx.proxy.clone();
     let on_new_window = ctx.proxy.clone();
-    let (block_trackers, economy) =
-        ctx.settings.read().map(|s| (s.blocks_trackers(), s.economy)).unwrap_or((true, false));
+    let (block_trackers, economy, index) = ctx
+        .settings
+        .read()
+        .map(|s| (s.blocks_trackers(), s.economy, s.index_pages))
+        .unwrap_or((true, false, true));
+    // Onglet privé ou recherche dans le texte des pages coupée : la page n'a pas à
+    // extraire son texte (`innerText` oblige le moteur à recalculer la mise en page).
+    let no_index = private || !index;
 
     let builder = WebViewBuilder::new()
         .with_bounds(ctx.bounds)
@@ -640,7 +646,7 @@ fn build_page(
         })
         // Mode économie au moment où la page est créée ; ensuite, Rust prévient la
         // page à chaque chargement et à chaque changement (voir `App::apply_economy`).
-        .with_initialization_script(format!("window.__featherEconomy = {economy};"))
+        .with_initialization_script(format!("window.__featherEconomy = {economy}; window.__featherNoIndex = {no_index};"))
         // FEATHER_SANS_SCRIPT=1 : pas de script injecté (pour chercher l'origine d'un défaut).
         .with_initialization_script(if std::env::var_os("FEATHER_SANS_SCRIPT").is_some() {
             ""
@@ -671,8 +677,12 @@ fn build_page(
                     _ => ui::home_page(&settings, &[], &[]),
                 }
             };
+            // Ces pages (accueil avec l'historique, lecture, erreur) ne s'affichent
+            // jamais dans le cadre d'un autre site.
             Response::builder()
                 .header(CONTENT_TYPE, "text/html; charset=utf-8")
+                .header("Content-Security-Policy", "frame-ancestors 'none'")
+                .header("X-Frame-Options", "DENY")
                 .body(Cow::Owned(html.into_bytes()))
                 .expect("réponse HTTP valide")
         })

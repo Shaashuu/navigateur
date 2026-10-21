@@ -156,6 +156,9 @@ struct App {
     next_download_id: u32,
     /// Un enregistrement est déjà prévu (voir `schedule_persist`).
     persist_pending: Cell<bool>,
+    /// L'état a changé : il partira vers l'interface une fois les événements en
+    /// attente traités (voir `push_state`).
+    state_dirty: Cell<bool>,
     /// Dernière session écrite sur le disque, pour ne pas la réécrire à l'identique.
     saved_session: RefCell<Option<Session>>,
     /// Heures des derniers onglets ouverts à la demande d'une page (voir `PAGE_TAB_LIMIT`).
@@ -243,6 +246,7 @@ fn main() -> wry::Result<()> {
         downloads: Vec::new(),
         next_download_id: 1,
         persist_pending: Cell::new(false),
+        state_dirty: Cell::new(false),
         saved_session: RefCell::new(None),
         page_opens: VecDeque::new(),
         permission_requests: HashMap::new(),
@@ -312,6 +316,8 @@ fn main() -> wry::Result<()> {
                 ..
             } => app.relayout(),
             Event::UserEvent(event) => app.handle(event),
+            // Tous les événements en attente sont traités : un seul envoi de l'état.
+            Event::MainEventsCleared => app.flush_state(),
             _ => {}
         }
     });
@@ -536,7 +542,10 @@ impl App {
                     self.toggle_bookmark(id);
                 }
             }
-            ChromeMessage::Library { kind, query } => self.send_library(kind, &query),
+            ChromeMessage::Library { kind, query } => {
+                self.send_library(kind, &query);
+                return;
+            }
             ChromeMessage::OpenUrl { url, new_tab, private } => {
                 if network::is_web(&url) {
                     if private {
@@ -587,13 +596,25 @@ impl App {
                 self.strip = open;
                 self.relayout();
             }
-            ChromeMessage::Find { text, backwards } => self.find(&text, backwards),
+            ChromeMessage::Find { text, backwards } => {
+                self.find(&text, backwards);
+                return;
+            }
             ChromeMessage::FindClose => {
                 self.find("", false);
                 self.focus_page();
             }
-            ChromeMessage::Suggest { query } => self.send_suggestions(&query),
-            ChromeMessage::Command { input, run } => self.run_command(&input, run),
+            // À chaque touche : la réponse part seule, l'état complet n'a pas changé.
+            ChromeMessage::Suggest { query } => {
+                self.send_suggestions(&query);
+                return;
+            }
+            ChromeMessage::Command { input, run } => {
+                self.run_command(&input, run);
+                if !run {
+                    return;
+                }
+            }
             ChromeMessage::PermissionAnswer { request, allow, remember } => {
                 self.answer_permission(request, allow, remember)
             }
@@ -649,7 +670,13 @@ impl App {
     }
 
     fn handle_page(&mut self, id: TabId, message: PageMessage) {
-        if let Some(shortcut) = message.shortcut {
+        // Un raccourci ne vient que de l'onglet affiché : un onglet en arrière-plan
+        // (ou un script de page) ne doit pas imprimer, capturer ou fermer à sa place.
+        // Ceux qui ouvrent des onglets sont limités comme les ouvertures des pages.
+        if let Some(shortcut) = message.shortcut
+            && Some(id) == self.tabs.active_id()
+            && (!matches!(shortcut, Shortcut::NewTab | Shortcut::NewPrivateTab | Shortcut::ReopenTab) || self.allow_page_tab())
+        {
             self.handle_shortcut(Some(id), shortcut);
             self.push_state();
         }
@@ -680,8 +707,11 @@ impl App {
                 LinkHow::Private => self.open_tab(&link.url, true),
             }
         }
+        // Même limite que les onglets : une page ne peut pas remplir les
+        // téléchargements (ou Photos) à coups de messages.
         if let Some(image) = message.image
             && network::is_web(&image.url)
+            && self.allow_page_tab()
         {
             self.save_image(id, image.url, image.how);
         }
@@ -963,6 +993,8 @@ impl App {
     }
 
     fn focus_chrome(&self, script: &str) {
+        // Le panneau qui s'ouvre lit l'état (onglet actif, réglages) : il part d'abord.
+        self.flush_state();
         let _ = self.chrome.focus();
         self.chrome_call(script);
     }
@@ -1159,8 +1191,21 @@ impl App {
         self.push_state();
     }
 
-    /// Envoie à l'interface l'état complet (onglets et paramètres) à redessiner.
+    /// L'état a changé : il sera envoyé à l'interface après les événements en
+    /// attente. Un message de page en déclenchait jusqu'à trois d'affilée, et
+    /// chacun refaisait tout le JSON (onglets, réglages, commandes…).
     fn push_state(&self) {
+        self.state_dirty.set(true);
+    }
+
+    fn flush_state(&self) {
+        if self.state_dirty.replace(false) {
+            self.send_state();
+        }
+    }
+
+    /// Envoie à l'interface l'état complet (onglets et paramètres) à redessiner.
+    fn send_state(&self) {
         let active = self.tabs.active().and_then(|t| t.webview());
         let lib = self.library.read().ok();
         let permissions = self.sites.read().map(|s| s.decisions()).unwrap_or_default();

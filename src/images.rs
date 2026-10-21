@@ -6,7 +6,6 @@
 //! l'adresse de la page l'est (« Referer »), que demandent certains sites.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// Formats reconnus d'après les premiers octets du fichier, avec leur extension.
 pub fn sniff(bytes: &[u8]) -> Option<&'static str> {
@@ -68,29 +67,17 @@ fn percent_decode(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// L'extension du nom est-elle celle d'une image ?
-pub fn has_image_extension(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| ["jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "heic", "svg"].contains(&e.to_ascii_lowercase().as_str()))
-}
-
 /// Télécharge l'image dans `dest`.
 pub fn fetch(url: &str, referer: &str, dest: &Path) -> Result<(), String> {
     if !crate::network::is_web(url) {
         return Err("adresse non prise en charge".into());
     }
-    let mut cmd = Command::new("curl");
-    cmd.args(["-sSL", "--fail", "--max-time", "120", "--proto", "=http,https", "--proto-redir", "=http,https"]);
+    let mut cmd = crate::network::command("curl");
+    cmd.args(["-sSL", "--fail", "--max-time", "120", "--max-filesize", "104857600", "--proto", "=http,https", "--proto-redir", "=http,https"]);
     if crate::network::is_web(referer) {
         cmd.arg("-e").arg(referer);
     }
     cmd.arg("-o").arg(dest).arg(url);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
-    }
     let output = cmd.output().map_err(|e| format!("curl introuvable ({e})"))?;
     if !output.status.success() {
         let _ = std::fs::remove_file(dest);
@@ -99,20 +86,51 @@ pub fn fetch(url: &str, referer: &str, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Sans extension connue, on ajoute celle du format réel (« photo » → « photo.jpg »).
-pub fn fix_extension(path: &Path) -> PathBuf {
-    if has_image_extension(path) {
-        return path.to_path_buf();
+/// Les premiers octets du fichier.
+fn head(path: &Path) -> Vec<u8> {
+    use std::io::Read;
+    let mut buf = [0u8; 256];
+    let n = std::fs::File::open(path).and_then(|mut f| f.read(&mut buf)).unwrap_or(0);
+    buf[..n].to_vec()
+}
+
+/// Une image SVG (texte) : reconnue à son début, après un éventuel « <?xml ».
+fn is_svg(bytes: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(bytes);
+    let text = text.trim_start_matches('\u{feff}').trim_start();
+    text.starts_with("<svg") || (text.starts_with("<?xml") && text.contains("<svg"))
+}
+
+/// Vérifie que le fichier téléchargé est bien une image et lui donne
+/// l'extension de son vrai format. Le nom vient de l'adresse, que la page
+/// choisit : sans ça, « photo.exe » finissait tel quel dans les téléchargements.
+/// Un fichier qui n'est pas une image est supprimé.
+pub fn checked_name(path: &Path) -> Result<PathBuf, String> {
+    let bytes = head(path);
+    let Some(ext) = sniff(&bytes).or_else(|| is_svg(&bytes).then_some("svg")) else {
+        let _ = std::fs::remove_file(path);
+        return Err("ce fichier n'est pas une image".into());
+    };
+    let current = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+    let same = match current.as_deref() {
+        Some("jpeg") => ext == "jpg",
+        Some("heif") => ext == "heic",
+        Some(e) => e == ext,
+        None => false,
+    };
+    if same {
+        return Ok(path.to_path_buf());
     }
-    let head = std::fs::read(path).map(|b| b.into_iter().take(16).collect::<Vec<_>>()).unwrap_or_default();
-    let Some(ext) = sniff(&head) else { return path.to_path_buf() };
-    let mut name = path.as_os_str().to_os_string();
-    name.push(format!(".{ext}"));
-    let target = PathBuf::from(name);
-    if target.exists() || std::fs::rename(path, &target).is_err() {
-        return path.to_path_buf();
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "image".into());
+    let dir = path.parent().unwrap_or(Path::new("."));
+    let target = crate::downloads::unique(dir, &format!("{stem}.{ext}"));
+    match std::fs::rename(path, &target) {
+        Ok(()) => Ok(target),
+        Err(e) => {
+            let _ = std::fs::remove_file(path);
+            Err(e.to_string())
+        }
     }
-    target
 }
 
 /// Télécharge l'image puis l'ajoute à la photothèque (macOS). À appeler hors du
@@ -123,8 +141,7 @@ pub fn save_to_photos(url: &str, referer: &str) -> Result<(), String> {
     static COUNT: AtomicU32 = AtomicU32::new(0);
     let tmp = std::env::temp_dir().join(format!("feather-image-{}-{}", std::process::id(), COUNT.fetch_add(1, Ordering::Relaxed)));
     fetch(url, referer, &tmp)?;
-    let head = std::fs::read(&tmp).map(|b| b.into_iter().take(16).collect::<Vec<_>>()).unwrap_or_default();
-    let Some(ext) = sniff(&head) else {
+    let Some(ext) = sniff(&head(&tmp)) else {
         let _ = std::fs::remove_file(&tmp);
         return Err("ce format d'image n'est pas accepté par Photos".into());
     };
@@ -200,5 +217,28 @@ mod tests {
         assert_eq!(file_name("https://ex.fr/a/b%2Fc.png"), "b_c.png");
         assert_eq!(file_name("https://ex.fr/photo"), "photo");
         assert_eq!(file_name("https://ex.fr/fin%"), "fin%");
+    }
+
+    #[test]
+    fn extension_du_vrai_format() {
+        let dir = std::env::temp_dir().join(format!("feather-test-images-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let write = |name: &str, bytes: &[u8]| {
+            let p = dir.join(name);
+            std::fs::write(&p, bytes).unwrap();
+            p
+        };
+        // Une « image » qui se dit .exe reçoit l'extension de son vrai format.
+        let renamed = checked_name(&write("piege.exe", b"\x89PNG\r\n\x1a\n\0\0")).unwrap();
+        assert_eq!(renamed.file_name().unwrap(), "piege.png");
+        // Le bon nom est gardé, « .jpeg » compris.
+        let kept = checked_name(&write("chat.jpeg", b"\xFF\xD8\xFF\xE0")).unwrap();
+        assert_eq!(kept.file_name().unwrap(), "chat.jpeg");
+        assert_eq!(checked_name(&write("logo", b"<?xml version='1.0'?><svg>")).unwrap().file_name().unwrap(), "logo.svg");
+        // Ce qui n'est pas une image est refusé et supprimé.
+        let fake = write("faux.jpg", b"MZ\x90\0");
+        assert!(checked_name(&fake).is_err());
+        assert!(!fake.exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -456,13 +456,11 @@ fn age(path: &Path) -> Option<Duration> {
 /// Télécharge une liste (fichier temporaire, puis renommé s'il ressemble à une liste).
 fn download(url: &str, path: &Path) -> Result<(), String> {
     let tmp = path.with_extension("tmp");
-    let mut cmd = std::process::Command::new("curl");
-    cmd.args(["-sSL", "--fail", "--max-time", "60", "--proto", "=https", "-o"]).arg(&tmp).arg(url);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000); // pas de fenêtre de console
-    }
+    let mut cmd = crate::network::command("curl");
+    // Les redirections aussi restent en https (`--proto` seul ne vaut que pour la première adresse).
+    cmd.args(["-sSL", "--fail", "--max-time", "60", "--proto", "=https", "--proto-redir", "=https", "-o"])
+        .arg(&tmp)
+        .arg(url);
     let out = cmd.output().map_err(|e| format!("curl introuvable : {e}"))?;
     if !out.status.success() {
         let _ = std::fs::remove_file(&tmp);

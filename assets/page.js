@@ -379,14 +379,24 @@
   // Poids de l'onglet : retard de la boucle d'événements (la page calcule-t-elle
   // sans arrêt ?) et, quand le moteur le donne, mémoire du JavaScript. Une page
   // cachée est ralentie volontairement par le moteur : on n'y mesure pas le retard.
-  let lagSum = 0, lagCount = 0, expected = performance.now() + 200;
+  // La mesure s'arrête tant que la page est cachée : inutile de réveiller
+  // cinq fois par seconde un onglet qu'on ne regarde pas.
+  let lagSum = 0, lagCount = 0, expected = 0, beating = false;
   const beat = () => {
+    if (document.visibilityState !== 'visible') { beating = false; return; }
     const now = performance.now();
-    if (document.visibilityState === 'visible') { lagSum += Math.max(0, now - expected); lagCount++; }
+    lagSum += Math.max(0, now - expected); lagCount++;
     expected = now + 200;
     setTimeout(beat, 200);
   };
-  setTimeout(beat, 200);
+  const startBeat = () => {
+    if (beating || document.visibilityState !== 'visible') return;
+    beating = true;
+    expected = performance.now() + 200;
+    setTimeout(beat, 200);
+  };
+  document.addEventListener('visibilitychange', startBeat);
+  startBeat();
   setInterval(() => {
     const visible = document.visibilityState === 'visible';
     const lag = visible && lagCount ? Math.round(lagSum / lagCount) : null;
@@ -398,7 +408,7 @@
   // Texte de la page, pour retrouver une page de l'historique par son contenu.
   // Envoyé une fois, deux secondes après le chargement (Feather décide s'il le garde).
   window.addEventListener('load', () => setTimeout(() => {
-    if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+    if (window.__featherNoIndex || (location.protocol !== 'http:' && location.protocol !== 'https:')) return;
     const body = document.body;
     if (!body) return;
     const text = (body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 8000);
