@@ -48,9 +48,6 @@ jobs:
           sed -i '' -e 's/app.feather.browser/app.feather.sonde/' Sonde.app/Contents/Info.plist || true
           cat Sonde.app/Contents/Info.plist
           codesign -s - --force Sonde.app || true
-      - name: Proton Pass tel quel
-        timeout-minutes: 3
-        run: Sonde.app/Contents/MacOS/sonde ext/protonpass protonpass sortie 2>&1 || true
       - name: Proton Pass avec les compléments
         timeout-minutes: 3
         run: Sonde.app/Contents/MacOS/sonde ext/protonpass2 protonpass2 sortie 30 2>&1 || true

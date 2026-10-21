@@ -44,7 +44,7 @@ static NSString *const kProbe =
 static NSString *const kStorage =
     @"const api = window.__b0 || window.__c0 || (typeof browser !== 'undefined' ? browser : chrome);"
      "const all = await api.storage.local.get(null);"
-     "return 'clés ' + Object.keys(all).slice(0, 30).join(',') + '\\n' + (all.__bgerr || '(pas de journal)');";
+     "return 'clés ' + Object.keys(all).slice(0, 30).join(',') + '\\n' + (all.__bgerr || '(pas de journal)') + '\\nlastReload ' + JSON.stringify(all.lastReload) + '\\njournal de l\\'extension : ' + JSON.stringify(all.logs).slice(-4000);";
 
 // L'arrière-plan répond-il ? Et l'onglet actif est-il visible depuis la page ?
 static NSString *const kMessages =
