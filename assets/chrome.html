@@ -577,6 +577,19 @@
   #ext-list .acts .rm.confirm { background: var(--danger); border-color: var(--danger); color: #fff; }
   #ext-list .empty { padding: 18px 0 6px; font-size: 13px; color: var(--muted); }
   #ext-btns { display: contents; }
+
+  /* Menus de la barre (favoris, historique, téléchargements, mémoire, extensions) :
+     comme la palette, la fenêtre sort de son bouton, avec une flèche vers lui.
+     Position calculée en JS (placePop). */
+  #library .panel.pop { bottom: auto; right: auto; height: min(600px, calc(100vh - 24px)); }
+  #extensions .panel.pop { position: fixed; max-height: calc(100vh - 24px); }
+  #pop-arrow {
+    display: none; position: fixed; z-index: 27; width: 9px; height: 20px; pointer-events: none;
+    background: var(--surface); clip-path: polygon(100% 0, 0 50%, 100% 100%);
+  }
+  #pop-arrow.r { clip-path: polygon(0 0, 100% 50%, 0 100%); }
+  #pop-arrow.t { width: 20px; height: 9px; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+  body.library #pop-arrow.on, body.extensions #pop-arrow.on { display: block; }
   #ext-btns .round img { width: 18px; height: 18px; object-fit: contain; pointer-events: none; }
   #ext-btns .round .ltr { font-size: 12px; font-weight: 700; }
   #ext-btns .round.on, #lib-ext.on { background: var(--accent-soft); color: var(--accent); }
@@ -669,10 +682,11 @@
   body[data-pos="right"] .side-ttl { padding: 0 0 0 26px; text-align: right; }
   .tab.active .side-ttl { color: var(--text); font-weight: 500; }
   body:not(.wide) .side-ttl { display: none; }
-  body.wide[data-pos="right"] .close { right: auto; left: 4px; }
-  /* Barre large : le bouton du son reste au coin de la pastille (colonne de 56 px),
-     pas au bout de la ligne, sous le titre. */
-  body.wide[data-pos="left"] .mute { right: auto; left: 37px; }
+  /* Barre élargie (à la main ou au survol) : la croix et le bouton du son restent
+     au coin de la pastille (colonne de 56 px), pas au bout de la ligne, après le
+     titre. À droite, la colonne est déjà au bout de la ligne : rien à changer. */
+  body[data-pos="left"] .close { right: auto; left: 36px; }
+  body[data-pos="left"] .mute { right: auto; left: 37px; }
 
   /* --- Style « Plume » : la page posée en carte sur le fond (marge de 8 px,
      voir ui::page_area), des pastilles carrées, un trait sur l'onglet actif --- */
@@ -1072,6 +1086,7 @@
       <p class="sheet-hint" id="ext-foot" style="margin-top:12px"></p>
     </div>
   </div>
+  <i id="pop-arrow" class="card" aria-hidden="true"></i>
 
   <div id="settings">
     <div id="settings-form" class="card" role="dialog" aria-label="Paramètres">
@@ -1307,6 +1322,14 @@
   function setMode(next) {
     if (next === mode) return;
     const wasOpen = mode !== null;
+    // Barre ouverte au survol : un menu ou une fenêtre qui s'ouvre la referme,
+    // sinon la barre élargie le cacherait. Le menu d'un onglet la garde ouverte.
+    if (next !== null && next !== 'hover' && next !== 'menu' && document.body.classList.contains('hovering')) {
+      clearTimeout(hoverTimer);
+      clearTimeout(unhoverTimer);
+      hoverArmed = false;
+      document.body.classList.remove('hovering');
+    }
     mode = next;
     document.body.classList.toggle('panel', mode !== null);
     document.body.classList.toggle('bar', mode === 'bar');
@@ -1319,6 +1342,7 @@
     $('lib-ext').classList.toggle('on', mode === 'extensions');
     document.body.classList.toggle('dlpop', mode === 'dlpop');
     for (const k of LIB_KINDS) $('lib-' + k).classList.toggle('on', mode === 'library' && libKind === k);
+    placePop();
     if (mode !== null) reportShape();
     if (wasOpen !== (mode !== null)) send({ type: 'expand', open: mode !== null });
   }
@@ -1348,6 +1372,71 @@
     send({ type: 'shape', rects });
   }
   const queueShape = () => { cancelAnimationFrame(shapeFrame); shapeFrame = requestAnimationFrame(reportShape); };
+
+  // Menus de la barre : la fenêtre sort de son bouton (à côté de la colonne, ou
+  // dessous quand la barre est en haut), sans sortir de la fenêtre ; la flèche
+  // garde la pointe sur le bouton, comme la palette.
+  function popButton() {
+    if (mode === 'library') return $('lib-' + libKind);
+    if (mode === 'extensions') return $('lib-ext');
+    return null;
+  }
+  function placePop() {
+    const arrow = $('pop-arrow');
+    const btn = popButton();
+    const panel = mode === 'library' ? $('library').querySelector('.panel') : mode === 'extensions' ? $('extensions').querySelector('.panel') : null;
+    for (const p of document.querySelectorAll('#library .panel, #extensions .panel')) {
+      if (p !== panel) { p.classList.remove('pop'); p.style.left = p.style.top = ''; }
+    }
+    const r = btn && btn.getBoundingClientRect();
+    // Bouton caché (fil du mode concentration) : la fenêtre garde sa place habituelle.
+    if (!panel || !r || !r.width || !r.height) {
+      arrow.classList.remove('on');
+      if (panel) { panel.classList.remove('pop'); panel.style.left = panel.style.top = ''; }
+      return;
+    }
+    panel.classList.add('pop');
+    const w = panel.offsetWidth;
+    const h = panel.offsetHeight;
+    const pos = document.body.dataset.pos || 'left';
+    arrow.classList.toggle('r', pos === 'right');
+    arrow.classList.toggle('t', pos === 'top');
+    if (pos === 'top') {
+      const cx = r.left + r.width / 2;
+      const top = Math.round(r.bottom + 12);
+      const left = Math.round(Math.max(12, Math.min(cx - w / 2, innerWidth - w - 12)));
+      panel.style.top = top + 'px';
+      panel.style.left = left + 'px';
+      arrow.style.top = (top - 9) + 'px';
+      arrow.style.left = Math.round(Math.max(left + 14, Math.min(cx - 10, left + w - 34))) + 'px';
+    } else {
+      const side = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--side')) || 56;
+      const cy = r.top + r.height / 2;
+      const top = Math.round(Math.max(12, Math.min(cy - 40, innerHeight - h - 12)));
+      const left = pos === 'right' ? innerWidth - side - 14 - w : side + 14;
+      panel.style.top = top + 'px';
+      panel.style.left = Math.round(left) + 'px';
+      arrow.style.top = Math.round(Math.max(top + 14, Math.min(cy - 10, top + h - 34))) + 'px';
+      arrow.style.left = Math.round(pos === 'right' ? left + w : left - 9) + 'px';
+    }
+    arrow.classList.add('on');
+    queueShape();
+  }
+  const popWatch = new ResizeObserver(placePop);
+  for (const p of document.querySelectorAll('#library .panel, #extensions .panel')) popWatch.observe(p);
+  window.addEventListener('resize', placePop);
+
+  // Un clic hors de la fenêtre ouverte la ferme. Sous macOS, l'interface couvre
+  // toute la fenêtre tant qu'un panneau est ouvert : sans ça, le clic n'allait nulle part.
+  // Le bouton qui a ouvert la fenêtre la referme lui-même (sinon elle se rouvrirait).
+  const OPENERS = { extensions: '#lib-ext', settings: '#gear', site: '#lock', dlpop: '#lib-downloads' };
+  document.addEventListener('pointerdown', (e) => {
+    if (mode === null || mode === 'hover' || mode === 'menu' || e.button === 3 || e.button === 4) return;
+    if (e.target.closest('.card, #overlay, #settings')) return;
+    const opener = mode === 'library' ? '#lib-' + libKind : OPENERS[mode];
+    if (opener && e.target.closest(opener)) return;
+    closePanel();
+  }, true);
   const shapeWatch = new ResizeObserver(queueShape);
   for (const el of document.querySelectorAll('.card')) shapeWatch.observe(el);
   shapeWatch.observe($('sidebar'));
@@ -2702,6 +2791,7 @@
     libItems = kind === 'downloads' ? (state.downloads || []) : [];
     setMode('library');
     for (const k of LIB_KINDS) $('lib-' + k).classList.toggle('on', libKind === k);
+    placePop();   // autre bouton, même fenêtre : la flèche suit
     renderLibrary();
     requestLibrary();
     $('lib-search').focus();
