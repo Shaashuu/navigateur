@@ -879,7 +879,27 @@ pub fn prepare_builder(builder: WebViewBuilder<'_>, attach: bool) -> WebViewBuil
     engine::prepare_builder(builder, attach)
 }
 
-pub use engine::{add, close_popup, open_popup, options_url, popup_shown, remove, replace, set_enabled, start};
+pub use engine::{add, close_popup, open_popup, options_url, popup_shown, remove, replace, set_enabled, start, sync_tabs};
+
+/// Un onglet non privé tel que les extensions le voient (macOS, voir `sync_tabs`).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub struct TabView<'a> {
+    pub id: u32,
+    pub title: &'a str,
+    pub url: &'a str,
+    pub loading: bool,
+    pub pinned: bool,
+    pub audible: bool,
+    pub muted: bool,
+    pub active: bool,
+    pub webview: Option<&'a wry::WebView>,
+}
+
+/// Adresse qu'une extension peut ouvrir dans un onglet : une page web, ou une
+/// page de l'extension elle-même (Windows : chrome-extension, macOS : webkit-extension).
+pub fn opens_in_tab(url: &str) -> bool {
+    crate::network::is_web(url) || url.starts_with("chrome-extension://") || url.starts_with("webkit-extension://")
+}
 
 /// Ce que la petite fenêtre (Windows) envoie : sa taille, ou sa fermeture.
 #[derive(Debug, Default, Deserialize)]
@@ -1064,7 +1084,7 @@ impl crate::App {
         let bar = serde_json::to_value(self.settings().bar_position).ok();
         let bar = bar.as_ref().and_then(Value::as_str).unwrap_or("left").to_string();
         let frame = popup_frame(rect, (380.0, 520.0), (size.width, size.height), &bar);
-        match open_popup(&ext, frame, &self.chrome) {
+        match open_popup(&ext, rect, frame, &bar, &self.chrome) {
             Ok(Some(url)) => self.open_popup_webview(&ext.id, &url, frame),
             Ok(None) => {
                 #[cfg(target_os = "macos")]
@@ -1141,10 +1161,27 @@ impl crate::App {
     /// Lien ouvert par la fenêtre d'une extension : une page web, ou une page
     /// de l'extension elle-même (Windows).
     pub(crate) fn extension_open(&mut self, url: &str) {
-        if crate::network::is_web(url) || url.starts_with("chrome-extension://") {
+        if opens_in_tab(url) {
             self.close_extension_popup();
             self.open_tab(url, false);
         }
+    }
+
+    /// Les onglets non privés, décrits aux extensions (macOS : `tabs.query`,
+    /// l'onglet d'un script, l'onglet affiché…).
+    pub(crate) fn sync_extension_tabs(&self) {
+        let active = self.tabs.active_id();
+        sync_tabs(self.tabs.iter().filter(|t| !t.private).map(|t| TabView {
+            id: t.id,
+            title: &t.title,
+            url: t.url(),
+            loading: t.loading,
+            pinned: t.pinned,
+            audible: t.audible,
+            muted: t.muted,
+            active: Some(t.id) == active,
+            webview: t.webview(),
+        }));
     }
 
     /// Ferme la petite fenêtre d'extension, s'il y en a une.
@@ -1259,6 +1296,8 @@ mod engine {
         });
     }
 
+    pub fn sync_tabs<'a>(_tabs: impl Iterator<Item = super::TabView<'a>>) {}
+
     fn enable(engine: &ICoreWebView2BrowserExtension, on: bool) {
         // SAFETY : extension valide, rappel conservé par WebView2.
         unsafe {
@@ -1353,7 +1392,13 @@ mod engine {
     }
 
     /// Adresse de la petite fenêtre : la webview est créée par `App` (voir main.rs).
-    pub fn open_popup(ext: &Extension, _frame: (f64, f64, f64, f64), _chrome: &WebView) -> Result<Option<String>, String> {
+    pub fn open_popup(
+        ext: &Extension,
+        _button: (f64, f64, f64, f64),
+        _frame: (f64, f64, f64, f64),
+        _bar: &str,
+        _chrome: &WebView,
+    ) -> Result<Option<String>, String> {
         let page = ext.popup.as_ref().ok_or("Cette extension n'a pas de fenêtre à ouvrir.")?;
         page_url(ext, page).map(Some).ok_or_else(|| "L'extension est encore en cours de chargement.".into())
     }
@@ -1367,38 +1412,389 @@ mod engine {
 
 #[cfg(target_os = "macos")]
 mod engine {
+    //! macOS 15.4+ : `WKWebExtensionController`. WebKit ne connaît ni les onglets
+    //! ni la fenêtre de Feather : on les lui décrit (`ExtTab`, `ExtWindow`), et le
+    //! délégué (`ExtDelegate`) répond à ses demandes (fenêtre de l'extension,
+    //! nouvel onglet, autorisations). Sans cela, les scripts des extensions ne
+    //! savaient pas dans quel onglet ils tournaient (Proton Pass ne remplissait
+    //! rien) et leur fenêtre s'affichait vide, avant d'être chargée.
+    //!
+    //! Règle : jamais d'appel à WebKit pendant un emprunt de `STATE`, car WebKit
+    //! rappelle aussitôt nos objets, qui le relisent.
     use std::cell::RefCell;
     use std::collections::HashMap;
+    use std::ptr::{self, NonNull};
 
-    use block2::RcBlock;
-    use objc2::MainThreadMarker;
+    use block2::{DynBlock, RcBlock};
     use objc2::rc::Retained;
+    use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
+    use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
     use objc2_app_kit::{NSPopover, NSPopoverBehavior, NSView};
-    use objc2_foundation::{NSError, NSPoint, NSRect, NSRectEdge, NSSize, NSString, NSURL};
+    use objc2_foundation::{
+        NSArray, NSDate, NSError, NSPoint, NSRect, NSRectEdge, NSSet, NSSize, NSString, NSUInteger, NSURL, NSURLRequest,
+    };
     use objc2_web_kit::{
-        WKWebExtension, WKWebExtensionContext, WKWebExtensionContextPermissionStatus, WKWebExtensionController,
-        WKWebViewConfiguration, WKWebsiteDataStore,
+        WKWebExtension, WKWebExtensionAction, WKWebExtensionContext, WKWebExtensionContextPermissionStatus,
+        WKWebExtensionController, WKWebExtensionControllerDelegate, WKWebExtensionMatchPattern, WKWebExtensionTab,
+        WKWebExtensionTabChangedProperties, WKWebExtensionTabConfiguration, WKWebExtensionWindow,
+        WKWebExtensionWindowState, WKWebExtensionWindowType, WKWebView, WKWebViewConfiguration, WKWebsiteDataStore,
     };
     use tao::event_loop::EventLoopProxy;
     use wry::{WebView, WebViewBuilder, WebViewBuilderExtMacos, WebViewExtMacOS};
 
-    use super::Extension;
+    use super::{Extension, TabView};
     use crate::UserEvent;
 
     pub const PLATFORM: &str = "macos";
 
+    type NewTabDone = RcBlock<dyn Fn(*mut ProtocolObject<dyn WKWebExtensionTab>, *mut NSError)>;
+
+    /// Un onglet de Feather tel que les extensions le voient (recopié par `sync_tabs`).
+    struct Mirror {
+        id: u32,
+        tab: Retained<ExtTab>,
+        title: String,
+        url: String,
+        loading: bool,
+        pinned: bool,
+        audible: bool,
+        muted: bool,
+        webview: Option<Retained<WKWebView>>,
+    }
+
     #[derive(Default)]
     struct State {
-        /// Une extension au moins est installée : les nouvelles pages reçoivent le
-        /// contrôleur, même avant que WebKit ait fini de la charger (démarrage).
+        /// Une extension au moins est installée : les onglets sont décrits à WebKit.
         wanted: bool,
         controller: Option<Retained<WKWebExtensionController>>,
+        delegate: Option<Retained<ExtDelegate>>,
         contexts: HashMap<String, Retained<WKWebExtensionContext>>,
         popover: Option<Retained<NSPopover>>,
+        proxy: Option<EventLoopProxy<UserEvent>>,
+        /// La vue de l'interface, contre laquelle la fenêtre de l'extension s'ouvre.
+        chrome: Option<Retained<NSView>>,
+        /// Le bouton cliqué (x, y, largeur, hauteur) et la place de la barre.
+        anchor: Option<((f64, f64, f64, f64), String)>,
+        window: Option<Retained<ExtWindow>>,
+        tabs: Vec<Mirror>,
+        active: Option<u32>,
+        /// Onglets demandés par une extension, en attente de leur création.
+        new_tabs: Vec<NewTabDone>,
     }
 
     thread_local! {
         static STATE: RefCell<State> = RefCell::default();
+    }
+
+    fn send(event: UserEvent) {
+        if let Some(proxy) = STATE.with_borrow(|s| s.proxy.clone()) {
+            let _ = proxy.send_event(event);
+        }
+    }
+
+    fn tab_object(id: u32) -> Option<Retained<ProtocolObject<dyn WKWebExtensionTab>>> {
+        STATE.with_borrow(|s| s.tabs.iter().find(|m| m.id == id).map(|m| ProtocolObject::from_retained(m.tab.clone())))
+    }
+
+    fn active_tab() -> Option<Retained<ProtocolObject<dyn WKWebExtensionTab>>> {
+        tab_object(STATE.with_borrow(|s| s.active)?)
+    }
+
+    fn window_object() -> Option<Retained<ProtocolObject<dyn WKWebExtensionWindow>>> {
+        STATE.with_borrow(|s| s.window.clone()).map(ProtocolObject::from_retained)
+    }
+
+    fn with_tab<R>(id: u32, f: impl FnOnce(&Mirror) -> R) -> Option<R> {
+        STATE.with_borrow(|s| s.tabs.iter().find(|m| m.id == id).map(f))
+    }
+
+    struct TabIvars {
+        id: u32,
+    }
+
+    define_class!(
+        // SAFETY : NSObject n'impose rien à ses sous-classes ; pas de `Drop`.
+        #[unsafe(super(NSObject))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "FeatherExtensionTab"]
+        #[ivars = TabIvars]
+        struct ExtTab;
+
+        unsafe impl NSObjectProtocol for ExtTab {}
+
+        unsafe impl WKWebExtensionTab for ExtTab {
+            #[unsafe(method_id(windowForWebExtensionContext:))]
+            fn window_for(&self, _context: &WKWebExtensionContext) -> Option<Retained<ProtocolObject<dyn WKWebExtensionWindow>>> {
+                window_object()
+            }
+
+            #[unsafe(method(indexInWindowForWebExtensionContext:))]
+            fn index_for(&self, _context: &WKWebExtensionContext) -> NSUInteger {
+                let id = self.ivars().id;
+                STATE.with_borrow(|s| s.tabs.iter().position(|m| m.id == id)).unwrap_or(NSUInteger::MAX)
+            }
+
+            #[unsafe(method_id(webViewForWebExtensionContext:))]
+            fn webview_for(&self, _context: &WKWebExtensionContext) -> Option<Retained<WKWebView>> {
+                with_tab(self.ivars().id, |m| m.webview.clone()).flatten()
+            }
+
+            #[unsafe(method_id(titleForWebExtensionContext:))]
+            fn title_for(&self, _context: &WKWebExtensionContext) -> Option<Retained<NSString>> {
+                with_tab(self.ivars().id, |m| NSString::from_str(&m.title))
+            }
+
+            #[unsafe(method_id(urlForWebExtensionContext:))]
+            fn url_for(&self, _context: &WKWebExtensionContext) -> Option<Retained<NSURL>> {
+                with_tab(self.ivars().id, |m| NSURL::URLWithString(&NSString::from_str(&m.url))).flatten()
+            }
+
+            #[unsafe(method(isLoadingCompleteForWebExtensionContext:))]
+            fn loaded_for(&self, _context: &WKWebExtensionContext) -> bool {
+                with_tab(self.ivars().id, |m| !m.loading).unwrap_or(true)
+            }
+
+            #[unsafe(method(isPinnedForWebExtensionContext:))]
+            fn pinned_for(&self, _context: &WKWebExtensionContext) -> bool {
+                with_tab(self.ivars().id, |m| m.pinned).unwrap_or(false)
+            }
+
+            #[unsafe(method(isPlayingAudioForWebExtensionContext:))]
+            fn audible_for(&self, _context: &WKWebExtensionContext) -> bool {
+                with_tab(self.ivars().id, |m| m.audible).unwrap_or(false)
+            }
+
+            #[unsafe(method(isMutedForWebExtensionContext:))]
+            fn muted_for(&self, _context: &WKWebExtensionContext) -> bool {
+                with_tab(self.ivars().id, |m| m.muted).unwrap_or(false)
+            }
+
+            #[unsafe(method(isSelectedForWebExtensionContext:))]
+            fn selected_for(&self, _context: &WKWebExtensionContext) -> bool {
+                STATE.with_borrow(|s| s.active) == Some(self.ivars().id)
+            }
+
+            // Clic sur le bouton d'une extension : elle a accès à l'onglet affiché
+            // (autorisation « activeTab »), comme dans Chrome.
+            #[unsafe(method(shouldGrantPermissionsOnUserGestureForWebExtensionContext:))]
+            fn grant_on_gesture(&self, _context: &WKWebExtensionContext) -> bool {
+                true
+            }
+
+            #[unsafe(method(loadURL:forWebExtensionContext:completionHandler:))]
+            fn load_url(&self, url: &NSURL, _context: &WKWebExtensionContext, done: &DynBlock<dyn Fn(*mut NSError)>) {
+                if let Some(webview) = with_tab(self.ivars().id, |m| m.webview.clone()).flatten() {
+                    // SAFETY : fil principal, vue et requête valides.
+                    unsafe { webview.loadRequest(&NSURLRequest::requestWithURL(url)) };
+                }
+                done.call((ptr::null_mut(),));
+            }
+
+            #[unsafe(method(reloadFromOrigin:forWebExtensionContext:completionHandler:))]
+            fn reload(&self, _origin: bool, _context: &WKWebExtensionContext, done: &DynBlock<dyn Fn(*mut NSError)>) {
+                if let Some(webview) = with_tab(self.ivars().id, |m| m.webview.clone()).flatten() {
+                    // SAFETY : fil principal, vue valide.
+                    unsafe { webview.reload() };
+                }
+                done.call((ptr::null_mut(),));
+            }
+
+            #[unsafe(method(activateForWebExtensionContext:completionHandler:))]
+            fn activate(&self, _context: &WKWebExtensionContext, done: &DynBlock<dyn Fn(*mut NSError)>) {
+                send(UserEvent::Chrome(format!(r#"{{"type":"activate_tab","id":{}}}"#, self.ivars().id)));
+                done.call((ptr::null_mut(),));
+            }
+
+            #[unsafe(method(closeForWebExtensionContext:completionHandler:))]
+            fn close(&self, _context: &WKWebExtensionContext, done: &DynBlock<dyn Fn(*mut NSError)>) {
+                send(UserEvent::Chrome(format!(r#"{{"type":"close_tab","id":{}}}"#, self.ivars().id)));
+                done.call((ptr::null_mut(),));
+            }
+        }
+    );
+
+    impl ExtTab {
+        fn new(mtm: MainThreadMarker, id: u32) -> Retained<Self> {
+            let this = Self::alloc(mtm).set_ivars(TabIvars { id });
+            // SAFETY : `init` de NSObject.
+            unsafe { msg_send![super(this), init] }
+        }
+    }
+
+    define_class!(
+        // SAFETY : NSObject n'impose rien à ses sous-classes ; pas de `Drop`.
+        #[unsafe(super(NSObject))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "FeatherExtensionWindow"]
+        struct ExtWindow;
+
+        unsafe impl NSObjectProtocol for ExtWindow {}
+
+        unsafe impl WKWebExtensionWindow for ExtWindow {
+            #[unsafe(method_id(tabsForWebExtensionContext:))]
+            fn tabs_for(&self, _context: &WKWebExtensionContext) -> Retained<NSArray<ProtocolObject<dyn WKWebExtensionTab>>> {
+                let tabs: Vec<_> = STATE.with_borrow(|s| s.tabs.iter().map(|m| ProtocolObject::from_retained(m.tab.clone())).collect());
+                NSArray::from_retained_slice(&tabs)
+            }
+
+            #[unsafe(method_id(activeTabForWebExtensionContext:))]
+            fn active_for(&self, _context: &WKWebExtensionContext) -> Option<Retained<ProtocolObject<dyn WKWebExtensionTab>>> {
+                active_tab()
+            }
+
+            #[unsafe(method(windowTypeForWebExtensionContext:))]
+            fn type_for(&self, _context: &WKWebExtensionContext) -> WKWebExtensionWindowType {
+                WKWebExtensionWindowType::Normal
+            }
+
+            #[unsafe(method(windowStateForWebExtensionContext:))]
+            fn state_for(&self, _context: &WKWebExtensionContext) -> WKWebExtensionWindowState {
+                WKWebExtensionWindowState::Normal
+            }
+
+            #[unsafe(method(isPrivateForWebExtensionContext:))]
+            fn private_for(&self, _context: &WKWebExtensionContext) -> bool {
+                false
+            }
+
+            #[unsafe(method(focusForWebExtensionContext:completionHandler:))]
+            fn focus(&self, _context: &WKWebExtensionContext, done: &DynBlock<dyn Fn(*mut NSError)>) {
+                done.call((ptr::null_mut(),));
+            }
+        }
+    );
+
+    impl ExtWindow {
+        fn new(mtm: MainThreadMarker) -> Retained<Self> {
+            let this = Self::alloc(mtm).set_ivars(());
+            // SAFETY : `init` de NSObject.
+            unsafe { msg_send![super(this), init] }
+        }
+    }
+
+    define_class!(
+        // SAFETY : NSObject n'impose rien à ses sous-classes ; pas de `Drop`.
+        #[unsafe(super(NSObject))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "FeatherExtensionDelegate"]
+        struct ExtDelegate;
+
+        unsafe impl NSObjectProtocol for ExtDelegate {}
+
+        unsafe impl WKWebExtensionControllerDelegate for ExtDelegate {
+            #[unsafe(method_id(webExtensionController:openWindowsForExtensionContext:))]
+            fn open_windows(
+                &self,
+                _controller: &WKWebExtensionController,
+                _context: &WKWebExtensionContext,
+            ) -> Retained<NSArray<ProtocolObject<dyn WKWebExtensionWindow>>> {
+                let windows: Vec<_> = window_object().into_iter().collect();
+                NSArray::from_retained_slice(&windows)
+            }
+
+            #[unsafe(method_id(webExtensionController:focusedWindowForExtensionContext:))]
+            fn focused_window(
+                &self,
+                _controller: &WKWebExtensionController,
+                _context: &WKWebExtensionContext,
+            ) -> Option<Retained<ProtocolObject<dyn WKWebExtensionWindow>>> {
+                window_object()
+            }
+
+            // `tabs.create` : un onglet de Feather, rendu à l'extension dès qu'il existe.
+            #[unsafe(method(webExtensionController:openNewTabUsingConfiguration:forExtensionContext:completionHandler:))]
+            fn open_new_tab(
+                &self,
+                _controller: &WKWebExtensionController,
+                configuration: &WKWebExtensionTabConfiguration,
+                _context: &WKWebExtensionContext,
+                done: &DynBlock<dyn Fn(*mut ProtocolObject<dyn WKWebExtensionTab>, *mut NSError)>,
+            ) {
+                // SAFETY : fil principal, configuration valide.
+                let url = unsafe { configuration.url() }.and_then(|u| u.absoluteString()).map(|s| s.to_string());
+                match url.filter(|u| super::opens_in_tab(u)) {
+                    Some(url) => {
+                        STATE.with_borrow_mut(|s| s.new_tabs.push(done.copy()));
+                        send(UserEvent::ExtensionOpen(url));
+                    }
+                    None => done.call((ptr::null_mut(), ptr::null_mut())),
+                }
+            }
+
+            #[unsafe(method(webExtensionController:openOptionsPageForExtensionContext:completionHandler:))]
+            fn open_options(
+                &self,
+                _controller: &WKWebExtensionController,
+                context: &WKWebExtensionContext,
+                done: &DynBlock<dyn Fn(*mut NSError)>,
+            ) {
+                // SAFETY : fil principal, contexte valide.
+                if let Some(url) = unsafe { context.optionsPageURL() }.and_then(|u| u.absoluteString()) {
+                    send(UserEvent::ExtensionOpen(url.to_string()));
+                }
+                done.call((ptr::null_mut(),));
+            }
+
+            // Autorisations demandées plus tard par l'extension : accordées, comme
+            // celles de l'installation (la liste des sites est dans le panneau).
+            #[unsafe(method(webExtensionController:promptForPermissions:inTab:forExtensionContext:completionHandler:))]
+            fn prompt_permissions(
+                &self,
+                _controller: &WKWebExtensionController,
+                permissions: &NSSet<NSString>,
+                _tab: Option<&ProtocolObject<dyn WKWebExtensionTab>>,
+                _context: &WKWebExtensionContext,
+                done: &DynBlock<dyn Fn(NonNull<NSSet<NSString>>, *mut NSDate)>,
+            ) {
+                done.call((NonNull::from(permissions), ptr::null_mut()));
+            }
+
+            #[unsafe(method(webExtensionController:promptForPermissionToAccessURLs:inTab:forExtensionContext:completionHandler:))]
+            fn prompt_urls(
+                &self,
+                _controller: &WKWebExtensionController,
+                urls: &NSSet<NSURL>,
+                _tab: Option<&ProtocolObject<dyn WKWebExtensionTab>>,
+                _context: &WKWebExtensionContext,
+                done: &DynBlock<dyn Fn(NonNull<NSSet<NSURL>>, *mut NSDate)>,
+            ) {
+                done.call((NonNull::from(urls), ptr::null_mut()));
+            }
+
+            #[unsafe(method(webExtensionController:promptForPermissionMatchPatterns:inTab:forExtensionContext:completionHandler:))]
+            fn prompt_patterns(
+                &self,
+                _controller: &WKWebExtensionController,
+                patterns: &NSSet<WKWebExtensionMatchPattern>,
+                _tab: Option<&ProtocolObject<dyn WKWebExtensionTab>>,
+                _context: &WKWebExtensionContext,
+                done: &DynBlock<dyn Fn(NonNull<NSSet<WKWebExtensionMatchPattern>>, *mut NSDate)>,
+            ) {
+                done.call((NonNull::from(patterns), ptr::null_mut()));
+            }
+
+            // WebKit appelle ceci une fois la page de la fenêtre chargée : avant,
+            // la bulle était montrée tout de suite, vide.
+            #[unsafe(method(webExtensionController:presentPopupForAction:forExtensionContext:completionHandler:))]
+            fn present_popup(
+                &self,
+                _controller: &WKWebExtensionController,
+                action: &WKWebExtensionAction,
+                _context: &WKWebExtensionContext,
+                done: &DynBlock<dyn Fn(*mut NSError)>,
+            ) {
+                show_popover(action);
+                done.call((ptr::null_mut(),));
+            }
+        }
+    );
+
+    impl ExtDelegate {
+        fn new(mtm: MainThreadMarker) -> Retained<Self> {
+            let this = Self::alloc(mtm).set_ivars(());
+            // SAFETY : `init` de NSObject.
+            unsafe { msg_send![super(this), init] }
+        }
     }
 
     pub fn support() -> Result<(), &'static str> {
@@ -1411,16 +1807,29 @@ mod engine {
 
     fn controller(mtm: MainThreadMarker) -> Option<Retained<WKWebExtensionController>> {
         support().ok()?;
+        if let Some(controller) = STATE.with_borrow(|s| s.controller.clone()) {
+            return Some(controller);
+        }
+        // SAFETY : fil principal, classe présente depuis macOS 15.4 (vérifié ci-dessus).
+        let controller = unsafe { WKWebExtensionController::new(mtm) };
+        let delegate = ExtDelegate::new(mtm);
+        // SAFETY : fil principal ; le contrôleur ne garde qu'une référence faible
+        // au délégué, gardé dans `STATE`.
+        unsafe { controller.setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
         STATE.with_borrow_mut(|s| {
-            // SAFETY : fil principal, classe présente depuis macOS 15.4 (vérifié ci-dessus).
-            Some(s.controller.get_or_insert_with(|| unsafe { WKWebExtensionController::new(mtm) }).clone())
-        })
+            s.controller = Some(controller.clone());
+            s.delegate = Some(delegate);
+        });
+        Some(controller)
     }
 
-    /// Une page non privée reçoit le contrôleur des extensions, dès qu'il y en a une.
+    /// Toute page non privée reçoit le contrôleur des extensions. Avant, seulement
+    /// quand une extension était déjà installée : les onglets ouverts avant
+    /// l'installation n'avaient jamais les extensions (WebKit ne permet pas de
+    /// l'ajouter à une page déjà créée).
     pub fn prepare_builder(builder: WebViewBuilder<'_>, attach: bool) -> WebViewBuilder<'_> {
         let Some(mtm) = MainThreadMarker::new() else { return builder };
-        if !attach || !STATE.with_borrow(|s| s.wanted) {
+        if !attach {
             return builder;
         }
         let Some(controller) = controller(mtm) else { return builder };
@@ -1435,12 +1844,139 @@ mod engine {
         builder.with_webview_configuration(config)
     }
 
-    pub fn start(_chrome: &WebView, list: &[Extension], proxy: &EventLoopProxy<UserEvent>) {
+    pub fn start(chrome: &WebView, list: &[Extension], proxy: &EventLoopProxy<UserEvent>) {
         if support().is_err() {
             return;
         }
+        let view: Retained<NSView> = Retained::into_super(Retained::into_super(chrome.webview()));
+        STATE.with_borrow_mut(|s| {
+            s.proxy = Some(proxy.clone());
+            s.chrome = Some(view);
+        });
         for ext in list {
             add(ext, proxy);
+        }
+    }
+
+    /// Décrit à WebKit les onglets de Feather (ouverts, fermés, déplacés, affiché,
+    /// titre, adresse…), après chaque changement d'état.
+    pub fn sync_tabs<'a>(tabs: impl Iterator<Item = TabView<'a>>) {
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        if !STATE.with_borrow(|s| s.wanted) {
+            return;
+        }
+        let Some(controller) = controller(mtm) else { return };
+        // La fenêtre, une fois pour toutes.
+        let new_window = STATE.with_borrow(|s| s.window.is_none());
+        if new_window {
+            let window = ExtWindow::new(mtm);
+            STATE.with_borrow_mut(|s| s.window = Some(window.clone()));
+            let window = ProtocolObject::from_retained(window);
+            // SAFETY : fil principal, objets valides.
+            unsafe {
+                controller.didOpenWindow(&window);
+                controller.didFocusWindow(Some(&window));
+            }
+        }
+        let views: Vec<TabView> = tabs.collect();
+        let active = views.iter().find(|v| v.active).map(|v| v.id);
+        let mut opened = Vec::new();
+        let mut moved = Vec::new();
+        let mut changed = Vec::new();
+        // Les différences sont calculées d'abord, WebKit prévenu ensuite (voir la règle en tête).
+        let (closed, previous, done) = STATE.with_borrow_mut(|s| {
+            let mut old = std::mem::take(&mut s.tabs);
+            let previous = s.active.and_then(|id| old.iter().find(|m| m.id == id)).map(|m| m.tab.clone());
+            let old_index: HashMap<u32, usize> = old.iter().enumerate().map(|(i, m)| (m.id, i)).collect();
+            for (index, view) in views.iter().enumerate() {
+                let webview: Option<Retained<WKWebView>> = view.webview.map(|w| Retained::into_super(w.webview()));
+                let mirror = match old.iter().position(|m| m.id == view.id) {
+                    Some(i) => {
+                        let m = old.swap_remove(i);
+                        let mut props = WKWebExtensionTabChangedProperties::empty();
+                        if m.title != view.title {
+                            props |= WKWebExtensionTabChangedProperties::Title;
+                        }
+                        let same_view = match (&m.webview, &webview) {
+                            (Some(a), Some(b)) => ptr::eq(&**a, &**b),
+                            (None, None) => true,
+                            _ => false,
+                        };
+                        if m.url != view.url || !same_view {
+                            props |= WKWebExtensionTabChangedProperties::URL;
+                        }
+                        if m.loading != view.loading || !same_view {
+                            props |= WKWebExtensionTabChangedProperties::Loading;
+                        }
+                        if m.pinned != view.pinned {
+                            props |= WKWebExtensionTabChangedProperties::Pinned;
+                        }
+                        if m.audible != view.audible {
+                            props |= WKWebExtensionTabChangedProperties::PlayingAudio;
+                        }
+                        if m.muted != view.muted {
+                            props |= WKWebExtensionTabChangedProperties::Muted;
+                        }
+                        if !props.is_empty() {
+                            changed.push((m.tab.clone(), props));
+                        }
+                        if old_index.get(&view.id).is_some_and(|&i| i != index) {
+                            moved.push((m.tab.clone(), old_index[&view.id]));
+                        }
+                        m.tab
+                    }
+                    None => {
+                        let tab = ExtTab::new(mtm, view.id);
+                        opened.push(tab.clone());
+                        tab
+                    }
+                };
+                s.tabs.push(Mirror {
+                    id: view.id,
+                    tab: mirror,
+                    title: view.title.to_string(),
+                    url: view.url.to_string(),
+                    loading: view.loading,
+                    pinned: view.pinned,
+                    audible: view.audible,
+                    muted: view.muted,
+                    webview,
+                });
+            }
+            // L'onglet affiché avant, sauf s'il vient d'être fermé.
+            let previous = previous.filter(|p| !old.iter().any(|m| ptr::eq(&*m.tab, &**p)));
+            let previous = if s.active == active { None } else { Some(previous) };
+            s.active = active;
+            // Onglets demandés par une extension : le dernier ouvert leur est rendu.
+            let done = if opened.is_empty() { Vec::new() } else { std::mem::take(&mut s.new_tabs) };
+            (old, previous, done)
+        });
+        let active_tab = active.and_then(tab_object);
+        // SAFETY : fil principal, objets valides ; aucun emprunt de `STATE` en cours.
+        unsafe {
+            for m in closed {
+                controller.didCloseTab_windowIsClosing(&ProtocolObject::from_retained(m.tab), false);
+            }
+            for tab in &opened {
+                controller.didOpenTab(ProtocolObject::from_ref(&**tab));
+            }
+            for (tab, from) in moved {
+                controller.didMoveTab_fromIndex_inWindow(ProtocolObject::from_ref(&*tab), from, window_object().as_deref());
+            }
+            for (tab, props) in changed {
+                controller.didChangeTabProperties_forTab(props, ProtocolObject::from_ref(&*tab));
+            }
+            if let (Some(previous), Some(tab)) = (previous, &active_tab) {
+                let previous = previous.map(ProtocolObject::from_retained);
+                controller.didActivateTab_previousActiveTab(tab, previous.as_deref());
+            }
+        }
+        if let Some(tab) = opened.last() {
+            let tab: &ProtocolObject<dyn WKWebExtensionTab> = ProtocolObject::from_ref(&**tab);
+            let tab = tab as *const ProtocolObject<dyn WKWebExtensionTab> as *mut _;
+            for block in done {
+                block.call((tab, ptr::null_mut()));
+            }
         }
     }
 
@@ -1525,41 +2061,66 @@ mod engine {
         url.absoluteString().map(|s| s.to_string())
     }
 
-    /// Ouvre la fenêtre de l'extension dans une bulle (celle que WebKit prépare),
-    /// contre son bouton. Sans fenêtre, le clic est transmis à l'extension.
-    pub fn open_popup(ext: &Extension, frame: (f64, f64, f64, f64), chrome: &WebView) -> Result<Option<String>, String> {
+    /// Clic sur le bouton de l'extension (`button`, dans l'interface) : WebKit
+    /// charge sa fenêtre, puis demande de l'afficher (`present_popup`).
+    /// Sans fenêtre, le clic est transmis à l'extension.
+    pub fn open_popup(
+        ext: &Extension,
+        button: (f64, f64, f64, f64),
+        _frame: (f64, f64, f64, f64),
+        bar: &str,
+        _chrome: &WebView,
+    ) -> Result<Option<String>, String> {
         let context = context(&ext.id).ok_or("L'extension est encore en cours de chargement.")?;
-        // SAFETY : fil principal, objets valides ; la bulle s'attache à la vue de l'interface.
+        let tab = active_tab();
+        // SAFETY : fil principal, objets valides ; aucun emprunt de `STATE` en cours.
         unsafe {
-            let action = context.actionForTab(None).ok_or("Cette extension n'a pas de bouton.")?;
-            if !action.presentsPopup() {
-                context.performActionForTab(None);
-                return Ok(None);
+            let action = context.actionForTab(tab.as_deref()).ok_or("Cette extension n'a pas de bouton.")?;
+            if action.presentsPopup() {
+                STATE.with_borrow_mut(|s| s.anchor = Some((button, bar.to_string())));
             }
-            let popover = action.popupPopover().ok_or("La fenêtre de l'extension n'a pas pu s'ouvrir.")?;
-            let webview = chrome.webview();
-            let view: &NSView = &webview;
-            let (x, y, w, h) = frame;
-            let height = view.frame().size.height;
-            let y = if view.isFlipped() { y } else { height - y - h };
-            let rect = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
-            popover.setBehavior(NSPopoverBehavior::Transient);
-            popover.showRelativeToRect_ofView_preferredEdge(rect, view, NSRectEdge::MaxX);
-            STATE.with_borrow_mut(|s| s.popover = Some(popover));
+            context.performActionForTab(tab.as_deref());
         }
         Ok(None)
     }
 
+    /// La bulle de la fenêtre, la pointe sur le bouton de l'extension, du côté de la page.
+    fn show_popover(action: &WKWebExtensionAction) {
+        // SAFETY : fil principal, action valide.
+        let Some(popover) = (unsafe { action.popupPopover() }) else { return };
+        let (anchor, view) = STATE.with_borrow_mut(|s| (s.anchor.take(), s.chrome.clone()));
+        let Some(view) = view else { return };
+        let ((x, y, w, h), bar) = anchor.unwrap_or(((0.0, 0.0, 1.0, 1.0), String::new()));
+        let flipped = view.isFlipped();
+        let height = view.frame().size.height;
+        let y = if flipped { y } else { height - y - h };
+        let rect = NSRect::new(NSPoint::new(x, y), NSSize::new(w.max(1.0), h.max(1.0)));
+        let edge = match bar.as_str() {
+            "right" => NSRectEdge::MinX,
+            "top" if flipped => NSRectEdge::MaxY,
+            "top" => NSRectEdge::MinY,
+            _ => NSRectEdge::MaxX,
+        };
+        popover.setBehavior(NSPopoverBehavior::Transient);
+        popover.showRelativeToRect_ofView_preferredEdge(rect, &view, edge);
+        STATE.with_borrow_mut(|s| s.popover = Some(popover));
+    }
+
     pub fn close_popup() {
-        if let Some(popover) = STATE.with_borrow_mut(|s| s.popover.take()) {
+        let popover = STATE.with_borrow_mut(|s| {
+            s.anchor = None;
+            s.popover.take()
+        });
+        if let Some(popover) = popover {
             // SAFETY : fil principal, bulle valide.
             unsafe { popover.performClose(None) };
         }
     }
 
     /// La bulle se ferme seule au clic ailleurs : est-elle encore affichée ?
+    /// (Juste après le clic, la fenêtre se charge : elle compte comme affichée.)
     pub fn popup_shown() -> bool {
-        STATE.with_borrow(|s| s.popover.as_ref().is_some_and(|p| p.isShown()))
+        STATE.with_borrow(|s| s.anchor.is_some() || s.popover.as_ref().is_some_and(|p| p.isShown()))
     }
 }
 
@@ -1583,6 +2144,9 @@ mod engine {
 
     pub fn start(_chrome: &WebView, _list: &[Extension], _proxy: &EventLoopProxy<UserEvent>) {}
 
+    pub fn sync_tabs<'a>(_tabs: impl Iterator<Item = super::TabView<'a>>) {}
+
+
     pub fn add(_ext: &Extension, _proxy: &EventLoopProxy<UserEvent>) {}
 
     pub fn set_enabled(_ext: &Extension, _on: bool) {}
@@ -1595,7 +2159,13 @@ mod engine {
         None
     }
 
-    pub fn open_popup(_ext: &Extension, _frame: (f64, f64, f64, f64), _chrome: &WebView) -> Result<Option<String>, String> {
+    pub fn open_popup(
+        _ext: &Extension,
+        _button: (f64, f64, f64, f64),
+        _frame: (f64, f64, f64, f64),
+        _bar: &str,
+        _chrome: &WebView,
+    ) -> Result<Option<String>, String> {
         Err(support().unwrap_err().into())
     }
 

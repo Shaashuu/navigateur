@@ -113,7 +113,8 @@ pub enum UserEvent {
     ExtensionLoaded { id: String, result: Result<Option<String>, String> },
     /// Message de la petite fenêtre d'une extension (Windows).
     ExtensionPopup(String),
-    /// Lien ouvert depuis la fenêtre d'une extension (Windows).
+    /// Lien ouvert depuis la fenêtre d'une extension (Windows), ou onglet
+    /// demandé par une extension (macOS).
     ExtensionOpen(String),
 }
 
@@ -1327,6 +1328,7 @@ impl App {
 
     fn flush_state(&self) {
         if self.state_dirty.replace(false) {
+            self.sync_extension_tabs();
             self.send_state();
         }
     }
