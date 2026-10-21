@@ -237,6 +237,14 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   referme dès que la souris part sur la page, et la page ne « saute » plus à
   l'ouverture d'un panneau (macOS). Le clic droit est en français, et les
   boutons de l'interface n'ont plus le menu anglais de WebKit.
+- **Nouveau en 0.5.5** : sous macOS, les pages d'options des extensions
+  s'affichent, et Feather ajoute avant leur arrière-plan les évènements de
+  Chrome absents du moteur du Mac (Proton Pass s'arrêtait dessus). Le trait bleu
+  de la poignée s'éteint quand la souris passe sur la page. Les paramètres
+  d'affichage séparent les favoris des dernières pages, et la veille des onglets
+  est à 15 minutes par défaut. Un bouton d'accueil apparaît, l'utilisation de la
+  mémoire s'affiche en direct, et la pastille à la loupe ouvre une recherche au
+  milieu de la page (dans l'onglet actif ou un nouvel onglet, au choix).
 - **Nouveau en 0.5.4** : sous macOS, les extensions fonctionnent dans tous les
   onglets, même ceux ouverts avant leur installation : elles savent dans quel
   onglet elles agissent (Proton Pass peut remplir les connexions). Leur fenêtre
