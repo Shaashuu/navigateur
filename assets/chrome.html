@@ -2235,6 +2235,8 @@
       text = `EasyList, EasyPrivacy et Liste FR : ${n(a.domains)} domaines et ${n(a.hidden)} encarts, mises à jour le ${day}`;
     } else text = 'Listes pas encore téléchargées';
     if (a.error) text += ` · Échec du téléchargement (${a.error})`;
+    // Une extension bloque déjà les publicités : le bloqueur intégré se met en pause.
+    if (state.adblock_by) text = `En pause : ${state.adblock_by} bloque déjà les publicités (le bloqueur intégré reste actif dans les onglets privés) · ${text}`;
     $('s-ads-info').textContent = text;
     $('s-ads-update').disabled = !!a.updating;
   }
@@ -3526,7 +3528,7 @@
   });
 
   // Ce que montrent les réglages : la page se remplit à nouveau quand l'une de ces parties change.
-  const SETTINGS_KEYS = ['settings', 'permissions', 'update', 'adblock', 'version', 'overlay'];
+  const SETTINGS_KEYS = ['settings', 'permissions', 'update', 'adblock', 'adblock_by', 'version', 'overlay'];
   // `keys` : les parties reçues (null : l'état complet).
   function applyState(next, keys) {
     state = next;

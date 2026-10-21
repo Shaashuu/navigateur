@@ -2,7 +2,7 @@
 //! affiché par un anneau autour de sa pastille.
 //!
 //! - macOS : chaque page WebKit tourne dans son propre processus ; on lit sa
-//!   mémoire et son temps de calcul (`proc_pidinfo`).
+//!   empreinte mémoire (`proc_pid_rusage`) et son temps de calcul (`proc_pidinfo`).
 //! - Partout : la page mesure elle-même le retard de sa boucle d'événements
 //!   (signe qu'elle calcule beaucoup) et, sous Windows, la mémoire de son
 //!   JavaScript (voir `assets/page.js`).
@@ -86,7 +86,7 @@ mod mac {
         (pid > 0).then_some(pid)
     }
 
-    /// Mémoire résidente (octets) et temps de calcul total (nanosecondes).
+    /// Mémoire (octets, voir `footprint`) et temps de calcul total (nanosecondes).
     // `mach_timebase_info` est marqué obsolète dans libc (au profit de `mach2`),
     // mais reste la fonction du système : on évite une dépendance de plus.
     #[allow(deprecated)]
@@ -109,7 +109,18 @@ mod mac {
         };
         let ticks = info.pti_total_user + info.pti_total_system;
         let ns = if base.denom == 0 { ticks } else { ticks * u64::from(base.numer) / u64::from(base.denom) };
-        Some((info.pti_resident_size, ns))
+        Some((footprint(pid).unwrap_or(info.pti_resident_size), ns))
+    }
+
+    /// Empreinte physique (octets) : la mémoire propre au processus, celle
+    /// qu'affiche le Moniteur d'activité. La mémoire résidente comptait aussi
+    /// les bibliothèques du système partagées entre tous les processus WebKit,
+    /// et gonflait le chiffre.
+    fn footprint(pid: i32) -> Option<u64> {
+        let mut usage: libc::rusage_info_v4 = unsafe { std::mem::zeroed() };
+        // SAFETY : `usage` est un tampon de la bonne taille pour RUSAGE_INFO_V4.
+        let read = unsafe { libc::proc_pid_rusage(pid, libc::RUSAGE_INFO_V4, (&raw mut usage).cast()) };
+        (read == 0 && usage.ri_phys_footprint > 0).then_some(usage.ri_phys_footprint)
     }
 }
 

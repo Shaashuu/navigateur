@@ -78,8 +78,8 @@ pub fn webkit_rules() -> String {
 
 /// Installe le blocage sur une nouvelle page. `page_host` suit l'adresse de
 /// l'onglet (pour ne pas bloquer un site visité directement).
-pub fn install(webview: &WebView, page_host: Arc<RwLock<String>>, enabled: bool) {
-    platform::install(webview, page_host);
+pub fn install(webview: &WebView, page_host: Arc<RwLock<String>>, enabled: bool, private: bool) {
+    platform::install(webview, page_host, private);
     platform::set_enabled(webview, enabled);
 }
 
@@ -114,7 +114,7 @@ mod platform {
 
     // Sous macOS, tout passe par `set_enabled` (WebKit ne bloque que les requêtes
     // venues d'un autre site : l'hôte de la page n'est pas nécessaire).
-    pub fn install(_webview: &WebView, _page_host: Arc<RwLock<String>>) {}
+    pub fn install(_webview: &WebView, _page_host: Arc<RwLock<String>>, _private: bool) {}
 
     pub fn set_enabled(webview: &WebView, enabled: bool) {
         let controller = webview.manager();
@@ -194,7 +194,7 @@ mod platform {
     /// Sous Windows, un seul réglage pour toutes les pages (lu à chaque requête).
     static ENABLED: AtomicBool = AtomicBool::new(true);
 
-    pub fn install(webview: &WebView, page_host: Arc<RwLock<String>>) {
+    pub fn install(webview: &WebView, page_host: Arc<RwLock<String>>, private: bool) {
         let core = webview.webview();
         let env = webview.environment();
         let filter = HSTRING::from("*");
@@ -220,7 +220,7 @@ mod platform {
                 let page = page_host.read().map(|h| h.clone()).unwrap_or_default();
                 // Traqueurs (liste courte de Feather), puis publicités (voir adblock.rs).
                 let blocked = (ENABLED.load(Ordering::Relaxed) && super::should_block(&uri, &page))
-                    || crate::adblock::should_block(super::host_of(&uri), &page);
+                    || crate::adblock::should_block(super::host_of(&uri), &page, private);
                 if blocked {
                     let response = env.CreateWebResourceResponse(
                         None,
@@ -248,7 +248,7 @@ mod platform {
 
     use wry::WebView;
 
-    pub fn install(_webview: &WebView, _page_host: Arc<RwLock<String>>) {}
+    pub fn install(_webview: &WebView, _page_host: Arc<RwLock<String>>, _private: bool) {}
 
     pub fn set_enabled(_webview: &WebView, _enabled: bool) {}
 }

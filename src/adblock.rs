@@ -385,6 +385,11 @@ impl Filters {
 
 /// Réglage général (paramètres).
 static ENABLED: AtomicBool = AtomicBool::new(true);
+/// Une extension (uBlock Origin Lite…) bloque déjà les publicités : le bloqueur
+/// intégré se met en pause, sauf dans les onglets privés, où les extensions
+/// n'agissent pas. Bloquer deux fois chargeait deux jeux de règles dans
+/// chaque page.
+static REPLACED: AtomicBool = AtomicBool::new(false);
 /// Sites où l'utilisateur a coupé le bloqueur (fiche du site).
 static SITES_OFF: RwLock<Vec<String>> = RwLock::new(Vec::new());
 /// Règles des encarts.
@@ -402,16 +407,23 @@ pub fn set_sites_off(hosts: Vec<String>) {
     }
 }
 
-/// Le bloqueur agit sur une page de ce site.
-pub fn active_on(page_host: &str) -> bool {
+/// Une extension prend le relais du bloqueur (voir `REPLACED`). Vrai si
+/// l'état a changé : les pages ouvertes sont alors à reprendre.
+pub fn set_replaced(on: bool) -> bool {
+    REPLACED.swap(on, Ordering::Relaxed) != on
+}
+
+/// Le bloqueur agit sur une page de ce site (`private` : onglet privé).
+pub fn active_on(page_host: &str, private: bool) -> bool {
     ENABLED.load(Ordering::Relaxed)
+        && (private || !REPLACED.load(Ordering::Relaxed))
         && !page_host.is_empty()
         && SITES_OFF.read().is_ok_and(|s| !s.iter().any(|h| h == page_host))
 }
 
 /// Vrai si la requête vers `url` doit être refusée pour une page de `page_host`.
-pub fn should_block(url: &str, page_host: &str) -> bool {
-    if !active_on(page_host) {
+pub fn should_block(url: &str, page_host: &str, private: bool) -> bool {
+    if !active_on(page_host, private) {
         return false;
     }
     let Ok(guard) = NETWORK.read() else { return false };
@@ -421,8 +433,8 @@ pub fn should_block(url: &str, page_host: &str) -> bool {
 
 /// Sélecteurs à masquer sur une page (voir `Cosmetic::selectors`) ; `None` : le
 /// bloqueur n'agit pas sur ce site (la page cesse alors d'envoyer ses classes).
-pub fn hide(page_host: &str, tokens: &[String], first: bool) -> Option<Vec<String>> {
-    if !active_on(page_host) {
+pub fn hide(page_host: &str, private: bool, tokens: &[String], first: bool) -> Option<Vec<String>> {
+    if !active_on(page_host, private) {
         return None;
     }
     let cosmetic = COSMETIC.read().ok()?.clone()?;
@@ -562,8 +574,8 @@ pub fn install(filters: Filters, proxy: EventLoopProxy<UserEvent>) {
 
 /// Pose ou retire le blocage réseau d'une page selon son site (macOS ; sous
 /// Windows, chaque requête est vérifiée au passage).
-pub fn apply(webview: &WebView, page_host: &str) {
-    platform::apply(webview, active_on(page_host));
+pub fn apply(webview: &WebView, page_host: &str, private: bool) {
+    platform::apply(webview, active_on(page_host, private));
 }
 
 /// Après `apply` sur toutes les pages : les anciennes listes compilées sont oubliées.
@@ -833,6 +845,18 @@ mod platform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extension_qui_prend_le_relais() {
+        assert!(active_on("site.fr", false));
+        assert!(set_replaced(true));
+        assert!(!set_replaced(true));
+        assert!(!active_on("site.fr", false));
+        // Les extensions n'agissent pas dans les onglets privés : le bloqueur y reste.
+        assert!(active_on("site.fr", true));
+        assert!(set_replaced(false));
+        assert!(active_on("site.fr", false));
+    }
 
     const LISTE: &str = "[Adblock Plus 2.0]
 ! Title: exemple

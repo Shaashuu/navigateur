@@ -306,6 +306,7 @@ fn main() -> wry::Result<()> {
         extensions: extensions::Extensions::load(),
     };
     extensions::start(&app.chrome, app.extensions.list(), &app.proxy);
+    adblock::set_replaced(app.extensions.ad_blocker().is_some());
     adblock::set_enabled(app.settings().blocks_ads());
     adblock::set_sites_off(app.sites.read().map(|s| s.ads_off()).unwrap_or_default());
     adblock::load(app.proxy.clone(), false);
@@ -489,11 +490,11 @@ impl App {
                     tab.set_url(url);
                     // Bloqueur posé ou retiré selon le site (macOS ; voir `adblock::apply`).
                     let host = tab.host();
-                    let ads = adblock::active_on(&host);
+                    let ads = adblock::active_on(&host, tab.private);
                     if tab.ads != Some(ads)
                         && let Some(w) = tab.webview()
                     {
-                        adblock::apply(w, &host);
+                        adblock::apply(w, &host, tab.private);
                         tab.ads = Some(ads);
                     }
                     // Un onglet privé ne laisse aucune trace dans l'historique.
@@ -1433,6 +1434,8 @@ impl App {
             "site": self.site_info(),
             "groups": self.tabs.groups(),
             "adblock": self.adblock,
+            // Extension qui bloque les publicités à la place du bloqueur intégré.
+            "adblock_by": self.extensions.ad_blocker(),
             "focus": self.focus,
             "extensions": self.extensions.snapshot(),
         });

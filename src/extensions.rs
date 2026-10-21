@@ -30,6 +30,7 @@ use sha2::{Digest, Sha256};
 use url::Url;
 use wry::WebViewBuilder;
 
+use crate::adblock;
 use crate::storage;
 
 /// Fichier qui liste les extensions installées.
@@ -117,6 +118,24 @@ fn root() -> Option<PathBuf> {
 /// Les extensions sont-elles possibles ici ? Sinon, la raison, pour le panneau.
 pub fn support() -> Result<(), &'static str> {
     engine::support()
+}
+
+/// Bloqueurs de publicités connus, par identifiant du Chrome Web Store : uBlock
+/// Origin Lite, uBlock Origin, AdGuard, AdBlock, Adblock Plus, Ghostery.
+const AD_BLOCKER_IDS: &[&str] = &[
+    "ddkjiahejlhfcafbddmgiahcphecmpfh",
+    "cjpalhdlnbpafiamejdnhcphjbkeiagm",
+    "bgnkhhnnamicmpeenaelnjfhikgbkllg",
+    "gighmmpiobklfepjocnamgkkbiglidom",
+    "cfhdojbkjhnklbpkdaibdccddilifddb",
+    "mlomiejdfkolichcflejclcbmpeaniij",
+];
+
+/// L'extension est un bloqueur de publicités (identifiant connu, ou nom).
+pub fn blocks_ads(ext: &Extension) -> bool {
+    let name = ext.name.to_lowercase();
+    AD_BLOCKER_IDS.contains(&ext.id.as_str())
+        || ["ublock", "adblock", "adguard", "ghostery"].iter().any(|n| name.contains(n))
 }
 
 /// Page d'une extension sur le Chrome Web Store (bouton « Ajouter à Feather »,
@@ -907,6 +926,18 @@ impl Extensions {
         };
     }
 
+    /// Nom du bloqueur de publicités qui agit sur toutes les pages : activé,
+    /// chargé sans erreur par le moteur. Le bloqueur intégré lui laisse la place.
+    pub fn ad_blocker(&self) -> Option<&str> {
+        if support().is_err() {
+            return None;
+        }
+        self.list
+            .iter()
+            .find(|e| e.enabled && e.all_sites && blocks_ads(e) && !self.problems.contains_key(&e.id))
+            .map(|e| e.name.as_str())
+    }
+
     pub fn popup_id(&self) -> Option<&str> {
         self.popup.as_ref().map(|p| p.id.as_str())
     }
@@ -1095,6 +1126,15 @@ impl crate::App {
             }
             None => add(&ext, &self.proxy),
         }
+        self.sync_ad_blocker();
+    }
+
+    /// Un bloqueur de publicités en extension met le bloqueur intégré en pause
+    /// (voir `adblock::set_replaced`), et le réveille quand il s'en va.
+    pub(crate) fn sync_ad_blocker(&mut self) {
+        if adblock::set_replaced(self.extensions.ad_blocker().is_some()) {
+            self.reapply_ads();
+        }
     }
 
     /// Réponse du moteur : l'identifiant WebView2, ou ce qui n'a pas marché.
@@ -1112,6 +1152,7 @@ impl crate::App {
             }
             Err(err) => self.extensions.set_problem(id, Some(err)),
         }
+        self.sync_ad_blocker();
     }
 
     pub(crate) fn set_extension(&mut self, id: &str, enabled: bool) {
@@ -1123,6 +1164,7 @@ impl crate::App {
         let ext = ext.clone();
         self.extensions.save();
         set_enabled(&ext, enabled);
+        self.sync_ad_blocker();
     }
 
     pub(crate) fn remove_extension(&mut self, id: &str) {
@@ -1133,6 +1175,7 @@ impl crate::App {
             remove(&ext);
             remove_folder_later(&ext);
         }
+        self.sync_ad_blocker();
     }
 
     /// Page d'options de l'extension, dans un nouvel onglet.
@@ -2281,6 +2324,28 @@ mod tests {
     use super::*;
 
     const ID: &str = "ghmbeldphafepmbegfdlkpapadhbakde";
+
+    #[test]
+    fn bloqueurs_reconnus() {
+        let ext = |id: &str, name: &str| Extension {
+            id: id.into(),
+            name: name.into(),
+            description: String::new(),
+            version: "1".into(),
+            source: Source::Chrome,
+            enabled: true,
+            dir: id.into(),
+            popup: None,
+            options: None,
+            icon: None,
+            all_sites: true,
+            firefox: false,
+            engine_id: None,
+        };
+        assert!(blocks_ads(&ext("ddkjiahejlhfcafbddmgiahcphecmpfh", "uBO Lite")));
+        assert!(blocks_ads(&ext("autre", "AdGuard AdBlocker")));
+        assert!(!blocks_ads(&ext(ID, "Proton Pass")));
+    }
 
     #[test]
     fn bouton_du_store() {
