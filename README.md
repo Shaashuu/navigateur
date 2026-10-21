@@ -155,7 +155,7 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
     recherche (« veille », « cookies »…). Chaque changement est enregistré tout
     de suite : plus de bouton « Enregistrer ». `/parametres veille` ouvre les
     paramètres déjà filtrés ; la fiche du site mène à « Vie privée et sites ».
-- **Depuis la 0.3.8 (pas encore publié)** : refonte « Plume ».
+- **Nouveau en 0.4.0** : refonte « Plume ».
   - Fond papier, pastilles carrées arrondies (l'initiale du site quand il n'a
     pas d'icône), nouvelle page d'accueil : date et heure, salutation, favoris
     en tuiles et « Reprendre » (les dernières pages visitées).
