@@ -16,6 +16,7 @@ mod downloads;
 mod errorpage;
 mod features;
 mod fulltext;
+mod images;
 mod import;
 mod layers;
 mod library;
@@ -86,6 +87,8 @@ pub enum UserEvent {
     DownloadDone { url: String, path: Option<PathBuf>, success: bool },
     /// Taille annoncée par le serveur pour un téléchargement.
     DownloadSize { id: u32, total: u64 },
+    /// Image ajoutée à Photos (ou la raison de l'échec).
+    ImageSaved(Result<(), String>),
     /// Moment d'enregistrer l'historique, les favoris et la session.
     Persist,
     /// Chaque seconde : progression des téléchargements, poids et veille des onglets.
@@ -429,6 +432,7 @@ impl App {
             UserEvent::Reap => self.tabs.reap(),
             UserEvent::DownloadStarted { url, path, private } => self.download_started(url, path, private),
             UserEvent::DownloadDone { url, path, success } => self.download_done(&url, path, success),
+            UserEvent::ImageSaved(result) => self.image_saved(result),
             UserEvent::DownloadSize { id, total } => {
                 if let Some(d) = self.downloads.iter_mut().find(|d| d.id == id) {
                     d.total = Some(total);
@@ -675,6 +679,11 @@ impl App {
                 LinkHow::Background => self.open_tab_in_background(&link.url),
                 LinkHow::Private => self.open_tab(&link.url, true),
             }
+        }
+        if let Some(image) = message.image
+            && network::is_web(&image.url)
+        {
+            self.save_image(id, image.url, image.how);
         }
         if let Some(audible) = message.audible {
             if let Some(tab) = self.tabs.get_mut(id) {

@@ -3,7 +3,7 @@
 //! poids et mise en veille des onglets, mode économie, pages d'erreur, fiche
 //! du site, suivi des téléchargements.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::json;
@@ -12,6 +12,7 @@ use crate::commands::{self, Contexte, Resultat};
 use crate::adblock;
 use crate::capture::{self, Target};
 use crate::downloads::{self, Download, State};
+use crate::images;
 use crate::import;
 use crate::errorpage::{self, ErrorKind};
 use crate::network;
@@ -20,7 +21,7 @@ use crate::siteclear;
 use crate::sitedata::Permission;
 use crate::softsleep;
 use crate::tab_manager::TabId;
-use crate::ui::{CosmeticRequest, PageMetrics, PermissionRequest};
+use crate::ui::{CosmeticRequest, ImageHow, PageMetrics, PermissionRequest};
 use crate::update;
 use crate::{App, UpdateState, UserEvent};
 
@@ -697,6 +698,39 @@ impl App {
         self.push_state();
     }
 
+    /// Menu d'une image : « Enregistrer l'image » passe par les téléchargements
+    /// (avec sa progression) ; « Enregistrer dans Photos » (macOS) l'ajoute
+    /// directement à la photothèque.
+    pub(crate) fn save_image(&mut self, tab: TabId, url: String, how: ImageHow) {
+        let (referer, private) = self.tabs.get(tab).map(|t| (t.url().to_string(), t.private)).unwrap_or_default();
+        let proxy = self.proxy.clone();
+        if how == ImageHow::Photos {
+            #[cfg(target_os = "macos")]
+            std::thread::spawn(move || {
+                let _ = proxy.send_event(UserEvent::ImageSaved(images::save_to_photos(&url, &referer)));
+            });
+            return;
+        }
+        let dir = self.read_settings().download_dir.clone();
+        let dest = downloads::destination(Path::new(&images::file_name(&url)), &dir);
+        // Fichier vide réservé tout de suite : deux images du même nom ne se marchent pas dessus.
+        let _ = std::fs::File::create(&dest);
+        self.download_started(url.clone(), dest.clone(), private);
+        std::thread::spawn(move || {
+            let result = images::fetch(&url, &referer, &dest);
+            let path = if result.is_ok() { images::fix_extension(&dest) } else { dest };
+            let _ = proxy.send_event(UserEvent::DownloadDone { url, path: Some(path), success: result.is_ok() });
+        });
+    }
+
+    pub(crate) fn image_saved(&mut self, result: Result<(), String>) {
+        let text = match result {
+            Ok(()) => "Image ajoutée à Photos".to_string(),
+            Err(e) => format!("Impossible d'enregistrer l'image : {e}"),
+        };
+        self.chrome_call(&format!("navigateur.showNotice({})", js(&text)));
+    }
+
     pub(crate) fn download_done(&mut self, url: &str, path: Option<PathBuf>, success: bool) {
         // Deux téléchargements de la même adresse : on reconnaît d'abord le bon
         // par son chemin, et seulement à défaut par son adresse.
@@ -707,6 +741,10 @@ impl App {
         let index = by_path.or_else(|| self.downloads.iter().rposition(|d| waiting(d) && d.url == url));
         if let Some(d) = index.map(|i| &mut self.downloads[i]) {
             if let Some(path) = path {
+                // Une image sans extension la reçoit à la fin : le nom affiché suit.
+                if path != d.path {
+                    d.name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| d.name.clone());
+                }
                 d.path = path;
             }
             if d.state == State::Cancelled {

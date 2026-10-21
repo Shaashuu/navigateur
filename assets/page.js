@@ -55,7 +55,8 @@
   }, true);
 
   // Menu d'un lien (clic droit) : ouvrir dans un nouvel onglet, en arrière-plan,
-  // dans un onglet privé, ou copier l'adresse. Maj+clic droit garde le menu du système.
+  // dans un onglet privé, ou copier l'adresse. Sur une image : l'enregistrer
+  // (dans Photos sous macOS). Maj+clic droit garde le menu du système.
   // Le menu vit dans un « shadow DOM » fermé : le site ne peut ni le lire ni le styler.
   let menuHost = null;
   const closeMenu = () => { if (menuHost) { menuHost.remove(); menuHost = null; } };
@@ -71,11 +72,19 @@
     try { document.execCommand('copy'); } catch (_) {}
     t.remove();
   };
+  // Image sous le clic droit (http ou https seulement : l'image est téléchargée par Feather).
+  const imageOf = (e) => {
+    const img = e.target && e.target.closest ? e.target.closest('img') : null;
+    const src = img && (img.currentSrc || img.src);
+    return src && /^https?:/i.test(src) ? src : null;
+  };
+  const isMac = /Mac/.test(navigator.platform);
   window.addEventListener('contextmenu', (e) => {
     closeMenu();
     if (e.shiftKey) return;
     const url = linkOf(e);
-    if (!url) return;
+    const image = imageOf(e);
+    if (!url && !image) return;
     e.preventDefault();
     e.stopPropagation();
     menuHost = document.createElement('feather-menu');
@@ -91,17 +100,19 @@
         border-radius: 6px; cursor: default; }
       button:hover, button:focus { background: ${dark ? '#3b3b43' : '#ececf0'}; }
       hr { border: 0; border-top: 1px solid ${dark ? '#3a3a40' : '#e4e4e8'}; margin: 4px 2px; }
-    </style><div class="m" role="menu">
+    </style><div class="m" role="menu">${image ? (isMac ? '<button data-img="photos">Enregistrer dans Photos</button>' : '') +
+      '<button data-img="save">Enregistrer l\'image</button>' : ''}${image && url ? '<hr>' : ''}${url ? `
       <button data-how="tab">Ouvrir dans un nouvel onglet</button>
       <button data-how="background">Ouvrir en arrière-plan</button>
       <button data-how="private">Ouvrir dans un onglet privé</button>
-      <hr><button data-how="copy">Copier l'adresse du lien</button></div>`;
+      <hr><button data-how="copy">Copier l'adresse du lien</button>` : ''}</div>`;
     const menu = root.querySelector('.m');
     menu.addEventListener('mousedown', (ev) => ev.stopPropagation());
     menu.addEventListener('click', (ev) => {
       const b = ev.target.closest('button');
       if (!b) return;
-      if (b.dataset.how === 'copy') copy(url);
+      if (b.dataset.img) post({ image: { url: image, how: b.dataset.img } });
+      else if (b.dataset.how === 'copy') copy(url);
       else post({ link: { url, how: b.dataset.how } });
       closeMenu();
     });
@@ -111,7 +122,9 @@
     menu.style.left = Math.max(4, Math.min(e.clientX, innerWidth - r.width - 4)) + 'px';
     menu.style.top = Math.max(4, Math.min(e.clientY, innerHeight - r.height - 4)) + 'px';
   }, true);
-  window.addEventListener('mousedown', closeMenu, true);
+  // Un clic ailleurs ferme le menu ; un clic dans le menu ne doit pas le fermer
+  // avant d'arriver au bouton (l'écoute « capture » de la fenêtre passe en premier).
+  window.addEventListener('mousedown', (e) => { if (!menuHost || !e.composedPath().includes(menuHost)) closeMenu(); }, true);
   window.addEventListener('blur', closeMenu);
   window.addEventListener('scroll', closeMenu, true);
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); }, true);
