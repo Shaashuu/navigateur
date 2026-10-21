@@ -509,15 +509,15 @@
   .tab .book:hover { background: var(--surface); color: var(--text); }
   #reader-btn svg { margin: auto; }
 
-  /* Fenêtres « Groupe » et « Importer des favoris » : comme la fiche du site */
-  #group, #import {
+  /* Fenêtres « Groupe », « Importer des favoris » et « Extensions » : comme la fiche du site */
+  #group, #import, #extensions {
     position: fixed; left: var(--side); right: 0; top: 0; bottom: 0; display: none;
     justify-content: center; align-items: flex-start; padding: calc(16vh + 32px) 24px 12px; pointer-events: none;
   }
-  body.group #group, body.import #import { display: flex; }
-  body[data-pos="right"] #group, body[data-pos="right"] #import { left: 0; right: var(--side); }
-  body[data-pos="top"] #group, body[data-pos="top"] #import { left: 0; top: 44px; padding-top: 12px; }
-  #group .panel, #import .panel {
+  body.group #group, body.import #import, body.extensions #extensions { display: flex; }
+  body[data-pos="right"] #group, body[data-pos="right"] #import, body[data-pos="right"] #extensions { left: 0; right: var(--side); }
+  body[data-pos="top"] #group, body[data-pos="top"] #import, body[data-pos="top"] #extensions { left: 0; top: 44px; padding-top: 12px; }
+  #group .panel, #import .panel, #extensions .panel {
     width: min(400px, 100%); max-height: 100%; overflow-y: auto; pointer-events: auto; padding: 18px 20px 20px;
     background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
   }
@@ -543,6 +543,43 @@
   #import h3 { margin: 16px 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
   #imp-files { font-size: 13px; color: var(--muted); margin-top: 6px; }
   #import .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+  /* Extensions (point 13) : le panneau, et leurs boutons sous les outils de la colonne */
+  #extensions { padding-top: calc(10vh + 16px); }
+  #extensions [hidden] { display: none !important; }
+  #extensions .panel { width: min(460px, 100%); }
+  #ext-file-row { margin-top: 8px; }
+  #ext-pick { height: auto; padding: 2px 0; border: 0; color: var(--accent); font-size: 13px; }
+  #ext-pick:hover { text-decoration: underline; }
+  #ext-status { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+  #ext-status.err { color: var(--danger); }
+  #ext-status:empty { display: none; }
+  #ext-list { margin-top: 10px; }
+  #ext-list .ext { display: flex; align-items: flex-start; gap: 12px; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+  #ext-list .ext:last-child { border-bottom: 0; }
+  #ext-list .ext.off .ext-ic, #ext-list .ext.off .n { opacity: .5; }
+  .ext-ic {
+    flex: none; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 13px; overflow: hidden;
+  }
+  .ext-ic img { width: 22px; height: 22px; object-fit: contain; }
+  #ext-list .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  #ext-list .n { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #ext-list .m, #ext-list .d { font-size: 12px; color: var(--muted); }
+  #ext-list .d { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #ext-list .warn { font-size: 12px; color: var(--danger); }
+  #ext-list .warn.soft { color: var(--muted); font-style: italic; }
+  #ext-list .warn:empty { display: none; }
+  #ext-list .acts { display: flex; gap: 6px; margin-top: 6px; }
+  #ext-list .acts button { height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid var(--line); font-size: 12px; }
+  #ext-list .acts button:hover { border-color: var(--accent); }
+  #ext-list .acts .rm { color: var(--danger); }
+  #ext-list .acts .rm.confirm { background: var(--danger); border-color: var(--danger); color: #fff; }
+  #ext-list .empty { padding: 18px 0 6px; font-size: 13px; color: var(--muted); }
+  #ext-btns { display: contents; }
+  #ext-btns .round img { width: 18px; height: 18px; object-fit: contain; pointer-events: none; }
+  #ext-btns .round .ltr { font-size: 12px; font-weight: 700; }
+  #ext-btns .round.on, #lib-ext.on { background: var(--accent-soft); color: var(--accent); }
 
   /* Mode économie : une petite feuille sur la pastille de recherche (ou sur
      l'engrenage quand la barre est en haut) */
@@ -863,6 +900,10 @@
         <button class="round" id="lib-memory" title="Mémoire des onglets (Maj+Échap)" aria-label="Mémoire des onglets">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M10 10h4v4h-4zM9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></svg>
         </button>
+        <button class="round" id="lib-ext" title="Extensions" aria-label="Extensions">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M9 4.5a2 2 0 1 1 4 0V6h4v4h1.5a2 2 0 1 1 0 4H17v5H5v-5h1.5a2 2 0 1 0 0-4H5V6h4z"/></svg>
+        </button>
+        <span id="ext-btns"></span>
       </div>
       <label class="addr" id="side-addr"><span class="lk" id="s-lock"></span><input id="side-input" spellcheck="false" autocomplete="off" aria-label="Adresse de la page" placeholder="Rechercher ou saisir une adresse"></label>
     </div>
@@ -1008,6 +1049,27 @@
         <button type="button" class="sheet-btn" id="imp-cancel">Annuler</button>
         <button type="button" class="sheet-btn primary" id="imp-go" disabled>Importer</button>
       </div>
+    </div>
+  </div>
+
+  <div id="extensions">
+    <div class="panel card" role="dialog" aria-labelledby="ext-title">
+      <div class="sheet-head">
+        <h2 id="ext-title">Extensions</h2>
+        <button type="button" class="x" id="ext-close" title="Fermer (Échap)" aria-label="Fermer">&times;</button>
+      </div>
+      <p class="sheet-hint" id="ext-hint"></p>
+      <form class="sheet-form" id="ext-form">
+        <input type="text" id="ext-input" autocomplete="off" spellcheck="false" placeholder="Lien Chrome Web Store ou Firefox Add-ons">
+        <button type="submit" class="sheet-btn primary" id="ext-go">Installer</button>
+      </form>
+      <div id="ext-file-row">
+        <button type="button" id="ext-pick">Ou choisir un fichier (.crx, .xpi, .zip)…</button>
+        <input type="file" id="ext-file" accept=".crx,.xpi,.zip" hidden>
+      </div>
+      <p id="ext-status" role="status"></p>
+      <div id="ext-list"></div>
+      <p class="sheet-hint" id="ext-foot" style="margin-top:12px"></p>
     </div>
   </div>
 
@@ -1193,6 +1255,7 @@
     { name: '/chercher', desc: 'Chercher dans la page (Ctrl+F)', run: () => openFind() },
     { name: '/imprimer', desc: 'Imprimer la page (Ctrl+P)', run: () => shortcut('print') },
     { name: '/memoire', desc: 'Mémoire des onglets (Maj+Échap)', run: () => openLibrary('memory') },
+    { name: '/extensions', desc: 'Installer et gérer les extensions', run: () => openExtensions() },
     { name: '/economie', desc: 'Activer ou couper le mode économie', run: () => toggleEconomy() },
     { name: '/site', desc: 'Fiche du site : autorisations, zoom, données', run: () => openSite() },
     { name: '/concentration', desc: 'Masquer la barre, ne garder que la page (Ctrl+Maj+F)', run: () => shortcut('focus') },
@@ -1206,9 +1269,9 @@
   let drag = null;          // onglet en cours de déplacement
   const badIcons = new Set(); // icônes introuvables : on garde le point gris
   let pillsKey = null;      // ce que montre la liste des onglets (voir renderSidebar)
-  let mode = null;          // null, 'bar', 'settings', 'library', 'site', 'group', 'import' ou 'hover'
+  let mode = null;          // null, 'bar', 'settings', 'library', 'site', 'group', 'import', 'extensions' ou 'hover'
   // Fenêtres posées sur la page, fermées dès qu'une autre s'ouvre.
-  const isSheet = () => ['library', 'site', 'group', 'import'].includes(mode);
+  const isSheet = () => ['library', 'site', 'group', 'import', 'extensions'].includes(mode);
   let matches = [];
   let selected = 0;
   let setCat = 'apercu';    // catégorie ouverte dans les paramètres
@@ -1252,6 +1315,8 @@
     document.body.classList.toggle('site', mode === 'site');
     document.body.classList.toggle('group', mode === 'group');
     document.body.classList.toggle('import', mode === 'import');
+    document.body.classList.toggle('extensions', mode === 'extensions');
+    $('lib-ext').classList.toggle('on', mode === 'extensions');
     document.body.classList.toggle('dlpop', mode === 'dlpop');
     for (const k of LIB_KINDS) $('lib-' + k).classList.toggle('on', mode === 'library' && libKind === k);
     if (mode !== null) reportShape();
@@ -1294,7 +1359,7 @@
     else if (mode === 'settings') closeSettings();
     else if (mode === 'library') closeLibrary();
     else if (mode === 'site') closeSite();
-    else if (mode === 'group' || mode === 'import') closeSheet();
+    else if (mode === 'group' || mode === 'import' || mode === 'extensions') closeSheet();
     else if (mode === 'menu') closeTabMenu();
     else if (mode === 'hover') endHover();
     else if (mode === 'dlpop') closeDlPop();
@@ -1865,7 +1930,7 @@
 
   function runCommand(c) {
     if (c.native || c.page) { c.run(); return; }
-    closeBar(c.name !== '/parametres' && c.name !== '/chercher');
+    closeBar(c.name !== '/parametres' && c.name !== '/chercher' && c.name !== '/extensions');
     c.run();
   }
 
@@ -2318,7 +2383,7 @@
     setMode(next);
   }
   function closeSheet() {
-    if (mode !== 'group' && mode !== 'import') return;
+    if (mode !== 'group' && mode !== 'import' && mode !== 'extensions') return;
     setMode(null);
     send({ type: 'focus_page' });
   }
@@ -2427,6 +2492,139 @@
   $('imp-close').addEventListener('click', closeSheet);
   $('import').addEventListener('mousedown', (e) => { if (e.target === $('import')) closeSheet(); });
   $('s-import').addEventListener('click', openImport);
+
+  // --- Extensions (point 13) : panneau, et boutons des extensions dans la colonne ---
+  const SOURCES = { chrome: 'Chrome Web Store', firefox: 'Firefox Add-ons', fichier: 'Fichier', dossier: 'Dossier' };
+  let extRemoving = null;   // extension dont « Retirer » attend la confirmation
+  let extButtonsKey = '';
+  const extState = () => state.extensions || { supported: false, list: [] };
+  function openExtensions() {
+    if (mode === 'extensions') { closeSheet(); return; }
+    extRemoving = null;
+    openSheet('extensions');
+    if (extState().error) send({ type: 'clear_extension_error' });
+    renderExtensions();
+    if (extState().supported) $('ext-input').focus();
+  }
+  function extIcon(e, box) {
+    if (e.icon) {
+      const img = document.createElement('img');
+      img.src = e.icon;
+      img.alt = '';
+      box.appendChild(img);
+    } else {
+      const l = document.createElement('span');
+      l.className = 'ltr';
+      l.textContent = (e.name || '?').trim().charAt(0).toUpperCase();
+      box.appendChild(l);
+    }
+  }
+  function renderExtensions() {
+    const x = extState();
+    $('ext-form').hidden = !x.supported;
+    $('ext-file-row').hidden = !x.supported;
+    $('ext-go').disabled = !!x.busy;
+    $('ext-hint').textContent = !x.supported ? (x.reason || '')
+      : x.platform === 'macos'
+        ? "Extensions Chrome et Firefox, comme dans Safari. Elles agissent sur les onglets ouverts après leur installation."
+        : "Extensions du Chrome Web Store. Celles de Firefox ne marchent qu'en partie sous Windows.";
+    const status = $('ext-status');
+    status.textContent = x.busy || x.error || '';
+    status.classList.toggle('err', !x.busy && !!x.error);
+    const list = $('ext-list');
+    list.textContent = '';
+    if (x.supported && !x.list.length) {
+      list.innerHTML = '<p class="empty">Aucune extension pour l\'instant. Par exemple : uBlock Origin Lite, Proton Pass, Dark Reader.</p>';
+    }
+    for (const e of x.list) {
+      const row = document.createElement('div');
+      row.className = 'ext' + (e.enabled ? '' : ' off');
+      row.innerHTML = '<span class="ext-ic"></span><div class="txt"><span class="n"></span><span class="m"></span><span class="d"></span><span class="warn"></span><div class="acts"></div></div><input type="checkbox" class="tg">';
+      extIcon(e, row.querySelector('.ext-ic'));
+      row.querySelector('.n').textContent = e.name;
+      const meta = [e.version ? 'version ' + e.version : '', SOURCES[e.source] || '', e.all_sites ? 'tous les sites' : ''];
+      row.querySelector('.m').textContent = meta.filter(Boolean).join(' · ');
+      row.querySelector('.d').textContent = e.description || '';
+      const warn = e.problem ? 'Refusée par le moteur : ' + e.problem
+        : (e.firefox && x.platform === 'windows' ? 'Extension Firefox : certaines fonctions peuvent manquer sous Windows.' : '');
+      row.querySelector('.warn').textContent = warn;
+      row.querySelector('.warn').classList.toggle('soft', !e.problem);
+      const tg = row.querySelector('.tg');
+      tg.checked = e.enabled;
+      tg.title = e.enabled ? 'Désactiver' : 'Activer';
+      tg.setAttribute('aria-label', (e.enabled ? 'Désactiver ' : 'Activer ') + e.name);
+      tg.addEventListener('change', () => send({ type: 'set_extension', id: e.id, enabled: tg.checked }));
+      const acts = row.querySelector('.acts');
+      const act = (text, cls, run) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = text;
+        if (cls) b.className = cls;
+        b.addEventListener('click', run);
+        acts.appendChild(b);
+      };
+      if (e.options && e.enabled) act('Options', '', () => { closeSheet(); send({ type: 'extension_options', id: e.id }); });
+      const confirming = extRemoving === e.id;
+      act(confirming ? 'Retirer vraiment ?' : 'Retirer', 'rm' + (confirming ? ' confirm' : ''), () => {
+        if (extRemoving === e.id) { extRemoving = null; send({ type: 'remove_extension', id: e.id }); return; }
+        extRemoving = e.id;
+        renderExtensions();
+      });
+      list.appendChild(row);
+    }
+    $('ext-foot').textContent = x.supported
+      ? "Le bouton d'une extension active se range dans la colonne, sous les outils : un clic ouvre sa fenêtre. Les onglets privés n'ont pas d'extensions."
+      : '';
+    queueShape();
+  }
+  function renderExtButtons() {
+    const x = extState();
+    const list = x.supported ? x.list.filter((e) => e.enabled) : [];
+    const key = JSON.stringify(list.map((e) => [e.id, e.name, e.icon ? e.icon.length : 0])) + '|' + (x.popup || '');
+    if (key === extButtonsKey) return;
+    extButtonsKey = key;
+    const box = $('ext-btns');
+    box.textContent = '';
+    for (const e of list) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'round' + (x.popup === e.id ? ' on' : '');
+      b.title = e.name;
+      b.setAttribute('aria-label', e.name);
+      extIcon(e, b);
+      b.addEventListener('click', () => {
+        if (mode !== null && mode !== 'hover') closePanel();
+        const r = b.getBoundingClientRect();
+        send({ type: 'extension_action', id: e.id, x: r.left, y: r.top, w: r.width, h: r.height });
+      });
+      box.appendChild(b);
+    }
+    queueShape();
+  }
+  $('lib-ext').addEventListener('click', openExtensions);
+  $('ext-close').addEventListener('click', closeSheet);
+  $('extensions').addEventListener('mousedown', (e) => { if (e.target === $('extensions')) closeSheet(); });
+  $('ext-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const value = $('ext-input').value.trim();
+    if (!value || extState().busy) return;
+    send({ type: 'install_extension', input: value });
+    $('ext-input').value = '';
+  });
+  $('ext-pick').addEventListener('click', () => $('ext-file').click());
+  $('ext-file').addEventListener('change', () => {
+    const f = $('ext-file').files[0];
+    $('ext-file').value = '';
+    if (!f) return;
+    if (f.size > 100 * 1024 * 1024) { showNotice('Ce fichier est trop gros pour être une extension.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => send({ type: 'install_extension_file', name: f.name, data: String(reader.result || '') });
+    reader.readAsDataURL(f);
+  });
+  // Un clic ailleurs dans l'interface ferme la fenêtre d'une extension, comme dans la page.
+  document.addEventListener('pointerdown', (e) => {
+    if (extState().popup && !e.target.closest('#ext-btns')) send({ type: 'close_extension_popup' });
+  }, true);
   $('gear').addEventListener('click', () => mode === 'settings' ? closeSettings() : openSettings());
   $('new-tab').addEventListener('click', () => send({ type: 'new_tab' }));
 
@@ -3068,7 +3266,7 @@
     if (e.key === 'Escape' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) { openLibrary('memory'); e.preventDefault(); return; }
     if (e.key === 'Escape') closeTabMenu();
     if (e.key === 'Escape' && mode === 'site') { closeSite(); return; }
-    if (e.key === 'Escape' && (mode === 'group' || mode === 'import')) { closeSheet(); return; }
+    if (e.key === 'Escape' && (mode === 'group' || mode === 'import' || mode === 'extensions')) { closeSheet(); return; }
     if (e.key === 'Escape' && mode === 'settings') { closeSettings(); return; }
     if (e.key === 'Escape' && mode === 'library') { closeLibrary(); return; }
     const k = e.key.toLowerCase();
@@ -3131,6 +3329,8 @@
     if (mode === 'library' && LOCAL_KINDS.includes(libKind)) renderLibrary();
     if (mode === 'site') renderSite();
     if (mode === 'group') renderGroupSheet();
+    if (mode === 'extensions') renderExtensions();
+    renderExtButtons();
     if (mode === 'settings' && (!keys || keys.some((k) => SETTINGS_KEYS.includes(k)))) fillSettings();
   }
 
