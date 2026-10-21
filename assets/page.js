@@ -554,4 +554,42 @@
 
   // Clic dans la page : Feather ferme le panneau ouvert par-dessus, s'il y en a un.
   if (window.top === window) window.addEventListener('pointerdown', () => post({ pressed: true }), true);
+
+  // Chrome Web Store : le bouton « Ajouter à Chrome » est réservé à Chrome. Sur la
+  // page d'une extension, Feather pose le sien en bas à droite (pas sous Linux,
+  // sans extensions). Rust vérifie l'onglet et l'adresse avant d'installer.
+  if (window.top === window && location.hostname === 'chromewebstore.google.com' && !/Linux/.test(navigator.platform)) {
+    let storeHost = null;
+    const storeButton = () => {
+      const on = /^\/detail\/(?:[^/]+\/)?[a-p]{32}\/?$/.test(location.pathname);
+      if (!on) { if (storeHost) { storeHost.remove(); storeHost = null; } return; }
+      if (storeHost && storeHost.isConnected) return;
+      if (!document.documentElement) return;
+      storeHost = document.createElement('feather-store');
+      const root = storeHost.attachShadow({ mode: 'closed' });
+      root.innerHTML = `<style>
+        :host { all: initial; position: fixed; z-index: 2147483646; right: 24px; bottom: 24px; }
+        button { all: unset; display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 24px;
+          font: 600 14px -apple-system, "Segoe UI", system-ui, sans-serif; color: #fff; background: #1a73e8;
+          box-shadow: 0 6px 20px rgba(0,0,0,.25); cursor: pointer; }
+        button:hover { background: #1765cc; }
+        button[disabled] { opacity: .7; cursor: default; }
+      </style><button type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Ajouter à Feather</span></button>`;
+      const btn = root.querySelector('button');
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (btn.disabled) return;
+        btn.disabled = true;
+        root.querySelector('span').textContent = 'Installation…';
+        post({ store_install: location.href });
+        setTimeout(() => { btn.disabled = false; root.querySelector('span').textContent = 'Ajouter à Feather'; }, 4000);
+      });
+      document.documentElement.appendChild(storeHost);
+    };
+    // Le store change de page sans recharger : on regarde l'adresse régulièrement.
+    setInterval(storeButton, 800);
+    document.addEventListener('DOMContentLoaded', storeButton);
+  }
 })();

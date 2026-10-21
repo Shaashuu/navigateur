@@ -334,6 +334,9 @@ pub struct PageMessage {
     pub reader_failed: bool,
     /// `#id` et `.classes` présents dans la page, pour le masquage des publicités.
     pub cosmetic: Option<CosmeticRequest>,
+    /// Bouton « Ajouter à Feather » sur le Chrome Web Store : adresse de la
+    /// page de l'extension (vérifiée côté Rust, voir `extensions::store_page`).
+    pub store_install: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

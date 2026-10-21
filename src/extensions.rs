@@ -119,6 +119,18 @@ pub fn support() -> Result<(), &'static str> {
     engine::support()
 }
 
+/// Page d'une extension sur le Chrome Web Store (bouton « Ajouter à Feather »,
+/// voir assets/page.js) : son identifiant, sinon `None`.
+pub fn store_page(url: &str) -> Option<String> {
+    if crate::network::host_of(url).as_deref() != Some("chromewebstore.google.com") || !url.starts_with("https://") {
+        return None;
+    }
+    match parse_input(url) {
+        Ok(Origin::Chrome(id)) => Some(id),
+        _ => None,
+    }
+}
+
 fn is_store_id(text: &str) -> bool {
     text.len() == 32 && text.bytes().all(|b| (b'a'..=b'p').contains(&b))
 }
@@ -1599,6 +1611,15 @@ mod tests {
     use super::*;
 
     const ID: &str = "ghmbeldphafepmbegfdlkpapadhbakde";
+
+    #[test]
+    fn bouton_du_store() {
+        assert_eq!(store_page(&format!("https://chromewebstore.google.com/detail/proton-pass/{ID}?hl=fr")), Some(ID.into()));
+        assert_eq!(store_page("https://chromewebstore.google.com/"), None);
+        assert_eq!(store_page(&format!("https://exemple.fr/detail/x/{ID}")), None);
+        assert_eq!(store_page(&format!("http://chromewebstore.google.com/detail/x/{ID}")), None);
+        assert_eq!(store_page(ID), None);
+    }
 
     #[test]
     fn liens_compris() {
