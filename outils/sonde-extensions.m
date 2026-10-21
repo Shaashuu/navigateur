@@ -171,6 +171,7 @@ static NSWindow *optionsWindow;
 static WKWebView *optionsView;
 static WKWebView *logView;
 static NSURL *dirURL;
+static double extra = 0; // attente supplémentaire (4e argument), pour les arrière-plans lents
 
 static void run(WKWebExtension *ext) {
     say(@"extension : %@ %@ (manifeste v%.0f)", ext.displayName, ext.version, ext.manifestVersion);
@@ -262,17 +263,23 @@ static void run(WKWebExtension *ext) {
         if (popup) probe(popup, @"fenetre-tard");
         probeBackground(context, @"34 s");
     });
+    if (extra > 0) after(34 + extra, ^{
+        WKWebView *popup = (delegate.presented ?: [context actionForTab:tab]).popupWebView;
+        if (popup) probe(popup, @"fenetre-finale");
+        if (optionsView) [optionsView reload];
+    });
+    if (extra > 0) after(34 + extra - 8, ^{ [context performActionForTab:tab]; });
     // Journal de l'arrière-plan (copies enveloppées par le flux de travail).
-    after(36, ^{
+    after(36 + extra, ^{
         NSURL *page = [context.baseURL URLByAppendingPathComponent:@"sonde-page.html"];
         say(@"page du journal : %@", page);
         logView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 800, 400) configuration:context.webViewConfiguration];
         [logView loadRequest:[NSURLRequest requestWithURL:page]];
     });
-    after(39, ^{
+    after(39 + extra, ^{
         if (logView) [logView evaluateJavaScript:@"document.body.innerText" completionHandler:^(id r, NSError *e) { say(@"journal de l'arrière-plan :\n%@%@", r ?: @"", e ? e.userInfo : @""); }];
     });
-    after(45, ^{
+    after(45 + extra, ^{
         say(@"erreurs du contexte (fin) : %@", context.errors);
         [NSApp terminate:nil];
     });
@@ -288,6 +295,7 @@ int main(int argc, const char *argv[]) {
         NSString *dir = [NSString stringWithUTF8String:argv[1]];
         name = [NSString stringWithUTF8String:argv[2]];
         outDir = [NSString stringWithUTF8String:argv[3]];
+        if (argc > 4) extra = atof(argv[4]);
         [[NSFileManager defaultManager] createDirectoryAtPath:outDir withIntermediateDirectories:YES attributes:nil error:nil];
         NSSetUncaughtExceptionHandler(&uncaught);
         say(@"bundle : %@, macOS %@", [NSBundle mainBundle].bundleIdentifier, [NSProcessInfo processInfo].operatingSystemVersionString);

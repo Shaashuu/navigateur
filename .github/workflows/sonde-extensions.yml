@@ -38,6 +38,7 @@ jobs:
           python3 outils/sonde/envelopper.py ext/protonpass3 compat sans-webrequest
           python3 outils/sonde/envelopper.py ext/ublock
           python3 outils/sonde/envelopper.py ext/ublock2 compat
+          for n in protonpass protonpass3; do python3 -c "import json,sys; m=json.load(open(sys.argv[1])); print(sys.argv[1], {k: m.get(k) for k in ['permissions','host_permissions','optional_permissions','background']})" ext/$n/manifest.json; done
       # Une vraie application (identifiant de bundle), comme Feather.
       - name: Compiler la sonde
         run: |
@@ -57,8 +58,8 @@ jobs:
         timeout-minutes: 3
         run: Sonde.app/Contents/MacOS/sonde ext/protonpass3 protonpass3 sortie 2>&1 || true
       - name: uBlock Origin Lite tel quel
-        timeout-minutes: 3
-        run: Sonde.app/Contents/MacOS/sonde ext/ublock ublock sortie 2>&1 || true
+        timeout-minutes: 5
+        run: Sonde.app/Contents/MacOS/sonde ext/ublock ublock sortie 90 2>&1 || true
       - name: uBlock Origin Lite avec les compléments
         timeout-minutes: 3
         run: Sonde.app/Contents/MacOS/sonde ext/ublock2 ublock2 sortie 2>&1 || true

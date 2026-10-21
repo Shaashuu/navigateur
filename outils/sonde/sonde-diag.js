@@ -45,7 +45,7 @@
             const s = Date.now();
             let done = false;
             setTimeout(() => { if (!done) note(name + ' toujours sans réponse après 5 s'); }, 5000);
-            r.then(() => { done = true; const d = Date.now() - s; if (d > 800) note(name + ' : ' + d + ' ms'); },
+            r.then(() => { done = true; const d = Date.now() - s; if (d > 800 || space === 'declarativeNetRequest') note(name + ' : ' + d + ' ms'); },
               (e) => { done = true; note(name + ' refusé : ' + e); });
           }
           return r;
