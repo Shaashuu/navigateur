@@ -821,7 +821,7 @@ fn build_page(
         None => builder,
     };
     // Les extensions agissent sur les pages, sauf dans les onglets privés.
-    let builder = extensions::prepare_builder(builder, !private);
+    let builder = extensions::prepare_builder(builder, !private, url);
     let webview = ctx.surface.attach(builder, ctx.window)?;
     trackers::install(&webview, host, block_trackers);
     errorpage::install(&webview, id, ctx.proxy.clone());

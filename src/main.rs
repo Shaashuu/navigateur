@@ -244,7 +244,7 @@ fn main() -> wry::Result<()> {
             .with_devtools(cfg!(debug_assertions))
             .with_ipc_handler(move |request| {
                 let _ = chrome_proxy.send_event(UserEvent::Chrome(request.into_body()));
-            }), false),
+            }), false, ""),
         &window,
     )?;
 
