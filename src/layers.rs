@@ -22,6 +22,16 @@ use wry::WebView;
 /// Les panneaux passent par-dessus la page sur ce système.
 pub const SUPPORTED: bool = cfg!(any(target_os = "macos", windows));
 
+/// Rayon des coins de la page, posée en carte à côté de la barre : le même
+/// arrondi que les pastilles des onglets (11 px dans chrome.html).
+const PAGE_RADIUS: f64 = 11.0;
+
+/// Arrondit les coins d'une page (macOS et Windows ; Linux : coins droits).
+/// À rappeler après chaque changement de taille (Windows découpe à la taille du moment).
+pub fn round_page(page: &WebView) {
+    platform::round(page, PAGE_RADIUS);
+}
+
 /// Au plus ce nombre de rectangles (la barre, le bandeau, quelques panneaux).
 const MAX_RECTS: usize = 16;
 
@@ -100,13 +110,32 @@ impl Layers {
 
 #[cfg(windows)]
 mod platform {
+    use windows::Win32::Foundation::RECT;
     use windows::Win32::Graphics::Gdi::{CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, RGN_OR, SetWindowRgn};
+    use windows::Win32::UI::HiDpi::GetDpiForWindow;
     use windows::Win32::UI::WindowsAndMessaging::{
-        HWND_BOTTOM, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos,
+        GetClientRect, HWND_BOTTOM, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos,
     };
     use wry::{WebView, WebViewExtWindows};
 
     use super::ShapeRect;
+
+    /// Découpe la page en rectangle arrondi, à sa taille actuelle.
+    pub fn round(page: &WebView, radius: f64) {
+        let hwnd = page.hwnd();
+        unsafe {
+            let mut rect = RECT::default();
+            if GetClientRect(hwnd, &mut rect).is_err() || rect.right <= 0 || rect.bottom <= 0 {
+                return;
+            }
+            let scale = f64::from(GetDpiForWindow(hwnd).max(96)) / 96.0;
+            let d = (radius * 2.0 * scale).round() as i32;
+            // Les coordonnées de fin sont exclues : +1 pour ne pas rogner le bord.
+            let region = CreateRoundRectRgn(0, 0, rect.right + 1, rect.bottom + 1, d, d);
+            // Windows garde la région : on ne la libère pas nous-mêmes.
+            SetWindowRgn(hwnd, Some(region), true);
+        }
+    }
 
     pub fn raise(chrome: &WebView, top: bool) {
         let hwnd = chrome.hwnd();
@@ -148,8 +177,25 @@ mod platform {
 
 #[cfg(target_os = "macos")]
 mod platform {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
     use objc2_app_kit::{NSView, NSWindowOrderingMode};
     use wry::{WebView, WebViewExtMacOS};
+
+    /// Coins arrondis par le calque de la vue : ils suivent les changements de taille.
+    pub fn round(page: &WebView, radius: f64) {
+        let webview = page.webview();
+        let view: &NSView = &webview;
+        view.setWantsLayer(true);
+        let layer: *mut AnyObject = unsafe { msg_send![view, layer] };
+        if layer.is_null() {
+            return;
+        }
+        unsafe {
+            let _: () = msg_send![layer, setCornerRadius: radius];
+            let _: () = msg_send![layer, setMasksToBounds: true];
+        }
+    }
 
     pub fn raise(chrome: &WebView, top: bool) {
         let webview = chrome.webview();
@@ -167,6 +213,8 @@ mod platform {
     use super::ShapeRect;
 
     pub fn raise(_chrome: &WebView, _top: bool) {}
+
+    pub fn round(_page: &WebView, _radius: f64) {}
 
     pub fn clip(_chrome: &WebView, _shape: &[ShapeRect], _scale: f64) {}
 }

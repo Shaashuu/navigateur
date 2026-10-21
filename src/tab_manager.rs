@@ -230,6 +230,7 @@ impl TabManager {
             return Ok(());
         }
         let webview = build_page(id, &tab.url, ctx, tab.private, Arc::clone(&tab.host))?;
+        crate::layers::round_page(&webview);
         let host = tab.host();
         adblock::apply(&webview, &host);
         tab.ads = Some(adblock::active_on(&host));
@@ -404,6 +405,8 @@ impl TabManager {
     pub fn set_bounds(&self, bounds: Rect) {
         for w in self.tabs.iter().filter_map(Tab::webview) {
             let _ = w.set_bounds(bounds);
+            // Windows : la découpe arrondie suit la taille de la page.
+            crate::layers::round_page(w);
         }
     }
 
