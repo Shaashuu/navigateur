@@ -229,6 +229,11 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   menus ne sont plus cachés derrière elle et la croix d'un onglet reste collée
   à sa pastille. Sous macOS, Google reçoit l'identité de Safari et sert sa
   recherche complète (avec l'IA).
+- **Nouveau en 0.5.3** : un bouton « Ajouter à Feather » sur la page d'une
+  extension du Chrome Web Store l'installe en un clic. La barre au survol se
+  referme dès que la souris part sur la page, et la page ne « saute » plus à
+  l'ouverture d'un panneau (macOS). Le clic droit est en français, et les
+  boutons de l'interface n'ont plus le menu anglais de WebKit.
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
