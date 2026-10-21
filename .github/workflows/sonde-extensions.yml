@@ -29,7 +29,7 @@ jobs:
       # Arrière-plan classique enveloppé : son erreur est notée dans le stockage de
       # l'extension (WebKit dit seulement « le chargement a échoué »), lu par une
       # petite page ajoutée (sonde-page.html). Deux copies : « protonpass »
-      # (erreur seulement) et « protonpass2 » (écoutes webRequest neutralisées).
+      # (erreur seulement) et « protonpass2 » (sans l'autorisation webRequest, écoutes factices).
       - name: Envelopper l'arrière-plan de Proton Pass
         run: |
           cp -R ext/protonpass ext/protonpass2
@@ -47,6 +47,16 @@ jobs:
           self.addEventListener('unhandledrejection', (e) => note('rejet ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason)));
           const c = globalThis.chrome || {};
           note('chrome=' + typeof globalThis.chrome + ' browser=' + typeof globalThis.browser + ' webRequest=' + typeof c.webRequest + ' offscreen=' + typeof c.offscreen + ' webNavigation=' + typeof c.webNavigation + ' scripting=' + typeof c.scripting + ' alarms=' + typeof c.alarms);
+          // Variante 2 : plus d'autorisation webRequest dans le manifeste, et des écoutes factices à la place.
+          if (NEUTRE && !c.webRequest) {
+            const ev = () => ({ addListener() {}, removeListener() {}, hasListener() { return false; } });
+            const fake = new Proxy({}, { get: (t, k) => (k in t ? t[k] : (t[k] = ev())) });
+            for (const o of [globalThis.chrome, globalThis.browser]) {
+              if (!o) continue;
+              try { Object.defineProperty(o, 'webRequest', { value: fake, configurable: true }); } catch (e) { note('pose de webRequest : ' + e); }
+            }
+            note('webRequest factice : ' + typeof (globalThis.chrome || {}).webRequest);
+          }
           if (c.webRequest) {
             for (const k of Object.keys(c.webRequest)) {
               const ev = c.webRequest[k];
@@ -66,9 +76,11 @@ jobs:
             (e) => { document.getElementById('out').textContent = 'stockage illisible : ' + e; });
           JS
             python3 - <<'PY'
-          import json
+          import json, os
           m = json.load(open('manifest.json'))
           m['background']['service_worker'] = 'sonde-bg.js'
+          if os.getcwd().endswith('protonpass2'):
+              m['permissions'] = [p for p in m['permissions'] if p != 'webRequest']
           json.dump(m, open('manifest.json', 'w'), indent=1)
           PY
             cd ../..
@@ -85,7 +97,7 @@ jobs:
       - name: Proton Pass
         timeout-minutes: 3
         run: Sonde.app/Contents/MacOS/sonde ext/protonpass protonpass sortie 2>&1 || true
-      - name: Proton Pass, écoutes webRequest neutralisées
+      - name: Proton Pass sans l'autorisation webRequest
         timeout-minutes: 3
         run: Sonde.app/Contents/MacOS/sonde ext/protonpass2 protonpass2 sortie 2>&1 || true
       - name: uBlock Origin Lite

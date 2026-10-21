@@ -42,6 +42,29 @@ static NSString *const kStorage =
      "const all = await api.storage.local.get(null);"
      "return JSON.stringify({bgerr: all.__bgerr || null, keys: Object.keys(all).slice(0, 20)});";
 
+// L'arrière-plan répond-il ? Et l'onglet actif est-il visible depuis la page ?
+static NSString *const kMessages =
+    @"const api = (typeof browser !== 'undefined' ? browser : chrome);"
+     "const wait = (p) => Promise.race([p.then((r) => 'ok ' + JSON.stringify(r).slice(0, 300), (e) => 'erreur ' + e), new Promise((r) => setTimeout(() => r('rien en 4 s'), 4000))]);"
+     "const out = {};"
+     "out.tabs = await wait(api.tabs.query({active: true, currentWindow: true}).then((t) => t.map((x) => x.id + ' ' + x.url)));"
+     "out.win = await wait(api.windows.getCurrent());"
+     "out.message = await wait(api.runtime.sendMessage({what: 'sonde'}));"
+     "return JSON.stringify(out);";
+
+// Vue cachée de l'arrière-plan (interface privée de WebKit, seulement pour la sonde).
+static WKWebView *backgroundView(WKWebExtensionContext *c) {
+    @try { return [c valueForKey:@"_backgroundWebView"]; } @catch (NSException *e) { return nil; }
+}
+
+static void probeBackground(WKWebExtensionContext *c, NSString *when) {
+    WKWebView *bg = backgroundView(c);
+    say(@"arrière-plan (%@) : vue %@, adresse %@, chargement %d", when, bg, bg.URL, bg.loading);
+    if (!bg) return;
+    [bg evaluateJavaScript:@"JSON.stringify({href: location.href, ready: document.readyState, scripts: [...document.scripts].map((s) => s.src + ' ' + s.type), sw: navigator.serviceWorker ? 'oui' : 'non', errs: (window.__e || []).slice(0, 30), text: (document.body && document.body.innerText || '').slice(0, 300)})"
+         completionHandler:^(id r, NSError *e) { say(@"arrière-plan (%@) : %@%@", when, r ?: @"", e ? e.userInfo : @""); }];
+}
+
 @class Win;
 @interface Tab : NSObject <WKWebExtensionTab>
 @property(strong) WKWebView *web;
@@ -124,7 +147,11 @@ static void probe(WKWebView *web, NSString *what) {
     }];
     if ([web.URL.scheme isEqualToString:@"webkit-extension"])
         [web callAsyncJavaScript:kStorage arguments:nil inFrame:nil inContentWorld:WKContentWorld.pageWorld completionHandler:^(id result, NSError *error) {
-            say(@"%@ stockage : %@%@", what, result ?: @"", error ? error.localizedDescription : @"");
+            say(@"%@ stockage : %@%@", what, result ?: @"", error ? error.userInfo : @"");
+        }];
+    if ([web.URL.scheme isEqualToString:@"webkit-extension"])
+        [web callAsyncJavaScript:kMessages arguments:nil inFrame:nil inContentWorld:WKContentWorld.pageWorld completionHandler:^(id result, NSError *error) {
+            say(@"%@ messages : %@%@", what, result ?: @"", error ? error.userInfo : @"");
         }];
     snapshot(web, what);
 }
@@ -184,6 +211,8 @@ static void run(WKWebExtension *ext) {
     NSError *error = nil;
     [controller loadExtensionContext:context error:&error];
     say(@"chargement : %@ ; adresse de base %@", error ?: @"réussi", context.baseURL);
+    [context loadBackgroundContentWithCompletionHandler:^(NSError *e) { say(@"arrière-plan démarré : %@", e ?: @"oui"); }];
+    after(4, ^{ probeBackground(context, @"4 s"); });
     [controller didOpenWindow:win];
     [controller didFocusWindow:win];
     [controller didOpenTab:tab];
@@ -196,6 +225,7 @@ static void run(WKWebExtension *ext) {
         say(@"accès à tous les sites : %d", context.hasAccessToAllURLs);
         [controller didChangeTabProperties:WKWebExtensionTabChangedPropertiesURL | WKWebExtensionTabChangedPropertiesLoading forTab:tab];
         probe(tab.web, @"onglet");
+        probeBackground(context, @"8 s");
         WKWebExtensionAction *action = [context actionForTab:tab];
         say(@"bouton : %@, fenêtre : %d, libellé %@", action, action.presentsPopup, action.label);
         [context performActionForTab:tab];
@@ -229,16 +259,17 @@ static void run(WKWebExtension *ext) {
         if (optionsView) probe(optionsView, @"options");
         WKWebView *popup = (delegate.presented ?: [context actionForTab:tab]).popupWebView;
         if (popup) probe(popup, @"fenetre-tard");
+        probeBackground(context, @"34 s");
     });
     // Journal de l'arrière-plan (copies enveloppées par le flux de travail).
     after(36, ^{
         NSURL *page = [context.baseURL URLByAppendingPathComponent:@"sonde-page.html"];
-        if (![[NSFileManager defaultManager] fileExistsAtPath:[[dirURL URLByAppendingPathComponent:@"sonde-page.html"] path]]) return;
+        say(@"page du journal : %@", page);
         logView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 800, 400) configuration:context.webViewConfiguration];
         [logView loadRequest:[NSURLRequest requestWithURL:page]];
     });
     after(39, ^{
-        if (logView) [logView evaluateJavaScript:@"document.body.innerText" completionHandler:^(id r, NSError *e) { say(@"journal de l'arrière-plan :\n%@%@", r ?: @"", e ? e.localizedDescription : @""); }];
+        if (logView) [logView evaluateJavaScript:@"document.body.innerText" completionHandler:^(id r, NSError *e) { say(@"journal de l'arrière-plan :\n%@%@", r ?: @"", e ? e.userInfo : @""); }];
     });
     after(41, ^{
         say(@"erreurs du contexte (fin) : %@", context.errors);
