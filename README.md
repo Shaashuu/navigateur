@@ -216,6 +216,12 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   - macOS 15.4 ou plus récent : extensions Chrome et Firefox (WebKit, comme
     Safari). Avant 15.4 : pas d'extensions.
   - Linux : impossible, WebKitGTK ne fait pas tourner d'extensions.
+- **Nouveau en 0.5.1** (correctif) : YouTube plus léger. Le bloqueur de
+  publicités gardait en mémoire tous les éléments ajoutés à une page qui bouge
+  sans arrêt (YouTube pendant la lecture) et n'y masquait plus les encarts ;
+  c'est corrigé. La mesure du poids des onglets réveille moins souvent la page,
+  et le mode économie fait jouer YouTube en H.264 (décodé par la puce
+  graphique, image limitée au 1080p).
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
