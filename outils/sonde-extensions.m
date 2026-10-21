@@ -141,6 +141,8 @@ static Win *win;
 static NSWindow *window;
 static NSWindow *optionsWindow;
 static WKWebView *optionsView;
+static WKWebView *logView;
+static NSURL *dirURL;
 
 static void run(WKWebExtension *ext) {
     say(@"extension : %@ %@ (manifeste v%.0f)", ext.displayName, ext.version, ext.manifestVersion);
@@ -228,7 +230,17 @@ static void run(WKWebExtension *ext) {
         WKWebView *popup = (delegate.presented ?: [context actionForTab:tab]).popupWebView;
         if (popup) probe(popup, @"fenetre-tard");
     });
-    after(40, ^{
+    // Journal de l'arrière-plan (copies enveloppées par le flux de travail).
+    after(36, ^{
+        NSURL *page = [context.baseURL URLByAppendingPathComponent:@"sonde-page.html"];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:[[dirURL URLByAppendingPathComponent:@"sonde-page.html"] path]]) return;
+        logView = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 800, 400) configuration:context.webViewConfiguration];
+        [logView loadRequest:[NSURLRequest requestWithURL:page]];
+    });
+    after(39, ^{
+        if (logView) [logView evaluateJavaScript:@"document.body.innerText" completionHandler:^(id r, NSError *e) { say(@"journal de l'arrière-plan :\n%@%@", r ?: @"", e ? e.localizedDescription : @""); }];
+    });
+    after(41, ^{
         say(@"erreurs du contexte (fin) : %@", context.errors);
         [NSApp terminate:nil];
     });
@@ -253,6 +265,7 @@ int main(int argc, const char *argv[]) {
         NSString *full = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:dir];
         NSURL *url = [[NSURL fileURLWithPath:full isDirectory:YES] URLByStandardizingPath];
         say(@"lecture de %@", url);
+        dirURL = url;
         [WKWebExtension extensionWithResourceBaseURL:url completionHandler:^(WKWebExtension *ext, NSError *error) {
             if (!ext) { say(@"extension refusée : %@", error); [NSApp terminate:nil]; return; }
             run(ext);
