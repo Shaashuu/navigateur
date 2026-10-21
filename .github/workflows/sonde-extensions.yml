@@ -8,7 +8,8 @@ on:
 
 jobs:
   sonde:
-    runs-on: macos-15
+    # Machine Intel : les Apple Silicon de GitHub restent souvent en file d'attente.
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v6
       - run: sw_vers
