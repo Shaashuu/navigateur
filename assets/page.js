@@ -188,6 +188,32 @@
   });
   window.__featherSetEconomy = (on) => { economy = on === true; };
 
+  // Mode économie sur YouTube : la vidéo arrive en H.264 plutôt qu'en VP9 ou AV1.
+  // Tous les Mac et PC décodent le H.264 avec la puce graphique ; le VP9 et l'AV1
+  // sont souvent décodés par le processeur (Mac Intel, AV1 avant les puces M3).
+  // En échange, l'image s'arrête au 1080p. Le lecteur choisit ses formats en
+  // chargeant : un changement du mode vaut pour la vidéo suivante.
+  if (/(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname)) {
+    const heavy = (type) => economy && /vp0?9|av01/i.test(String(type));
+    for (const Source of [window.MediaSource, window.ManagedMediaSource]) {
+      if (!Source || !Source.isTypeSupported) continue;
+      const original = Source.isTypeSupported.bind(Source);
+      Source.isTypeSupported = (type) => !heavy(type) && original(type);
+    }
+    const canPlay = HTMLMediaElement.prototype.canPlayType;
+    HTMLMediaElement.prototype.canPlayType = function (type) {
+      return heavy(type) ? '' : canPlay.call(this, type);
+    };
+    const caps = navigator.mediaCapabilities;
+    if (caps && caps.decodingInfo) {
+      const original = caps.decodingInfo.bind(caps);
+      caps.decodingInfo = (config) => {
+        const type = config && ((config.video && config.video.contentType) || (config.audio && config.audio.contentType));
+        return heavy(type) ? Promise.resolve({ supported: false, smooth: false, powerEfficient: false }) : original(config);
+      };
+    }
+  }
+
   // Icône et nom du site, pour la pastille de l'onglet. On passe par l'icône que le
   // site indique lui-même (ou /favicon.ico), jamais par un service tiers.
   let lastSite = '';
@@ -241,18 +267,24 @@
       post({ cosmetic: { tokens, first } });
       first = false;
     };
+    // Envoi au plus toutes les 400 ms, sans repousser l'échéance : une page qui
+    // bouge sans arrêt (YouTube met à jour son minuteur quatre fois par seconde)
+    // repoussait l'envoi indéfiniment, et `pending` gardait en mémoire tous les
+    // éléments ajoutés puis retirés depuis l'ouverture de la page. Les nœuds de
+    // texte n'ont ni #id ni classe : on ne les garde pas.
+    const flush = () => {
+      adTimer = 0;
+      const tokens = [];
+      for (const n of pending) if (n.isConnected) collect(n, tokens);
+      pending = [];
+      sendTokens(tokens);
+    };
     const observer = new MutationObserver((records) => {
-      for (const r of records) for (const n of r.addedNodes) pending.push(n);
-      clearTimeout(adTimer);
-      adTimer = setTimeout(() => {
-        const tokens = [];
-        for (const n of pending) if (n.isConnected) collect(n, tokens);
-        pending = [];
-        sendTokens(tokens);
-      }, 400);
+      for (const r of records) for (const n of r.addedNodes) if (n.nodeType === 1) pending.push(n);
+      if (pending.length && !adTimer) adTimer = setTimeout(flush, 400);
     });
     window.__featherHide = (list) => {
-      if (list === null) { active = false; observer.disconnect(); pending = []; return; }
+      if (list === null) { active = false; observer.disconnect(); pending = []; clearTimeout(adTimer); adTimer = 0; return; }
       if (!list.length) return;
       if (!sheet || !sheet.ownerNode || !sheet.ownerNode.isConnected) {
         const style = document.createElement('style');
@@ -379,21 +411,23 @@
   // Poids de l'onglet : retard de la boucle d'événements (la page calcule-t-elle
   // sans arrêt ?) et, quand le moteur le donne, mémoire du JavaScript. Une page
   // cachée est ralentie volontairement par le moteur : on n'y mesure pas le retard.
-  // La mesure s'arrête tant que la page est cachée : inutile de réveiller
-  // cinq fois par seconde un onglet qu'on ne regarde pas.
+  // La mesure s'arrête tant que la page est cachée : inutile de réveiller un
+  // onglet qu'on ne regarde pas. Une mesure par seconde suffit (le résultat
+  // est une moyenne sur cinq secondes) et réveille moins souvent la page.
+  const BEAT = 1000;
   let lagSum = 0, lagCount = 0, expected = 0, beating = false;
   const beat = () => {
     if (document.visibilityState !== 'visible') { beating = false; return; }
     const now = performance.now();
     lagSum += Math.max(0, now - expected); lagCount++;
-    expected = now + 200;
-    setTimeout(beat, 200);
+    expected = now + BEAT;
+    setTimeout(beat, BEAT);
   };
   const startBeat = () => {
     if (beating || document.visibilityState !== 'visible') return;
     beating = true;
-    expected = performance.now() + 200;
-    setTimeout(beat, 200);
+    expected = performance.now() + BEAT;
+    setTimeout(beat, BEAT);
   };
   document.addEventListener('visibilitychange', startBeat);
   startBeat();

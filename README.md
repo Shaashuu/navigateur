@@ -103,7 +103,9 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   - **Mode économie** (paramètres, ou `/economie`) : veille après 5 minutes au
     plus, vidéos muettes des onglets cachés en pause (le son qu'on écoute
     continue), vidéos qui démarrent seules bloquées jusqu'au premier clic sur la
-    page, traqueurs bloqués. Une petite feuille verte le signale.
+    page, traqueurs bloqués, et YouTube en H.264 plutôt qu'en VP9 ou AV1 (décodé
+    par la puce graphique : beaucoup moins de calcul, image limitée au 1080p).
+    Une petite feuille verte le signale.
   - **Pages d'erreur Feather** (Windows, macOS) : pas de connexion, adresse
     introuvable (avec une recherche proposée), site qui ne répond pas,
     certificat invalide, site trop lent. « Réessayer », et rechargement tout
