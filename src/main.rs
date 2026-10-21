@@ -590,6 +590,10 @@ impl App {
                 self.expanded = open;
                 if layers::SUPPORTED {
                     self.layers.set_on_top(&self.window, &self.chrome, open);
+                    // Repassée sous la page : l'interface peut redevenir opaque.
+                    if !open {
+                        self.chrome_call("navigateur.lowered && navigateur.lowered()");
+                    }
                 } else {
                     self.tabs.set_active_visible(!open);
                 }
@@ -796,6 +800,18 @@ impl App {
             && self.allow_page_tab()
         {
             self.save_image(id, image.url, image.how);
+        }
+        // Bouton « Ajouter à Feather » du Chrome Web Store : seulement depuis
+        // l'onglet affiché, s'il est bien sur le store, et pour une page d'extension.
+        if let Some(url) = message.store_install
+            && Some(id) == self.tabs.active_id()
+            && self.tabs.get(id).is_some_and(|t| network::host_of(t.url()).as_deref() == Some("chromewebstore.google.com"))
+            && let Some(store_id) = extensions::store_page(&url)
+        {
+            self.install_extension(&store_id);
+            self.push_state();
+            // Le panneau des extensions montre le téléchargement, puis l'extension installée.
+            self.focus_chrome("navigateur.openExtensions()");
         }
         if let Some(audible) = message.audible {
             if let Some(tab) = self.tabs.get_mut(id) {

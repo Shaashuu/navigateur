@@ -647,7 +647,7 @@
      .card visible pendant qu'un panneau est ouvert fait partie de la forme
      envoyée à Rust (voir reportShape) : un nouveau panneau n'a qu'à porter
      cette classe et ouvrir un mode avec setMode. */
-  body.overlay.panel { background: transparent; }
+  body.overlay.panel, body.overlay.lowering { background: transparent; }
 
   /* Barre latérale élargie à la souris : les pastilles gardent leur colonne,
      le titre des pages apparaît peu à peu à côté (--label : son opacité). */
@@ -1344,7 +1344,25 @@
     for (const k of LIB_KINDS) $('lib-' + k).classList.toggle('on', mode === 'library' && libKind === k);
     placePop();
     if (mode !== null) reportShape();
-    if (wasOpen !== (mode !== null)) send({ type: 'expand', open: mode !== null });
+    if (wasOpen !== (mode !== null)) sendExpand(mode !== null);
+  }
+
+  // L'interface ne passe devant la page qu'une fois dessinée transparente :
+  // sinon, pendant une image, son fond opaque cachait la page (elle « sautait »).
+  // À la fermeture, le fond reste transparent jusqu'à ce que Rust l'ait
+  // repassée sous la page (navigateur.lowered).
+  let expandFrame = 0;
+  function sendExpand(open) {
+    cancelAnimationFrame(expandFrame);
+    if (!open) {
+      if (state.overlay) document.body.classList.add('lowering');
+      send({ type: 'expand', open: false });
+      return;
+    }
+    document.body.classList.remove('lowering');
+    expandFrame = requestAnimationFrame(() => {
+      expandFrame = requestAnimationFrame(() => { if (mode !== null) send({ type: 'expand', open: true }); });
+    });
   }
 
   // Forme de l'interface quand elle est devant la page : la barre, le bandeau
@@ -2423,6 +2441,7 @@
   function endHover(now) {
     clearTimeout(hoverTimer);
     hoverArmed = false;
+    stayOpen();
     clearTimeout(unhoverTimer);
     if (!document.body.classList.contains('hovering')) { if (mode === 'hover') setMode(null); return; }
     document.body.classList.remove('hovering');
@@ -2431,6 +2450,7 @@
   }
   let hoverArmed = false;   // ouverture prévue dans 120 ms
   function armHover() {
+    stayOpen();
     if (hoverArmed || document.body.classList.contains('hovering')) return;
     if (!canHover() || (mode !== null && mode !== 'hover')) return;
     hoverArmed = true;
@@ -2440,7 +2460,13 @@
       clearTimeout(unhoverTimer);
       // D'abord par-dessus la page, puis l'élargissement (animé).
       setMode('hover');
-      requestAnimationFrame(() => { document.body.classList.add('hovering'); queueShape(); });
+      // La souris a pu partir entre-temps : la barre ne s'élargit plus.
+      requestAnimationFrame(() => {
+        if (mode !== 'hover') return;
+        document.body.classList.add('hovering');
+        queueShape();
+        if (!pointerOnBar()) leaveSoon();
+      });
     }, 120);
   }
   $('sidebar').addEventListener('pointerenter', armHover);
@@ -2450,14 +2476,42 @@
   $('sidebar').addEventListener('click', (e) => {
     if (e.target === $('sidebar') && document.body.classList.contains('focus') && !document.body.classList.contains('hovering')) shortcut('focus');
   });
-  $('sidebar').addEventListener('pointerleave', () => {
+  // Fermeture : on suit nous-mêmes la position de la souris. Sous macOS,
+  // l'interface qui passe devant la page ne recevait pas toujours la sortie
+  // de la barre (pointerleave), et la barre élargie restait ouverte.
+  let lastPointer = null;   // dernière position connue de la souris, ou null hors de la fenêtre
+  let leaveTimer = 0;
+  const hoverOpen = () => mode === 'hover' || document.body.classList.contains('hovering');
+  function pointerOnBar() {
+    if (!lastPointer) return false;
+    const r = $('sidebar').getBoundingClientRect();
+    return lastPointer.x >= r.left && lastPointer.x < r.right && lastPointer.y >= r.top && lastPointer.y < r.bottom;
+  }
+  function stayOpen() { clearTimeout(leaveTimer); leaveTimer = 0; }
+  function leaveSoon() {
+    if (leaveTimer) return;
+    leaveTimer = setTimeout(() => {
+      leaveTimer = 0;
+      // Le menu d'un onglet, ouvert depuis la barre, la garde ouverte.
+      if (!hoverOpen() || drag || mode === 'menu' || pointerOnBar() || document.activeElement === $('side-input')) return;
+      endHover();
+    }, 300);
+  }
+  document.addEventListener('pointermove', (e) => {
+    lastPointer = { x: e.clientX, y: e.clientY };
+    if (!hoverOpen()) return;
+    if (pointerOnBar()) stayOpen(); else leaveSoon();
+  }, true);
+  // La souris sort de la fenêtre.
+  document.documentElement.addEventListener('pointerleave', () => {
+    lastPointer = null;
+    if (hoverOpen()) leaveSoon();
+  });
+  $('sidebar').addEventListener('pointerleave', (e) => {
     clearTimeout(hoverTimer);
     hoverArmed = false;
-    if (!document.body.classList.contains('hovering') || drag) return;
-    hoverTimer = setTimeout(() => {
-      // Le menu d'un onglet, ouvert depuis la barre, la garde ouverte.
-      if (!$('sidebar').matches(':hover') && document.activeElement !== $('side-input')) endHover();
-    }, 300);
+    lastPointer = { x: e.clientX, y: e.clientY };
+    if (hoverOpen()) leaveSoon();
   });
   $('reader-pill').addEventListener('click', () => send({ type: 'reader' }));
   $('reader-btn').addEventListener('mousedown', (e) => e.preventDefault());
@@ -3424,6 +3478,17 @@
     if (mode === 'settings' && (!keys || keys.some((k) => SETTINGS_KEYS.includes(k)))) fillSettings();
   }
 
+  // Clic droit : le menu de WebKit (Recharger, Inspecter…) n'a rien à faire sur
+  // les boutons de l'interface. Seuls les champs de texte gardent le menu du
+  // système (Couper, Copier, Coller), en français grâce à Info.plist.
+  document.addEventListener('contextmenu', (e) => {
+    if (e.defaultPrevented) return;
+    const t = e.target;
+    if (t && t.closest && t.closest('input, textarea, [contenteditable=""], [contenteditable="true"]')) return;
+    if (String(getSelection()).trim()) return;
+    e.preventDefault();
+  });
+
   // --- Appelé par Rust ---
   window.navigateur = {
     setState(next) { applyState(next, null); },
@@ -3438,7 +3503,10 @@
     openBar,
     openSettings,
     openMemory() { openLibrary('memory'); },
+    openExtensions() { if (mode !== 'extensions') openExtensions(); },
     closePanel,
+    // L'interface est repassée sous la page : son fond redevient opaque.
+    lowered() { if (mode === null) document.body.classList.remove('lowering'); },
     openFind,
     setFind(r) {
       const c = $('find-count');

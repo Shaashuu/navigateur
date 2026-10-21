@@ -178,8 +178,10 @@ mod platform {
 #[cfg(target_os = "macos")]
 mod platform {
     use objc2::msg_send;
+    use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
-    use objc2_app_kit::{NSView, NSWindowOrderingMode};
+    use objc2_app_kit::NSView;
+    use objc2_foundation::NSArray;
     use wry::{WebView, WebViewExtMacOS};
 
     /// Coins arrondis par le calque de la vue : ils suivent les changements de taille.
@@ -197,12 +199,23 @@ mod platform {
         }
     }
 
+    /// `setSubviews` réordonne les vues sans les retirer de la fenêtre.
+    /// Avant, `addSubview:positioned:` retirait l'interface puis la remettait :
+    /// WebKit la redessinait de zéro et l'écran « sautait » à chaque panneau,
+    /// et la souris n'était plus suivie (la barre au survol restait ouverte).
     pub fn raise(chrome: &WebView, top: bool) {
         let webview = chrome.webview();
         let view: &NSView = &webview;
         let Some(parent) = (unsafe { view.superview() }) else { return };
-        let order = if top { NSWindowOrderingMode::Above } else { NSWindowOrderingMode::Below };
-        parent.addSubview_positioned_relativeTo(view, order, None);
+        let mut views: Vec<Retained<NSView>> = parent.subviews().to_vec();
+        let Some(i) = views.iter().position(|v| std::ptr::eq(&**v, view)) else { return };
+        let me = views.remove(i);
+        if top {
+            views.push(me);
+        } else {
+            views.insert(0, me);
+        }
+        parent.setSubviews(&NSArray::from_retained_slice(&views));
     }
 }
 

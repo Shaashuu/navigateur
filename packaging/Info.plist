@@ -4,6 +4,9 @@
 <dict>
   <key>CFBundleName</key><string>Feather</string>
   <key>CFBundleDisplayName</key><string>Feather</string>
+  <!-- Langue de l'application : les menus du système et de WebKit (clic droit) en français -->
+  <key>CFBundleDevelopmentRegion</key><string>fr</string>
+  <key>CFBundleLocalizations</key><array><string>fr</string></array>
   <key>CFBundleIdentifier</key><string>app.feather.browser</string>
   <key>CFBundleIconFile</key><string>Feather</string>
   <key>CFBundleExecutable</key><string>feather</string>
