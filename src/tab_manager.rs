@@ -74,6 +74,9 @@ pub struct Tab {
     pub failed: Option<(ErrorKind, String)>,
     /// Bloqueur de publicités posé sur la page (`None` : pas encore ; voir `adblock::apply`).
     pub ads: Option<bool>,
+    /// macOS : la page vient d'être rechargée parce qu'une redirection l'a fait
+    /// entrer sur Google ou en sortir (voir `match_identity`) ; une seule fois de suite.
+    pub identity_retry: bool,
     /// Hôte de la page, partagé avec les rappels de la webview (autorisations, traqueurs).
     host: Arc<RwLock<String>>,
     /// `None` : l'onglet est en veille.
@@ -212,6 +215,7 @@ impl TabManager {
             pinned: false,
             group: None,
             failed: None,
+            identity_retry: false,
             ads: None,
             host: Arc::default(),
             webview: None,
@@ -661,9 +665,12 @@ fn page_user_agent(url: &str) -> Option<&'static str> {
     None
 }
 
-/// macOS, au début de chaque chargement : un onglet qui arrive sur Google, ou qui en
-/// sort, change d'identité puis recharge l'adresse (la première requête est déjà
-/// partie avec l'ancienne). Vrai si la page est rechargée.
+/// macOS, au début et à la fin de chaque chargement : un onglet qui arrive sur Google,
+/// ou qui en sort, change d'identité puis recharge l'adresse (la première requête est
+/// déjà partie avec l'ancienne). La fin compte aussi : une redirection (lien d'un
+/// résultat Google vers YouTube, retour de la connexion Google vers YouTube) change
+/// de site sans nouveau début de chargement, et YouTube gardait l'identité Safari.
+/// Vrai si la page est rechargée.
 #[cfg(target_os = "macos")]
 pub fn match_identity(webview: &WebView, url: &str) -> bool {
     use objc2_foundation::NSString;
