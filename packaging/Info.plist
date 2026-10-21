@@ -11,8 +11,8 @@
   <key>CFBundleIconFile</key><string>Feather</string>
   <key>CFBundleExecutable</key><string>feather</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleVersion</key><string>0.5.3</string>
-  <key>CFBundleShortVersionString</key><string>0.5.3</string>
+  <key>CFBundleVersion</key><string>0.5.4</string>
+  <key>CFBundleShortVersionString</key><string>0.5.4</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPhotoLibraryAddUsageDescription</key><string>Feather ajoute à Photos les images que vous enregistrez depuis une page.</string>
