@@ -222,6 +222,13 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   c'est corrigé. La mesure du poids des onglets réveille moins souvent la page,
   et le mode économie fait jouer YouTube en H.264 (décodé par la puce
   graphique, image limitée au 1080p).
+- **Nouveau en 0.5.2** : la page a des coins arrondis, comme les onglets
+  (macOS, Windows). Favoris, historique, téléchargements, mémoire et extensions
+  sortent de leur bouton avec une petite flèche, comme la palette ; un clic en
+  dehors ferme n'importe quelle fenêtre ouverte. Avec la barre au survol, les
+  menus ne sont plus cachés derrière elle et la croix d'un onglet reste collée
+  à sa pastille. Sous macOS, Google reçoit l'identité de Safari et sert sa
+  recherche complète (avec l'IA).
 
 Raccourcis : `Ctrl+L` rechercher, `Ctrl+T` nouvel onglet, `Ctrl+W` fermer,
 `Ctrl+Tab` / `Ctrl+Maj+Tab` changer d'onglet, `Alt+←` / `Alt+→` page précédente
