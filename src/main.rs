@@ -155,7 +155,9 @@ struct App {
     expanded: bool,
     /// Dernière position de la souris envoyée à l'interface (en pixels CSS
     /// arrondis ; `None` : hors de la fenêtre) et prochaine lecture prévue,
-    /// tant qu'un panneau est ouvert par-dessus la page (voir `watch_pointer`).
+    /// tant qu'un panneau est ouvert par-dessus la page ou que l'interface le
+    /// demande (`pointer_wanted`, voir `watch_pointer`).
+    pointer_wanted: bool,
     pointer_sent: Option<Option<(i32, i32)>>,
     pointer_due: Option<Instant>,
     /// Mode concentration (Ctrl+Maj+F) : la barre se réduit à un rail.
@@ -269,6 +271,7 @@ fn main() -> wry::Result<()> {
         settings: Arc::new(RwLock::new(settings)),
         proxy,
         expanded: false,
+        pointer_wanted: false,
         pointer_sent: None,
         pointer_due: None,
         focus: false,
@@ -617,9 +620,7 @@ impl App {
                     self.close_extension_popup();
                 }
                 self.expanded = open;
-                // Nouvelle position envoyée dès l'ouverture, puis à chaque mouvement.
-                self.pointer_sent = None;
-                self.pointer_due = (open && layers::SUPPORTED).then(Instant::now);
+                self.update_pointer_watch(open);
                 if layers::SUPPORTED {
                     self.layers.set_on_top(&self.window, &self.chrome, open);
                     // Repassée sous la page : l'interface peut redevenir opaque.
@@ -633,6 +634,11 @@ impl App {
             // Messages fréquents (à chaque image) : rien à redessiner dans l'interface.
             ChromeMessage::Shape { rects } => {
                 self.layers.set_shape(&self.window, &self.chrome, rects);
+                return;
+            }
+            ChromeMessage::WatchPointer { on } => {
+                self.pointer_wanted = on;
+                self.update_pointer_watch(on);
                 return;
             }
             ChromeMessage::SidebarWidth { width, done } => {
@@ -997,11 +1003,24 @@ impl App {
         ui::page_bounds(&self.window, &frame)
     }
 
-    /// Panneau ouvert par-dessus la page (dont la barre au survol) : la position
+    /// Panneau ouvert par-dessus la page (dont la barre au survol), ou poignée
+    /// de la barre survolée : la position
     /// de la souris est relue toutes les `POINTER_POLL` et envoyée à l'interface
     /// quand elle change. Sous macOS, l'interface ne reçoit pas toujours les
     /// mouvements de la souris au-dessus de la page : sans ça, la barre au
     /// survol ne savait pas que la souris l'avait quittée et restait ouverte.
+    /// Démarre ou arrête la lecture de la souris. `fresh` : la position est
+    /// renvoyée tout de suite, même inchangée.
+    fn update_pointer_watch(&mut self, fresh: bool) {
+        let on = layers::SUPPORTED && (self.expanded || self.pointer_wanted);
+        if !on {
+            self.pointer_due = None;
+        } else if fresh || self.pointer_due.is_none() {
+            self.pointer_sent = None;
+            self.pointer_due = Some(Instant::now());
+        }
+    }
+
     fn watch_pointer(&mut self) {
         let Some(due) = self.pointer_due else { return };
         let now = Instant::now();

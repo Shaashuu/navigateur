@@ -104,6 +104,11 @@ pub enum ChromeMessage {
     Shape {
         rects: Vec<crate::layers::ShapeRect>,
     },
+    /// L'interface a besoin de savoir où est la souris même hors d'elle (la
+    /// poignée de la barre est survolée) : Rust la lui envoie (`navigateur.pointer`).
+    WatchPointer {
+        on: bool,
+    },
     /// La barre latérale est élargie ou rétrécie à la souris ; `done` : bouton relâché.
     SidebarWidth {
         width: u32,
