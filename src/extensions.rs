@@ -670,6 +670,49 @@ fn add_key(dir: &Path, key: &[u8]) -> Result<(), String> {
     fs::write(path, text).map_err(|e| e.to_string())
 }
 
+/// Compléments chargés avant l'arrière-plan des extensions (voir le fichier).
+const COMPAT_JS: &str = include_str!("../assets/extension-compat.js");
+const COMPAT_FILE: &str = "feather-compat.js";
+/// Arrière-plan de remplacement : les compléments, puis celui de l'extension.
+const WRAPPER_FILE: &str = "feather-background.js";
+
+/// Sur Mac, fait passer l'arrière-plan de l'extension après les compléments de
+/// Feather. Le manifeste désigne alors `feather-background.js`, qui charge
+/// `feather-compat.js` puis le fichier d'origine. Sans effet la deuxième fois.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn add_compat(dir: &Path) -> Result<(), String> {
+    let path = dir.join("manifest.json");
+    let Some(Value::Object(mut manifest)) = read_json(&path) else {
+        return Err("manifest.json illisible".into());
+    };
+    fs::write(dir.join(COMPAT_FILE), COMPAT_JS).map_err(|e| e.to_string())?;
+    let Some(Value::Object(background)) = manifest.get_mut("background") else { return Ok(()) };
+    if let Some(worker) = background.get("service_worker").and_then(Value::as_str) {
+        if worker.trim_start_matches(['.', '/']) == WRAPPER_FILE {
+            return Ok(());
+        }
+        // Chemin depuis la racine de l'extension, échappé pour JavaScript.
+        let original = serde_json::to_string(&format!("/{}", worker.trim_start_matches(['.', '/']))).map_err(|e| e.to_string())?;
+        let wrapper = if background.get("type").and_then(Value::as_str) == Some("module") {
+            format!("import '/{COMPAT_FILE}';\nimport {original};\n")
+        } else {
+            format!("importScripts('/{COMPAT_FILE}', {original});\n")
+        };
+        fs::write(dir.join(WRAPPER_FILE), wrapper).map_err(|e| e.to_string())?;
+        background.insert("service_worker".into(), Value::String(WRAPPER_FILE.into()));
+    } else if let Some(Value::Array(scripts)) = background.get_mut("scripts") {
+        // Manifeste v2 (ou arrière-plan de Firefox) : les compléments en premier.
+        if scripts.first().and_then(Value::as_str) == Some(COMPAT_FILE) {
+            return Ok(());
+        }
+        scripts.insert(0, Value::String(COMPAT_FILE.into()));
+    } else {
+        return Ok(());
+    }
+    let text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+    fs::write(path, text).map_err(|e| e.to_string())
+}
+
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 pub fn base64_encode(bytes: &[u8]) -> String {
@@ -874,9 +917,10 @@ impl Extensions {
 
 /// Prépare une webview pour les extensions. Sous Windows, toutes les webviews
 /// doivent avoir le même réglage (sinon WebView2 refuse de les créer) ; sous
-/// macOS, seules les pages non privées (`attach`) reçoivent les extensions.
-pub fn prepare_builder(builder: WebViewBuilder<'_>, attach: bool) -> WebViewBuilder<'_> {
-    engine::prepare_builder(builder, attach)
+/// macOS, seules les pages non privées (`attach`) reçoivent les extensions, et
+/// une page d'une extension (`url` : ses options…) prend la configuration de celle-ci.
+pub fn prepare_builder<'a>(builder: WebViewBuilder<'a>, attach: bool, url: &str) -> WebViewBuilder<'a> {
+    engine::prepare_builder(builder, attach, url)
 }
 
 pub use engine::{add, close_popup, open_popup, options_url, popup_shown, remove, replace, set_enabled, start, sync_tabs};
@@ -1118,7 +1162,7 @@ impl crate::App {
                 let _ = opener.send_event(crate::UserEvent::ExtensionOpen(url));
                 wry::NewWindowResponse::Deny
             });
-        match self.surface.attach(prepare_builder(builder, true), &self.window) {
+        match self.surface.attach(prepare_builder(builder, true, ""), &self.window) {
             Ok(webview) => {
                 let _ = webview.focus();
                 self.extensions.popup = Some(Popup { id: id.to_string(), webview, anchor: (x, y) });
@@ -1234,7 +1278,7 @@ mod engine {
         Ok(())
     }
 
-    pub fn prepare_builder(builder: WebViewBuilder<'_>, _attach: bool) -> WebViewBuilder<'_> {
+    pub fn prepare_builder<'a>(builder: WebViewBuilder<'a>, _attach: bool, _url: &str) -> WebViewBuilder<'a> {
         builder.with_browser_extensions_enabled(true)
     }
 
@@ -1827,10 +1871,16 @@ mod engine {
     /// quand une extension était déjà installée : les onglets ouverts avant
     /// l'installation n'avaient jamais les extensions (WebKit ne permet pas de
     /// l'ajouter à une page déjà créée).
-    pub fn prepare_builder(builder: WebViewBuilder<'_>, attach: bool) -> WebViewBuilder<'_> {
+    pub fn prepare_builder<'a>(builder: WebViewBuilder<'a>, attach: bool, url: &str) -> WebViewBuilder<'a> {
         let Some(mtm) = MainThreadMarker::new() else { return builder };
         if !attach {
             return builder;
+        }
+        // Page d'une extension (options, page ouverte par l'extension) : WebKit ne
+        // la charge que dans la configuration de son contexte. Avec celle des
+        // onglets, la page restait blanche (vérifié par outils/sonde-extensions.m).
+        if let Some(config) = page_configuration(url) {
+            return builder.with_webview_configuration(config);
         }
         let Some(controller) = controller(mtm) else { return builder };
         // SAFETY : fil principal ; configuration neuve, magasin par défaut
@@ -2014,6 +2064,10 @@ mod engine {
             };
             let _ = proxy.send_event(UserEvent::ExtensionLoaded { id: id.clone(), result });
         });
+        // Les évènements de Chrome absents de WebKit, avant l'arrière-plan.
+        if let Err(err) = super::add_compat(&path) {
+            eprintln!("compléments de l'extension non ajoutés : {err}");
+        }
         let url = NSURL::fileURLWithPath_isDirectory(&NSString::from_str(&path.to_string_lossy()), true);
         // SAFETY : fil principal, adresse de fichier valide, rappel conservé par WebKit.
         unsafe { WKWebExtension::extensionWithResourceBaseURL_completionHandler(&url, &block, mtm) };
@@ -2021,6 +2075,22 @@ mod engine {
 
     fn context(id: &str) -> Option<Retained<WKWebExtensionContext>> {
         STATE.with_borrow(|s| s.contexts.get(id).cloned())
+    }
+
+    /// Configuration du contexte dont l'adresse de base commence `url`
+    /// (webkit-extension://<identifiant>/…).
+    fn page_configuration(url: &str) -> Option<Retained<WKWebViewConfiguration>> {
+        if !url.starts_with("webkit-extension://") {
+            return None;
+        }
+        let contexts: Vec<_> = STATE.with_borrow(|s| s.contexts.values().cloned().collect());
+        contexts.into_iter().find_map(|context| {
+            // SAFETY : fil principal, contexte valide.
+            unsafe {
+                let base = context.baseURL().absoluteString()?.to_string();
+                if url.starts_with(&base) { context.webViewConfiguration() } else { None }
+            }
+        })
     }
 
     pub fn set_enabled(ext: &Extension, on: bool) {
@@ -2138,7 +2208,7 @@ mod engine {
         Err("WebKitGTK, le moteur de Feather sous Linux, ne sait pas faire tourner d'extensions.")
     }
 
-    pub fn prepare_builder(builder: WebViewBuilder<'_>, _attach: bool) -> WebViewBuilder<'_> {
+    pub fn prepare_builder<'a>(builder: WebViewBuilder<'a>, _attach: bool, _url: &str) -> WebViewBuilder<'a> {
         builder
     }
 
@@ -2303,6 +2373,41 @@ mod tests {
         add_key(&dir, b"cle").unwrap();
         assert!(read_manifest(&dir).unwrap().has_key);
         assert_eq!(manifest_root(&dir).unwrap(), dir);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn complements_avant_l_arriere_plan() {
+        let dir = std::env::temp_dir().join(format!("feather-compat-{}", stamp()));
+        let write = |manifest: &str| {
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("manifest.json"), manifest).unwrap();
+        };
+        let manifest = || read_json(&dir.join("manifest.json")).unwrap();
+        let wrapper = || fs::read_to_string(dir.join(WRAPPER_FILE)).unwrap();
+        // Arrière-plan classique (Proton Pass).
+        write(r#"{"name":"a","background":{"service_worker":"background.js"}}"#);
+        add_compat(&dir).unwrap();
+        assert_eq!(manifest()["background"]["service_worker"], WRAPPER_FILE);
+        assert_eq!(wrapper(), "importScripts('/feather-compat.js', \"/background.js\");\n");
+        assert_eq!(fs::read_to_string(dir.join(COMPAT_FILE)).unwrap(), COMPAT_JS);
+        // Deuxième fois : rien ne change (l'original n'est pas perdu).
+        add_compat(&dir).unwrap();
+        assert_eq!(wrapper(), "importScripts('/feather-compat.js', \"/background.js\");\n");
+        // Module (uBlock Origin Lite).
+        write(r#"{"name":"b","background":{"service_worker":"/js/background.js","type":"module"}}"#);
+        add_compat(&dir).unwrap();
+        assert_eq!(wrapper(), "import '/feather-compat.js';\nimport \"/js/background.js\";\n");
+        assert_eq!(manifest()["background"]["type"], "module");
+        // Manifeste v2 : les compléments en tête de liste, une seule fois.
+        write(r#"{"name":"c","background":{"scripts":["a.js","b.js"]}}"#);
+        add_compat(&dir).unwrap();
+        add_compat(&dir).unwrap();
+        assert_eq!(manifest()["background"]["scripts"], serde_json::json!([COMPAT_FILE, "a.js", "b.js"]));
+        // Sans arrière-plan : manifeste intact.
+        write(r#"{"name":"d"}"#);
+        add_compat(&dir).unwrap();
+        assert_eq!(manifest(), serde_json::json!({"name": "d"}));
         fs::remove_dir_all(&dir).unwrap();
     }
 
