@@ -788,6 +788,9 @@ impl App {
                 downloads::remove(&d.path);
             } else {
                 d.state = if success { State::Done } else { State::Failed };
+                if success {
+                    downloads::quarantine(&d.path);
+                }
                 d.probe();
                 d.speed = None;
             }

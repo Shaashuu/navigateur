@@ -815,8 +815,11 @@ fn build_page(
                 .unwrap_or(wry::PermissionResponse::Default)
         })
         // Les pages envoient des raccourcis clavier (voir assets/page.js) ; l'accueil, sa barre de recherche.
+        // L'adresse du cadre qui écrit part avec le message : seule la page elle-même
+        // a tous les droits (voir `PageMessage::from_other_frame`).
         .with_ipc_handler(move |request| {
-            let _ = on_ipc.send_event(UserEvent::Page(id, request.into_body()));
+            let frame = request.uri().to_string();
+            let _ = on_ipc.send_event(UserEvent::Page(id, frame, request.into_body()));
         })
         .with_document_title_changed_handler(move |title| {
             let _ = on_title.send_event(UserEvent::Title(id, title));

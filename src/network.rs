@@ -41,6 +41,32 @@ pub fn host_of(url: &str) -> Option<String> {
     Url::parse(url).ok()?.host_str().map(str::to_string)
 }
 
+/// Vrai si cette navigation remplacerait la page de l'interface par un site,
+/// un fichier déposé, une page intégrée ou une page d'extension. La page de
+/// l'interface elle-même (chargée par `with_html` : `about:blank` ou `data:`
+/// selon le système) n'est jamais concernée.
+pub fn leaves_chrome(url: &str) -> bool {
+    let scheme = url.split_once(':').map_or("", |(s, _)| s).to_ascii_lowercase();
+    matches!(
+        scheme.as_str(),
+        "http" | "https" | "file" | "ftp" | "navigateur" | "chrome-extension" | "webkit-extension"
+    )
+}
+
+/// Vrai si `frame` (l'adresse du cadre qui envoie un message) a la même origine
+/// que `page` (la page affichée par l'onglet) : schéma, hôte et port. Un cadre
+/// d'un autre site (publicité, lecteur intégré) n'a pas les droits de la page.
+pub fn same_origin(frame: &str, page: &str) -> bool {
+    // Comparé à la main : pour `url`, une adresse `navigateur://` (accueil,
+    // lecture, erreur sous macOS) n'a pas d'origine comparable.
+    let key = |u: &str| {
+        let u = Url::parse(u).ok()?;
+        let host = u.host_str().filter(|h| !h.is_empty())?.to_ascii_lowercase();
+        Some((u.scheme().to_string(), host, u.port_or_known_default()))
+    };
+    key(frame).is_some_and(|a| key(page) == Some(a))
+}
+
 /// Vrai pour une vraie page web (http ou https), seule admise dans l'historique,
 /// les favoris et les onglets ouverts par une page. L'accueil intégré et les
 /// pages d'erreur ou de lecture n'en sont pas, même sous Windows où leur adresse commence par `http://`.
@@ -161,6 +187,33 @@ fn looks_like_domain(host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interface_jamais_remplacee() {
+        assert!(!leaves_chrome("about:blank"));
+        assert!(!leaves_chrome("about:blank#panneau"));
+        assert!(!leaves_chrome("data:text/html,<p>x</p>"));
+        for url in ["https://exemple.fr/", "HTTP://exemple.fr/", "file:///Users/a/b.html", "navigateur://accueil/", "webkit-extension://abc/options.html"] {
+            assert!(leaves_chrome(url), "{url}");
+        }
+    }
+
+    #[test]
+    fn meme_origine() {
+        assert!(same_origin("https://www.lemonde.fr/a?b", "https://www.lemonde.fr/"));
+        assert!(same_origin("https://WWW.lemonde.fr:443/", "https://www.lemonde.fr/x"));
+        assert!(same_origin("navigateur://accueil/", "navigateur://accueil/?q=1"));
+        assert!(same_origin("http://navigateur.accueil/", "http://navigateur.accueil/?q=1"));
+        // Un cadre d'un autre site, ou du même site sur un autre schéma ou port.
+        assert!(!same_origin("https://pub.regie.com/cadre", "https://www.lemonde.fr/"));
+        assert!(!same_origin("https://lemonde.fr/", "https://www.lemonde.fr/"));
+        assert!(!same_origin("http://www.lemonde.fr/", "https://www.lemonde.fr/"));
+        assert!(!same_origin("https://www.lemonde.fr:8443/", "https://www.lemonde.fr/"));
+        assert!(!same_origin("navigateur://lecture/", "navigateur://accueil/"));
+        // Sans hôte (cadre vide, adresse illisible) : jamais la page.
+        assert!(!same_origin("about:blank", "about:blank"));
+        assert!(!same_origin("", "https://www.lemonde.fr/"));
+    }
 
     #[test]
     fn adresses_du_lancement() {
