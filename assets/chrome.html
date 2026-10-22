@@ -932,6 +932,11 @@
   #tip-m.zz::before { background: var(--muted); }
   /* Panneau qui part : il reste affiché le temps de son animation */
   body.overlay.leaving { background: transparent; }
+  /* 9A · Plein écran : la barre s'est envolée, la page prend toute la fenêtre.
+     Elle revient par-dessus la page quand la souris touche son bord (« peek »). */
+  body.fs #sidebar, body.fs #banner { background: var(--bg); }
+  body.fs.peek #sidebar { box-shadow: var(--shadow); }
+  body.fs:not(.panel):not(.leaving) #sidebar, body.fs:not(.panel):not(.leaving) #banner { visibility: hidden; }
   body.leave-library #library, body.leave-menu #ctx, body.leave-dlpop #dl-pop { display: block; }
   body.leave-settings #settings, body.leave-bar #overlay, body.leave-site #site, body.leave-group #group,
   body.leave-import #import, body.leave-extensions #extensions { display: flex; }
@@ -1554,7 +1559,14 @@
     tip: () => $('tipcard'),
     dlpop: () => $('dl-pop'),
     bar: () => $('overlay'),
+    peek: () => $('sidebar'),
   };
+  // Décalage vers le bord de la fenêtre où se trouve la barre.
+  function awayShift(d) {
+    const pos = document.body.dataset.pos || 'left';
+    if (pos === 'top') return `translateY(-${d})`;
+    return pos === 'right' ? `translateX(${d})` : `translateX(-${d})`;
+  }
   // 6B : les menus de la barre sortent de dessous elle, comme un tiroir.
   function drawerFrom(r) {
     const pos = document.body.dataset.pos || 'left';
@@ -1578,6 +1590,11 @@
       ms = 240;
       a = anim(el, [{ transform: 'none', opacity: 1 }, { opacity: 1, offset: .55 }, { transform: onto(el, $('gear').getBoundingClientRect()), opacity: 0 }], { ms, easing: 'cubic-bezier(.4, 0, .9, .6)' });
       anim($('gear').querySelector('svg'), [{ transform: 'rotate(90deg)' }, { transform: 'none' }], SNAP);
+    } else if (m === 'peek') {
+      // Sortie du plein écran : la barre reste, rien ne part.
+      if (!state.fullscreen) return null;
+      ms = 180;
+      a = anim(el, [{ transform: 'none' }, { transform: awayShift('100%') }], { ms, easing: IN, fill: 'forwards' });
     } else if (m === 'tip') {
       ms = 120;
       a = anim(el, [{ opacity: 1 }, { transform: isTop() ? 'translateY(-6px) scale(.96)' : 'scale(.96)', opacity: 0 }], ms);
@@ -1592,6 +1609,7 @@
   function enterAnim(m) {
     const el = PANELS[m] && PANELS[m]();
     if (!el || motion() === 'off') return;
+    if (m === 'peek') { anim(el, [{ transform: awayShift('100%') }, { transform: 'none' }], SNAP); return; }
     if (m === 'library' || m === 'extensions') {
       const r = el.getBoundingClientRect();
       if (!r.width) return;
@@ -1647,6 +1665,7 @@
     $('lib-ext').classList.toggle('on', mode === 'extensions');
     document.body.classList.toggle('dlpop', mode === 'dlpop');
     document.body.classList.toggle('tip', mode === 'tip');
+    document.body.classList.toggle('peek', mode === 'peek');
     for (const k of LIB_KINDS) $('lib-' + k).classList.toggle('on', mode === 'library' && libKind === k);
     placePop();
     if (mode !== null) reportShape();
@@ -3057,7 +3076,7 @@
   // Barre au survol (et fil du mode concentration) : elle s'ouvre par-dessus la page.
   // Sous Linux, la page serait cachée : la barre reste fermée.
   let hoverTimer = 0;
-  const canHover = () => !isTop() && !!state.overlay && (sideStyle() === 'hover' || state.focus);
+  const canHover = () => !isTop() && !!state.overlay && !state.fullscreen && (sideStyle() === 'hover' || state.focus);
   // La barre se referme en 0,2 s (transition CSS) : on la laisse passer
   // par-dessus la page jusqu'à la fin, sinon l'animation serait coupée.
   let unhoverTimer = 0;
@@ -3123,6 +3142,7 @@
   document.addEventListener('pointermove', (e) => {
     lastPointer = { x: e.clientX, y: e.clientY };
     if (mode === 'tip') tipAt(e.clientX, e.clientY);
+    if (mode === 'peek') peekAt(e.clientX, e.clientY);
     if (!hoverOpen()) return;
     if (pointerOnBar()) stayOpen(); else leaveSoon();
   }, true);
@@ -3134,6 +3154,7 @@
     if (hot && (x == null || !onResizer(x, y))) resizerHot(false);
     lastPointer = x == null ? null : { x, y };
     if (mode === 'tip') { if (x == null) hideTip(); else tipAt(x, y); }
+    if (document.body.classList.contains('fs')) peekAt(x, y);
     if (!hoverOpen()) return;
     if (pointerOnBar()) stayOpen(); else leaveSoon();
   }
@@ -3148,6 +3169,68 @@
     lastPointer = { x: e.clientX, y: e.clientY };
     if (hoverOpen()) leaveSoon();
   });
+  // --- 9A · Plein écran : la barre s'envole, et revient par le bord ---
+  // Les boutons et les onglets partent en cascade vers le bord, puis Rust
+  // agrandit la page à toute la fenêtre (bar_hidden). Au retour, Rust rend
+  // tout de suite sa place à la barre, et ils reviennent avec un rebond.
+  // Sous Linux, l'interface ne passe pas devant la page : la barre reste
+  // (Rust n'envoie jamais `fullscreen`).
+  let fullscreen = false;
+  let fsTimer = 0;
+  // Ce qui s'envole : boutons, onglets et groupes, sans leur contenu.
+  function barItems() {
+    const els = [...$('sidebar').querySelectorAll('button, .tab:not(.ghost), .grp')].filter((e) => e.getClientRects().length);
+    const top = els.filter((e) => !els.some((o) => o !== e && o.contains(e)));
+    const key = isTop() ? (r) => r.left : (r) => r.top;
+    return top.map((e) => [e, key(e.getBoundingClientRect())]).sort((a, b) => a[1] - b[1]).map((p) => p[0]);
+  }
+  function flyAway() {
+    clearTimeout(fsTimer);
+    if (hoverOpen()) endHover(true);
+    if (mode === 'tip') hideTip();
+    const els = barItems();
+    const m = motion();
+    let ms = 0;
+    if (m !== 'off') {
+      cascade(els, [{ transform: 'none', opacity: 1 }, { transform: awayShift('40px'), opacity: 0 }], { ms: 220, easing: IN }, 14);
+      ms = m === 'full' ? 220 + Math.min(els.length - 1, 12) * 14 : 140;
+    }
+    fsTimer = setTimeout(() => {
+      if (!state.fullscreen) return;
+      document.body.classList.add('fs');
+      for (const e of els) for (const a of e.getAnimations()) a.cancel();
+      send({ type: 'bar_hidden', hidden: true });
+    }, ms);
+  }
+  function flyBack() {
+    clearTimeout(fsTimer);
+    clearTimeout(peekTimer);
+    peekTimer = 0;
+    if (mode === 'peek') setMode(null);
+    document.body.classList.remove('fs');
+    const els = barItems();
+    for (const e of els) for (const a of e.getAnimations()) a.cancel();
+    cascade(els, [{ transform: awayShift('40px'), opacity: 0 }, { transform: 'none', opacity: 1 }], BOUNCE, 18);
+  }
+  // La souris touche le bord de la barre : elle revient par-dessus la page,
+  // et repart 0,4 s après que la souris l'a quittée.
+  let peekTimer = 0;
+  function atEdge(x, y) {
+    const pos = document.body.dataset.pos || 'left';
+    if (pos === 'top') return y <= 2;
+    return pos === 'right' ? x >= innerWidth - 3 : x <= 2;
+  }
+  function peekAt(x, y) {
+    if (mode === null && x != null && atEdge(x, y)) { setMode('peek'); return; }
+    if (mode !== 'peek') return;
+    if (x != null && pointerOnBar()) { clearTimeout(peekTimer); peekTimer = 0; return; }
+    if (peekTimer) return;
+    peekTimer = setTimeout(() => {
+      peekTimer = 0;
+      if (mode === 'peek' && !pointerOnBar() && !drag && document.activeElement !== $('side-input')) setMode(null);
+    }, 400);
+  }
+
   // --- 3B · Fiche d'aperçu de l'onglet survolé ---
   // Elle passe par-dessus la page (mode 'tip'), donc seulement là où l'interface
   // sait le faire : sous Linux, la bulle du système reste. Elle glisse d'un
@@ -4293,6 +4376,10 @@
     applyPos(state.settings.bar_position);
     applyStyle();
     document.body.classList.toggle('focus', !!state.focus && !isTop());
+    if (!!state.fullscreen !== fullscreen) {
+      fullscreen = !!state.fullscreen;
+      if (fullscreen) flyAway(); else flyBack();
+    }
     if (!canHover()) endHover();
     if (!resize) applySide(state.settings.sidebar_width);
     // Autre onglet affiché : la recherche dans la page se ferme.
