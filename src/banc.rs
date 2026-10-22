@@ -294,12 +294,14 @@ impl App {
         let creation = ordre.elapsed().as_millis();
         noter(&format!("onglet-{nom}-creation {creation}"));
         match self.tabs.iter().map(|t| t.id).find(|t| !avant.contains(t)) {
-            Some(onglet) => avec(|e| e.mesure = Some(Mesure { nom, onglet, ordre, debut_note: false })),
+            Some(onglet) => {
+                avec(|e| e.mesure = Some(Mesure { nom, onglet, ordre, debut_note: false }));
+            }
             None => {
                 noter(&format!("onglet-{nom}-debut ?"));
                 avec(|e| e.onglet_prochain = Some(Instant::now() + AVANT_ONGLET));
             }
-        };
+        }
     }
 
     /// Ouvre la page du bouton (ou des options) de l'extension dans un onglet caché.
