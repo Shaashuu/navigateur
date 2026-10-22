@@ -20,6 +20,7 @@ use wry::{NewWindowResponse, PageLoadEvent, Rect, WebView, WebViewBuilder};
 
 use crate::UserEvent;
 use crate::downloads;
+use crate::media::MediaState;
 use crate::errorpage::{self, ErrorKind};
 use crate::extensions;
 use crate::library::{Library, Session, TabGroup};
@@ -46,8 +47,16 @@ pub struct Tab {
     pub title: String,
     url: String,
     pub loading: bool,
-    /// La page joue du son (vidéo ou musique).
+    /// La page joue du son (vidéo ou musique), d'après `assets/page.js`.
     pub audible: bool,
+    /// Une vidéo de la page joue sans son (d'après la page).
+    pub quiet: bool,
+    /// Son et caméra lus dans le moteur, cadres compris (voir `media.rs`).
+    pub engine: MediaState,
+    /// Un champ de la page a été modifié depuis son chargement.
+    pub dirty: bool,
+    /// La page filme ou enregistre (d'après la page).
+    pub capturing: bool,
     /// L'utilisateur a coupé le son de cet onglet.
     pub muted: bool,
     /// Adresse de l'icône du site et nom du site, donnés par la page.
@@ -132,9 +141,30 @@ impl Tab {
         }
     }
 
-    /// Coupe ou remet le son des vidéos et musiques de la page (voir assets/page.js).
+    /// Coupe ou remet le son des vidéos et musiques de la page (voir assets/page.js),
+    /// et sous Windows de tout l'onglet, cadres et WebAudio compris.
     pub fn apply_mute(&self) {
         self.eval(&format!("window.__featherSetMuted && __featherSetMuted({})", self.muted));
+        if let Some(w) = &self.webview {
+            crate::media::set_muted(w, self.muted);
+        }
+    }
+
+    /// Fait du son, d'après la page ou (Windows) d'après le moteur, cadres compris.
+    pub fn sounds(&self) -> bool {
+        self.audible || (cfg!(windows) && self.engine.playing)
+    }
+
+    /// La page fait quelque chose qu'une mise en veille interromprait : du son
+    /// (cadres compris), la caméra ou le micro, un formulaire en cours. Sous
+    /// macOS, le moteur dit seulement qu'un média joue : une vidéo muette de la
+    /// page elle-même (fond animé) ne compte pas.
+    pub fn busy(&self) -> bool {
+        self.sounds()
+            || self.capturing
+            || self.dirty
+            || self.engine.capturing
+            || (self.engine.playing && !self.quiet)
     }
 }
 
@@ -213,6 +243,10 @@ impl TabManager {
             url: String::new(),
             loading: false,
             audible: false,
+            quiet: false,
+            engine: MediaState::default(),
+            dirty: false,
+            capturing: false,
             muted: false,
             icon: None,
             site_name: None,
@@ -601,7 +635,7 @@ impl TabManager {
                     active: Some(t.id) == self.active,
                     loading: t.loading,
                     home,
-                    audible: t.audible,
+                    audible: t.sounds(),
                     muted: t.muted,
                     icon: t.icon.as_deref(),
                     site_name: t.site_name.as_deref(),

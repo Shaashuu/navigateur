@@ -170,12 +170,17 @@
   // Son : prévient l'interface quand une vidéo ou une musique joue, et
   // permet de couper le son de l'onglet.
   let muted = false;
-  let last = false;
+  let last = '';
   const media = () => Array.from(document.querySelectorAll('video, audio'));
   const audible = (m) => !m.paused && !m.ended && (m.muted ? m.__featherMuted === true : m.volume > 0);
+  // `quiet` : une vidéo joue sans son (fond animé). Le moteur de macOS dit
+  // seulement « un média joue » : Feather sait ainsi que ce n'est pas de l'écoute.
   const report = () => {
-    const now = media().some(audible);
-    if (now !== last) { last = now; post({ audible: now }); }
+    const list = media();
+    const now = list.some(audible);
+    const quiet = !now && list.some((m) => !m.paused && !m.ended);
+    const key = now + '|' + quiet;
+    if (key !== last) { last = key; post({ audible: now, quiet }); }
   };
   const silence = (m) => { if (!m.muted) { m.muted = true; m.__featherMuted = true; } };
   for (const type of ['play', 'playing', 'pause', 'ended', 'volumechange', 'emptied']) {
@@ -512,6 +517,21 @@
     for (const p of list) if (!(await ask(p))) return false;
     return true;
   };
+  // Caméra, micro ou écran en cours d'utilisation (appel vidéo) : la veille
+  // épargne l'onglet. `stop()` ne prévient pas : on regarde les pistes.
+  const tracks = new Set();
+  let capturing = false;
+  const checkCapture = () => {
+    for (const t of tracks) if (t.readyState !== 'live') tracks.delete(t);
+    const now = tracks.size > 0;
+    if (now !== capturing) { capturing = now; post({ capturing: now }); }
+  };
+  const watch = (stream) => {
+    try { for (const t of stream.getTracks()) tracks.add(t); } catch (_) {}
+    checkCapture();
+    return stream;
+  };
+  setInterval(() => { if (tracks.size || capturing) checkCapture(); }, 5000);
   const md = navigator.mediaDevices;
   if (md && md.getUserMedia) {
     const original = md.getUserMedia.bind(md);
@@ -520,14 +540,14 @@
       if (c && c.video) list.push('camera');
       if (c && c.audio) list.push('microphone');
       if (!(await askAll(list))) throw denied();
-      return original(c);
+      return watch(await original(c));
     };
   }
   if (md && md.getDisplayMedia) {
     const original = md.getDisplayMedia.bind(md);
     md.getDisplayMedia = async (c) => {
       if (!(await ask('screen'))) throw denied();
-      return original(c);
+      return watch(await original(c));
     };
   }
   const geo = navigator.geolocation;
@@ -577,6 +597,18 @@
       };
     }
   }
+
+  // Champ modifié (formulaire, message en cours d'écriture) : la veille épargne
+  // l'onglet jusqu'au prochain chargement, pour ne pas perdre ce qui est tapé.
+  let dirty = false;
+  document.addEventListener('input', (e) => {
+    if (dirty || !e.isTrusted) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) && t.type !== 'search') {
+      dirty = true;
+      post({ dirty: true });
+    }
+  }, true);
 
   // Clic dans la page : Feather ferme le panneau ouvert par-dessus, s'il y en a un.
   if (window.top === window) window.addEventListener('pointerdown', (e) => { if (e.isTrusted) post({ pressed: true }); }, true);
