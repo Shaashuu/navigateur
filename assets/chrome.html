@@ -556,6 +556,18 @@
   #ext-status.err { color: var(--danger); }
   #ext-status:empty { display: none; }
   #ext-list { margin-top: 10px; }
+  /* Fiche d'une extension téléchargée : ce qu'elle pourra lire et faire. */
+  #ext-confirm { margin-top: 12px; padding: 12px; border: 1px solid var(--accent); border-radius: 12px; background: var(--accent-soft); }
+  #ext-confirm .head { display: flex; align-items: center; gap: 10px; }
+  #ext-confirm .head > div { display: flex; flex-direction: column; min-width: 0; }
+  #ext-confirm .n { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #ext-confirm .m, #ext-confirm .later { font-size: 12px; color: var(--muted); }
+  #ext-confirm .what { margin: 10px 0 4px; font-size: 13px; font-weight: 600; }
+  #ext-confirm .perms { margin: 0; padding-left: 18px; font-size: 13px; }
+  #ext-confirm .perms li { margin: 2px 0; }
+  #ext-confirm .later { margin: 8px 0 0; }
+  #ext-confirm .later:empty { display: none; }
+  #ext-confirm .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
   #ext-list .ext { display: flex; align-items: flex-start; gap: 12px; padding: 10px 2px; border-bottom: 1px solid var(--line); }
   #ext-list .ext:last-child { border-bottom: 0; }
   #ext-list .ext.off .ext-ic, #ext-list .ext.off .n { opacity: .5; }
@@ -1085,6 +1097,16 @@
         <input type="file" id="ext-file" accept=".crx,.xpi,.zip" hidden>
       </div>
       <p id="ext-status" role="status"></p>
+      <div id="ext-confirm" hidden>
+        <div class="head"><span class="ext-ic"></span><div><b class="n"></b><span class="m"></span></div></div>
+        <p class="what"></p>
+        <ul class="perms"></ul>
+        <p class="later"></p>
+        <div class="acts">
+          <button type="button" class="sheet-btn" id="ext-refuse">Annuler</button>
+          <button type="button" class="sheet-btn primary" id="ext-accept">Ajouter</button>
+        </div>
+      </div>
       <div id="ext-list"></div>
       <p class="sheet-hint" id="ext-foot" style="margin-top:12px"></p>
     </div>
@@ -2751,6 +2773,34 @@
     const status = $('ext-status');
     status.textContent = x.busy || x.error || '';
     status.classList.toggle('err', !x.busy && !!x.error);
+    // Extension téléchargée : rien n'est installé avant « Ajouter ».
+    const p = x.pending;
+    const card = $('ext-confirm');
+    card.hidden = !p;
+    if (p) {
+      const ic = card.querySelector('.ext-ic');
+      ic.textContent = '';
+      extIcon(p, ic);
+      card.querySelector('.n').textContent = p.name;
+      card.querySelector('.m').textContent = (p.update ? 'Mise à jour' : 'Nouvelle extension') + (p.version ? ' · version ' + p.version : '');
+      const items = [];
+      if (p.all_sites) items.push('Lire et modifier toutes les pages que vous visitez');
+      else if (p.sites.length) {
+        const shown = p.sites.slice(0, 6).join(', ');
+        items.push('Lire et modifier les pages de ' + shown + (p.sites.length > 6 ? ` et ${p.sites.length - 6} autres sites` : ''));
+      }
+      items.push(...p.permissions);
+      card.querySelector('.what').textContent = items.length
+        ? (p.update ? 'Cette version pourra :' : 'Cette extension pourra :')
+        : "Cette extension ne demande aucun accès à vos pages ni à vos données.";
+      const ul = card.querySelector('.perms');
+      ul.textContent = '';
+      for (const text of items) { const li = document.createElement('li'); li.textContent = text; ul.appendChild(li); }
+      card.querySelector('.later').textContent = p.optional.length
+        ? 'Elle pourra aussi demander plus tard : ' + p.optional.join(', ').toLowerCase() + '.'
+        : '';
+      $('ext-accept').textContent = p.update ? 'Mettre à jour' : 'Ajouter';
+    }
     const list = $('ext-list');
     list.textContent = '';
     if (x.supported && !x.list.length) {
@@ -2823,6 +2873,8 @@
   }
   $('lib-ext').addEventListener('click', openExtensions);
   $('ext-close').addEventListener('click', closeSheet);
+  $('ext-accept').addEventListener('click', () => send({ type: 'confirm_extension', accept: true }));
+  $('ext-refuse').addEventListener('click', () => send({ type: 'confirm_extension', accept: false }));
   $('extensions').addEventListener('mousedown', (e) => { if (e.target === $('extensions')) closeSheet(); });
   $('ext-form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -3337,9 +3389,12 @@
     const eco = !!state.settings.economy && !state.settings.block_trackers;
     $('site-trackers').textContent = site.trackers ? (eco ? 'Activé (mode économie)' : 'Activé') : 'Désactivé';
     // Coupé dans les paramètres : l'interrupteur du site n'a plus d'effet.
-    $('site-ads').checked = !!site.ads && site.ads_site !== false;
-    $('site-ads').disabled = !site.ads;
-    $('site-ads-v').textContent = !site.ads ? 'Désactivé dans les paramètres' : site.ads_site === false ? 'Désactivé sur ce site' : '';
+    // Une extension bloque à la place du bloqueur intégré : son interrupteur
+    // n'aurait aucun effet, c'est dans l'extension que l'on règle le site.
+    $('site-ads').checked = !!site.ads && site.ads_site !== false && !site.ads_by;
+    $('site-ads').disabled = !site.ads || !!site.ads_by;
+    $('site-ads-v').textContent = site.ads_by ? 'Géré par ' + site.ads_by
+      : !site.ads ? 'Désactivé dans les paramètres' : site.ads_site === false ? 'Désactivé sur ce site' : '';
   }
   $('lock').addEventListener('mousedown', (e) => e.preventDefault());
   $('lock').addEventListener('click', () => openSite());

@@ -302,7 +302,16 @@ impl App {
             changed |= d.received != before;
         }
         changed |= self.probe_update();
+        // Nouvelles versions des extensions : deux minutes après le lancement, puis
+        // toutes les heures (la recherche n'a lieu qu'une fois par semaine).
+        if self.ticks % 3600 == 120 {
+            self.check_extension_updates();
+        }
         if self.ticks.is_multiple_of(5) {
+            // Un bloqueur en extension qui a fini de se préparer prend le relais.
+            let before = self.extensions.ad_blocker().is_some();
+            self.sync_ad_blocker();
+            changed |= self.extensions.ad_blocker().is_some() != before;
             changed |= self.sample_weights();
             self.soft_sleep();
             changed |= self.auto_sleep();
@@ -697,6 +706,9 @@ impl App {
             // Bloqueur de publicités : réglage général, et choix pour ce site.
             "ads": self.settings().blocks_ads(),
             "ads_site": self.sites.read().is_ok_and(|s| !s.ads_off().contains(&host)),
+            // Une extension bloque les publicités à la place du bloqueur intégré
+            // (sauf dans un onglet privé, qui n'a pas d'extensions).
+            "ads_by": if tab.private { None } else { self.extensions.ad_blocker() },
             "error": tab.failed.is_some(),
         })
     }

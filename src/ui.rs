@@ -297,6 +297,10 @@ pub enum ChromeMessage {
     CloseExtensionPopup,
     /// Le panneau a montré l'erreur d'installation : on l'oublie.
     ClearExtensionError,
+    /// Réponse à la fiche d'une extension téléchargée : l'installer ou non.
+    ConfirmExtension {
+        accept: bool,
+    },
     /// Annule un téléchargement en cours.
     CancelDownload {
         id: u32,

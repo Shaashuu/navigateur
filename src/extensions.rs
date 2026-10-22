@@ -84,9 +84,41 @@ pub struct Extension {
     /// Identifiant donné par WebView2 (Windows), pour les adresses `chrome-extension://`.
     #[serde(default)]
     pub engine_id: Option<String>,
+    /// Où chercher les nouvelles versions : identifiant du Chrome Web Store ou
+    /// nom court sur Firefox Add-ons (`None` : fichier ou dossier).
+    #[serde(default)]
+    pub origin: Option<String>,
+    /// Autorisations, sites et autorisations facultatives du manifeste, montrés
+    /// avant l'installation (voir `Pending`).
+    #[serde(default)]
+    pub permissions: Vec<String>,
+    #[serde(default)]
+    pub hosts: Vec<String>,
+    #[serde(default)]
+    pub optional: Vec<String>,
 }
 
 impl Extension {
+    /// D'où vient la mise à jour. Les extensions installées avant 0.5.8 n'ont pas
+    /// `origin` : celles du Chrome Web Store gardent leur identifiant.
+    fn update_origin(&self) -> Option<Origin> {
+        match self.source {
+            Source::Chrome => Some(Origin::Chrome(self.origin.clone().unwrap_or_else(|| self.id.clone()))),
+            Source::Firefox => self.origin.clone().map(Origin::Firefox),
+            Source::Fichier | Source::Dossier => None,
+        }
+    }
+
+    /// La nouvelle version demande-t-elle plus que l'ancienne ? Sinon, elle
+    /// s'installe sans rien demander.
+    fn asks_more_than(&self, old: &Extension) -> bool {
+        let more = |new: &[String], old: &[String]| new.iter().any(|p| !old.contains(p));
+        (self.all_sites && !old.all_sites)
+            || more(&self.permissions, &old.permissions)
+            || more(&self.hosts, &old.hosts)
+            || more(&self.optional, &old.optional)
+    }
+
     pub fn path(&self) -> Option<PathBuf> {
         // Séparateurs du système (WebView2 reçoit un chemin Windows propre).
         Some(self.dir.split('/').fold(root()?, |path, part| path.join(part)))
@@ -301,6 +333,7 @@ fn prepare_in(request: Request, root: &Path, tmp: &Path) -> Result<Extension, St
         _ => folder,
     };
     let firefox = info.gecko_id.is_some() && (source == Source::Firefox || hint.ends_with(".xpi"));
+    let origin = matches!(source, Source::Chrome | Source::Firefox).then(|| hint.clone());
     Ok(Extension {
         id,
         name: info.name,
@@ -315,6 +348,10 @@ fn prepare_in(request: Request, root: &Path, tmp: &Path) -> Result<Extension, St
         all_sites: info.all_sites,
         firefox,
         engine_id: None,
+        origin,
+        permissions: info.permissions,
+        hosts: info.hosts,
+        optional: info.optional,
     })
 }
 
@@ -528,6 +565,10 @@ pub struct Info {
     pub all_sites: bool,
     pub gecko_id: Option<String>,
     pub has_key: bool,
+    /// Autorisations (`tabs`, `cookies`…), sites, et autorisations facultatives.
+    pub permissions: Vec<String>,
+    pub hosts: Vec<String>,
+    pub optional: Vec<String>,
 }
 
 /// Retire les commentaires `//` et `/* */` (Chrome les tolère dans le manifeste).
@@ -657,6 +698,30 @@ pub fn read_manifest(dir: &Path) -> Result<Info, String> {
                 .flatten(),
         );
     let all_sites = lists.filter_map(Value::as_str).any(|p| all.contains(&p));
+    // Les sites sont rangés à part : dans un manifeste version 2, ils sont mêlés
+    // aux autorisations (`"https://*.proton.me/*"`).
+    let strings = |pointers: &[&str]| -> Vec<String> {
+        let mut out: Vec<String> = pointers
+            .iter()
+            .filter_map(|p| manifest.pointer(p).and_then(Value::as_array))
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect();
+        out.dedup();
+        out
+    };
+    let is_host = |p: &String| p.contains("://") || p == "<all_urls>";
+    let declared = strings(&["/permissions"]);
+    let mut hosts: Vec<String> = declared.iter().filter(|p| is_host(p)).cloned().collect();
+    hosts.extend(strings(&["/host_permissions"]));
+    for script in manifest.get("content_scripts").and_then(Value::as_array).into_iter().flatten() {
+        hosts.extend(script.get("matches").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_string));
+    }
+    let mut seen = std::collections::HashSet::new();
+    hosts.retain(|h| seen.insert(h.clone()));
+    let permissions = declared.into_iter().filter(|p| !is_host(p)).collect();
+    let optional = strings(&["/optional_permissions", "/optional_host_permissions"]);
     let gecko_id = ["/browser_specific_settings/gecko", "/applications/gecko"]
         .iter()
         .find_map(|p| manifest.pointer(p))
@@ -675,6 +740,9 @@ pub fn read_manifest(dir: &Path) -> Result<Info, String> {
         all_sites,
         gecko_id,
         has_key: manifest.get("key").is_some(),
+        permissions,
+        hosts,
+        optional,
     })
 }
 
@@ -818,6 +886,142 @@ fn icon_data(ext: &Extension) -> Option<String> {
     Some(format!("data:{mime};base64,{}", base64_encode(&fs::read(path).ok()?)))
 }
 
+/// Ce que veut dire une autorisation, en clair. `None` : sans conséquence pour
+/// l'utilisateur (stockage, minuteries, menus…), on ne la montre pas.
+pub fn permission_label(permission: &str) -> Option<String> {
+    if permission.contains("://") || permission == "<all_urls>" {
+        return Some("Lire et modifier d'autres sites".into());
+    }
+    let text = match permission {
+        "tabs" => "Voir vos onglets et leurs adresses",
+        "history" => "Lire et effacer votre historique",
+        "bookmarks" => "Lire et modifier vos favoris",
+        "topSites" => "Voir les sites que vous visitez le plus",
+        "cookies" => "Lire et modifier les cookies des sites",
+        "webRequest" | "webRequestBlocking" => "Observer les requêtes des pages",
+        "declarativeNetRequest" | "declarativeNetRequestWithHostAccess" => "Bloquer ou modifier des requêtes",
+        "declarativeNetRequestFeedback" => "Voir les requêtes qu'elle a bloquées",
+        "webNavigation" => "Suivre les pages que vous visitez",
+        "scripting" | "userScripts" => "Ajouter des scripts dans les pages",
+        "clipboardRead" => "Lire le presse-papiers",
+        "clipboardWrite" => "Écrire dans le presse-papiers",
+        "downloads" => "Gérer vos téléchargements",
+        "nativeMessaging" => "Parler à une application de l'ordinateur",
+        "notifications" => "Afficher des notifications",
+        "geolocation" => "Connaître votre position",
+        "management" => "Gérer vos autres extensions",
+        "privacy" => "Changer les réglages de confidentialité",
+        "proxy" => "Faire passer votre navigation par un autre serveur",
+        "debugger" => "Contrôler entièrement les pages (débogueur)",
+        "identity" => "Vous connecter avec votre compte",
+        "browsingData" => "Effacer vos données de navigation",
+        "pageCapture" | "tabCapture" | "desktopCapture" => "Capturer le contenu des pages ou de l'écran",
+        "contentSettings" => "Changer les autorisations des sites",
+        "storage" | "unlimitedStorage" | "alarms" | "contextMenus" | "menus" | "activeTab" | "offscreen" | "idle"
+        | "sidePanel" | "commands" | "runtime" | "i18n" | "power" | "fontSettings" | "tts" | "search" | "sessions"
+        | "background" => return None,
+        // Inconnue : montrée telle quelle, plutôt que cachée.
+        other => return Some(other.chars().take(60).collect()),
+    };
+    Some(text.to_string())
+}
+
+/// Ce que montre la fiche, sans doublons (`webRequest` et `webRequestBlocking`…).
+fn labels(permissions: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for label in permissions.iter().filter_map(|p| permission_label(p)) {
+        if !out.contains(&label) {
+            out.push(label);
+        }
+    }
+    out
+}
+
+/// Les sites d'une liste de motifs (`https://*.proton.me/*` → `*.proton.me`).
+pub fn site_labels(hosts: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for h in hosts {
+        let host = h.split_once("://").map_or(h.as_str(), |(_, rest)| rest);
+        let host = host.split('/').next().unwrap_or(host).to_string();
+        if !host.is_empty() && !out.contains(&host) {
+            out.push(host);
+        }
+    }
+    out
+}
+
+/// `true` si `new` est une version plus récente que `old` (« 1.10.2 » > « 1.9 »).
+pub fn is_newer(new: &str, old: &str) -> bool {
+    let parts = |v: &str| -> Vec<u64> { v.split(['.', '-']).map(|p| p.parse().unwrap_or(0)).collect() };
+    let (a, b) = (parts(new), parts(old));
+    for i in 0..a.len().max(b.len()) {
+        let (x, y) = (a.get(i).copied().unwrap_or(0), b.get(i).copied().unwrap_or(0));
+        if x != y {
+            return x > y;
+        }
+    }
+    false
+}
+
+/// Version publiée par le Chrome Web Store, lue dans sa réponse XML
+/// (`<updatecheck … version="1.2.3" status="ok"/>`).
+fn chrome_latest(xml: &str) -> Option<String> {
+    let check = &xml[xml.find("<updatecheck")?..];
+    let check = &check[..check.find('>')?];
+    if !check.contains("status=\"ok\"") {
+        return None;
+    }
+    let start = check.find(" version=\"")? + 10;
+    let version = &check[start..];
+    Some(version[..version.find('"')?].to_string())
+}
+
+/// Dernière version publiée de l'extension (requête bloquante, https seulement).
+fn latest_version(origin: &Origin) -> Option<String> {
+    let url = match origin {
+        Origin::Chrome(id) => format!(
+            "https://clients2.google.com/service/update2/crx?response=updatecheck&prodversion={CHROME_VERSION}&acceptformat=crx3&x=id%3D{id}%26uc"
+        ),
+        Origin::Firefox(slug) => {
+            let slug: String = url::form_urlencoded::byte_serialize(slug.as_bytes()).collect();
+            format!("https://addons.mozilla.org/api/v5/addons/addon/{slug}/")
+        }
+        Origin::Folder(_) => return None,
+    };
+    let mut cmd = crate::network::command("curl");
+    cmd.args(["-sSL", "--fail", "--max-time", "30", "--proto", "=https", "--proto-redir", "=https", "--max-filesize", "2000000"])
+        .arg(url);
+    let out = cmd.output().ok().filter(|o| o.status.success())?;
+    let body = String::from_utf8_lossy(&out.stdout);
+    match origin {
+        Origin::Chrome(_) => chrome_latest(&body),
+        _ => serde_json::from_str::<Value>(&body)
+            .ok()?
+            .pointer("/current_version/version")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    }
+}
+
+/// Une semaine entre deux recherches de nouvelles versions.
+const UPDATE_EVERY: u64 = 7 * 24 * 3600;
+/// Un bloqueur tout juste installé (ou mis à jour) prépare ses listes :
+/// uBlock Origin Lite met environ 30 secondes. Le bloqueur intégré reste actif
+/// en attendant.
+const BLOCKER_WARMUP: std::time::Duration = std::time::Duration::from_secs(45);
+
+fn now_secs() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default()
+}
+
+/// Extension téléchargée qui attend l'accord de l'utilisateur : la fiche du
+/// panneau montre ce qu'elle pourra lire et faire.
+pub struct Pending {
+    pub ext: Extension,
+    /// Mise à jour d'une extension déjà installée (qui demande plus qu'avant).
+    pub update: bool,
+}
+
 /// Les extensions installées, et ce que montre le panneau.
 #[derive(Default)]
 pub struct Extensions {
@@ -825,6 +1029,16 @@ pub struct Extensions {
     icons: HashMap<String, String>,
     /// Ce que le moteur a refusé, par extension.
     problems: HashMap<String, String>,
+    /// Chargées par le moteur, et depuis quand (voir `ad_blocker`).
+    loaded: HashMap<String, std::time::Instant>,
+    /// Installées ou mises à jour pendant cette session : leur bloqueur se prépare.
+    fresh: std::collections::HashSet<String>,
+    /// Extension à confirmer (voir `Pending`).
+    pub pending: Option<Pending>,
+    /// Dernière recherche de nouvelles versions (secondes depuis 1970).
+    checked: u64,
+    /// Recherche de nouvelles versions en cours.
+    pub checking: bool,
     /// Installation en cours (texte affiché), dernière erreur.
     pub busy: Option<String>,
     pub error: Option<String>,
@@ -844,13 +1058,28 @@ pub struct Popup {
 #[derive(Default, Serialize, Deserialize)]
 struct Saved {
     list: Vec<Extension>,
+    #[serde(default)]
+    checked: u64,
 }
 
 impl Extensions {
     pub fn load() -> Self {
         let mut saved: Saved = storage::read_json(FILE).unwrap_or_default();
         saved.list.retain(|e| e.path().is_some_and(|p| p.join("manifest.json").is_file()));
-        let mut me = Self { list: saved.list, ..Self::default() };
+        // Installées avant 0.5.8 : leurs autorisations sont relues dans le manifeste,
+        // pour qu'une mise à jour ne demande que ce qui est vraiment nouveau.
+        for ext in &mut saved.list {
+            if ext.permissions.is_empty()
+                && ext.hosts.is_empty()
+                && ext.optional.is_empty()
+                && let Some(info) = ext.path().and_then(|p| read_manifest(&p).ok())
+            {
+                ext.permissions = info.permissions;
+                ext.hosts = info.hosts;
+                ext.optional = info.optional;
+            }
+        }
+        let mut me = Self { list: saved.list, checked: saved.checked, ..Self::default() };
         for ext in &me.list {
             if let Some(icon) = icon_data(ext) {
                 me.icons.insert(ext.id.clone(), icon);
@@ -861,7 +1090,7 @@ impl Extensions {
     }
 
     pub fn save(&self) {
-        let saved = Saved { list: self.list.clone() };
+        let saved = Saved { list: self.list.clone(), checked: self.checked };
         if let Err(err) = storage::write_json(FILE, &saved, true) {
             eprintln!("liste des extensions non enregistrée : {err}");
         }
@@ -927,15 +1156,32 @@ impl Extensions {
     }
 
     /// Nom du bloqueur de publicités qui agit sur toutes les pages : activé,
-    /// chargé sans erreur par le moteur. Le bloqueur intégré lui laisse la place.
+    /// chargé sans erreur par le moteur, et prêt. Le bloqueur intégré lui laisse
+    /// la place. Avant, il se mettait en pause dès l'activation : rien ne
+    /// bloquait pendant que l'extension préparait ses listes, ou si elle ne se
+    /// chargeait pas.
     pub fn ad_blocker(&self) -> Option<&str> {
         if support().is_err() {
             return None;
         }
+        let ready = |e: &Extension| {
+            self.loaded
+                .get(&e.id)
+                .is_some_and(|since| !self.fresh.contains(&e.id) || since.elapsed() >= BLOCKER_WARMUP)
+        };
         self.list
             .iter()
-            .find(|e| e.enabled && e.all_sites && blocks_ads(e) && !self.problems.contains_key(&e.id))
+            .find(|e| e.enabled && e.all_sites && blocks_ads(e) && !self.problems.contains_key(&e.id) && ready(e))
             .map(|e| e.name.as_str())
+    }
+
+    /// Le moteur a chargé l'extension (ou l'a refusée).
+    fn set_loaded(&mut self, id: &str, ok: bool) {
+        if ok {
+            self.loaded.entry(id.to_string()).or_insert_with(std::time::Instant::now);
+        } else {
+            self.loaded.remove(id);
+        }
     }
 
     pub fn popup_id(&self) -> Option<&str> {
@@ -972,6 +1218,19 @@ impl Extensions {
             "error": self.error,
             "popup": self.popup_id(),
             "list": list,
+            "pending": self.pending.as_ref().map(|p| {
+                let e = &p.ext;
+                json!({
+                    "name": e.name,
+                    "version": e.version,
+                    "update": p.update,
+                    "icon": icon_data(e),
+                    "all_sites": e.all_sites,
+                    "sites": if e.all_sites { Vec::new() } else { site_labels(&e.hosts) },
+                    "permissions": labels(&e.permissions),
+                    "optional": labels(&e.optional),
+                })
+            }),
         })
     }
 }
@@ -1101,24 +1360,71 @@ impl crate::App {
         });
     }
 
-    /// L'extension est rangée sur le disque : on la confie au moteur.
+    /// L'extension est rangée sur le disque : l'utilisateur voit ce qu'elle
+    /// demande et confirme (voir `confirm_extension`).
     pub(crate) fn extension_prepared(&mut self, result: Result<Box<Extension>, String>) {
         self.extensions.busy = None;
-        let ext = match result {
-            Ok(ext) => *ext,
-            Err(err) => {
-                self.extensions.error = Some(format!("Installation impossible : {err}."));
-                return;
-            }
-        };
+        match result {
+            Ok(ext) => self.extension_ready(*ext, false),
+            Err(err) => self.extensions.error = Some(format!("Installation impossible : {err}.")),
+        }
+    }
+
+    /// Nouvelle version téléchargée par la recherche hebdomadaire (voir
+    /// `check_extension_updates`). Un échec ne s'affiche pas : on réessaiera.
+    pub(crate) fn extension_updated(&mut self, result: Result<Box<Extension>, String>) {
+        match result {
+            Ok(ext) => self.extension_ready(*ext, true),
+            Err(err) => eprintln!("mise à jour d'extension impossible : {err}"),
+        }
+    }
+
+    fn extension_ready(&mut self, ext: Extension, automatic: bool) {
+        let old = self.extensions.get(&ext.id).cloned();
+        // Une mise à jour qui ne demande rien de plus s'installe seule ; une
+        // installation, ou une mise à jour qui demande plus, attend l'accord.
+        if let Some(old) = &old
+            && !ext.asks_more_than(old)
+        {
+            self.install_prepared(ext);
+            return;
+        }
+        if let Some(previous) = self.extensions.pending.take() {
+            remove_folder_later(&previous.ext);
+        }
+        let name = ext.name.clone();
+        self.extensions.pending = Some(Pending { ext, update: old.is_some() });
+        if automatic {
+            let text = serde_json::to_string(&format!(
+                "La mise à jour de {name} demande de nouvelles autorisations : ouvrez Extensions pour l'accepter."
+            ))
+            .unwrap_or_default();
+            self.chrome_call(&format!("navigateur.showNotice({text})"));
+        }
+    }
+
+    /// Réponse de la fiche : installer l'extension en attente, ou l'abandonner.
+    pub(crate) fn confirm_extension(&mut self, accept: bool) {
+        let Some(pending) = self.extensions.pending.take() else { return };
+        if accept {
+            self.install_prepared(pending.ext);
+        } else {
+            remove_folder_later(&pending.ext);
+        }
+    }
+
+    /// Confie au moteur une extension acceptée (nouvelle, ou nouvelle version).
+    fn install_prepared(&mut self, mut ext: Extension) {
         if self.extensions.popup_id() == Some(ext.id.as_str()) {
             self.close_extension_popup();
         }
-        let mut ext = ext;
         if let Some(old) = self.extensions.get(&ext.id) {
             // Mise à jour : on garde le choix « activée » de l'ancienne version.
             ext.enabled = old.enabled;
         }
+        // Un bloqueur prépare ses listes : le bloqueur intégré reste actif en attendant.
+        self.extensions.fresh.insert(ext.id.clone());
+        self.extensions.set_loaded(&ext.id, false);
         match self.extensions.insert(ext.clone()) {
             Some(old) => {
                 replace(&old, &ext, &self.proxy);
@@ -1127,6 +1433,36 @@ impl crate::App {
             None => add(&ext, &self.proxy),
         }
         self.sync_ad_blocker();
+    }
+
+    /// Une fois par semaine, en arrière-plan : les extensions du Chrome Web Store
+    /// et de Firefox Add-ons ont-elles une nouvelle version ? Avant, elles
+    /// restaient figées, failles comprises.
+    pub(crate) fn check_extension_updates(&mut self) {
+        let due = now_secs().saturating_sub(self.extensions.checked) >= UPDATE_EVERY;
+        if !due || self.extensions.checking || support().is_err() {
+            return;
+        }
+        let wanted: Vec<(Origin, String)> =
+            self.extensions.list.iter().filter_map(|e| Some((e.update_origin()?, e.version.clone()))).collect();
+        self.extensions.checked = now_secs();
+        self.extensions.save();
+        if wanted.is_empty() {
+            return;
+        }
+        self.extensions.checking = true;
+        let proxy = self.proxy.clone();
+        std::thread::spawn(move || {
+            for (origin, version) in wanted {
+                let Some(latest) = latest_version(&origin) else { continue };
+                if !is_newer(&latest, &version) {
+                    continue;
+                }
+                let result = prepare(Request::Origin(origin)).map(Box::new);
+                let _ = proxy.send_event(crate::UserEvent::ExtensionUpdated(result));
+            }
+            let _ = proxy.send_event(crate::UserEvent::ExtensionUpdatesChecked);
+        });
     }
 
     /// Un bloqueur de publicités en extension met le bloqueur intégré en pause
@@ -1139,6 +1475,7 @@ impl crate::App {
 
     /// Réponse du moteur : l'identifiant WebView2, ou ce qui n'a pas marché.
     pub(crate) fn extension_loaded(&mut self, id: &str, result: Result<Option<String>, String>) {
+        self.extensions.set_loaded(id, result.is_ok());
         match result {
             Ok(engine_id) => {
                 self.extensions.set_problem(id, None);
@@ -1175,6 +1512,7 @@ impl crate::App {
             remove(&ext);
             remove_folder_later(&ext);
         }
+        self.extensions.set_loaded(id, false);
         self.sync_ad_blocker();
     }
 
@@ -1554,7 +1892,8 @@ mod engine {
         WKWebExtension, WKWebExtensionAction, WKWebExtensionContext, WKWebExtensionContextPermissionStatus,
         WKWebExtensionController, WKWebExtensionControllerDelegate, WKWebExtensionMatchPattern, WKWebExtensionTab,
         WKWebExtensionTabChangedProperties, WKWebExtensionTabConfiguration, WKWebExtensionWindow,
-        WKWebExtensionWindowState, WKWebExtensionWindowType, WKWebView, WKWebViewConfiguration, WKWebsiteDataStore,
+        WKUserContentController, WKWebExtensionWindowState, WKWebExtensionWindowType, WKWebView, WKWebViewConfiguration,
+        WKWebsiteDataStore,
     };
     use tao::event_loop::EventLoopProxy;
     use wry::{WebView, WebViewBuilder, WebViewBuilderExtMacos, WebViewExtMacOS};
@@ -1852,8 +2191,9 @@ mod engine {
                 done.call((ptr::null_mut(),));
             }
 
-            // Autorisations demandées plus tard par l'extension : accordées, comme
-            // celles de l'installation (la liste des sites est dans le panneau).
+            // Autorisations demandées plus tard par l'extension : WebKit n'accepte
+            // que celles que son manifeste annonce comme facultatives, et la fiche
+            // les a montrées avant l'installation (« pourra aussi demander… »).
             #[unsafe(method(webExtensionController:promptForPermissions:inTab:forExtensionContext:completionHandler:))]
             fn prompt_permissions(
                 &self,
@@ -2152,16 +2492,27 @@ mod engine {
 
     /// Configuration du contexte dont l'adresse de base commence `url`
     /// (webkit-extension://<identifiant>/…).
+    ///
+    /// WebKit rend une copie de la configuration, mais qui garde le même
+    /// `WKUserContentController` pour toutes les pages de l'extension : wry y
+    /// ajoutait à chaque page son gestionnaire « ipc » (WebKit refuse un nom déjà
+    /// pris) et ses scripts, jamais retirés. Chaque page reçoit donc le sien.
     fn page_configuration(url: &str) -> Option<Retained<WKWebViewConfiguration>> {
         if !url.starts_with("webkit-extension://") {
             return None;
         }
+        let mtm = MainThreadMarker::new()?;
         let contexts: Vec<_> = STATE.with_borrow(|s| s.contexts.values().cloned().collect());
         contexts.into_iter().find_map(|context| {
-            // SAFETY : fil principal, contexte valide.
+            // SAFETY : fil principal, contexte valide ; contrôleur neuf.
             unsafe {
                 let base = context.baseURL().absoluteString()?.to_string();
-                if url.starts_with(&base) { context.webViewConfiguration() } else { None }
+                if !url.starts_with(&base) {
+                    return None;
+                }
+                let config = context.webViewConfiguration()?;
+                config.setUserContentController(&WKUserContentController::new(mtm));
+                Some(config)
             }
         })
     }
@@ -2341,10 +2692,71 @@ mod tests {
             all_sites: true,
             firefox: false,
             engine_id: None,
+            origin: None,
+            permissions: Vec::new(),
+            hosts: Vec::new(),
+            optional: Vec::new(),
         };
         assert!(blocks_ads(&ext("ddkjiahejlhfcafbddmgiahcphecmpfh", "uBO Lite")));
         assert!(blocks_ads(&ext("autre", "AdGuard AdBlocker")));
         assert!(!blocks_ads(&ext(ID, "Proton Pass")));
+    }
+
+    #[test]
+    fn fiche_d_autorisations() {
+        assert_eq!(permission_label("tabs").as_deref(), Some("Voir vos onglets et leurs adresses"));
+        assert_eq!(permission_label("storage"), None);
+        assert_eq!(permission_label("truc").as_deref(), Some("truc"));
+        assert_eq!(permission_label("https://*/*").as_deref(), Some("Lire et modifier d'autres sites"));
+        assert_eq!(labels(&["webRequest".into(), "webRequestBlocking".into(), "alarms".into()]), ["Observer les requêtes des pages"]);
+        let hosts = ["https://*.proton.me/*".to_string(), "*://*.proton.me/x".into(), "http://a.fr/".into()];
+        assert_eq!(site_labels(&hosts), ["*.proton.me", "a.fr"]);
+    }
+
+    #[test]
+    fn nouvelles_versions() {
+        assert!(is_newer("1.10.2", "1.9"));
+        assert!(is_newer("2", "1.99.99"));
+        assert!(!is_newer("1.2", "1.2.0"));
+        assert!(!is_newer("1.2.3", "1.3"));
+        let xml = r#"<?xml version="1.0"?><gupdate><app appid="x" status="ok"><updatecheck codebase="https://x/y.crx" version="2025.1.2" status="ok"/></app></gupdate>"#;
+        assert_eq!(chrome_latest(xml).as_deref(), Some("2025.1.2"));
+        assert_eq!(chrome_latest(r#"<app><updatecheck status="noupdate"/></app>"#), None);
+        assert_eq!(chrome_latest("rien"), None);
+    }
+
+    #[test]
+    fn mise_a_jour_qui_demande_plus() {
+        let base = Extension {
+            id: ID.into(),
+            name: "x".into(),
+            description: String::new(),
+            version: "1".into(),
+            source: Source::Chrome,
+            enabled: true,
+            dir: ID.into(),
+            popup: None,
+            options: None,
+            icon: None,
+            all_sites: false,
+            firefox: false,
+            engine_id: None,
+            origin: None,
+            permissions: vec!["tabs".into()],
+            hosts: vec!["https://a.fr/*".into()],
+            optional: Vec::new(),
+        };
+        let mut same = base.clone();
+        same.version = "2".into();
+        assert!(!same.asks_more_than(&base));
+        let mut more = same.clone();
+        more.permissions.push("cookies".into());
+        assert!(more.asks_more_than(&base));
+        let mut all = same.clone();
+        all.all_sites = true;
+        assert!(all.asks_more_than(&base));
+        // Ancienne installation sans `origin` : l'identifiant du Chrome Web Store sert.
+        assert_eq!(base.update_origin(), Some(Origin::Chrome(ID.into())));
     }
 
     #[test]
@@ -2453,7 +2865,9 @@ mod tests {
             "\u{feff}{\"manifest_version\":3,\"name\":\"__MSG_appname__\",\"version\":\"1.2\",\"default_locale\":\"en\",
               \"action\":{\"default_popup\":\"popup.html\"},\"options_page\":\"../dehors.html\",
               \"icons\":{\"16\":\"icons/16.png\",\"48\":\"icons/48.png\"},
-              \"host_permissions\":[\"<all_urls>\"],\"browser_specific_settings\":{\"gecko\":{\"id\":\"a@b\"}}}",
+              \"host_permissions\":[\"<all_urls>\"],\"browser_specific_settings\":{\"gecko\":{\"id\":\"a@b\"}},
+              \"permissions\":[\"tabs\",\"storage\",\"https://*.proton.me/*\"],\"optional_permissions\":[\"history\"],
+              \"content_scripts\":[{\"matches\":[\"https://*.proton.me/*\",\"https://mail.exemple.fr/*\"]}]}",
         )
         .unwrap();
         let info = read_manifest(&dir).unwrap();
@@ -2465,6 +2879,10 @@ mod tests {
         assert!(info.all_sites);
         assert_eq!(info.gecko_id.as_deref(), Some("a@b"));
         assert!(!info.has_key);
+        // Les sites sont séparés des autorisations, sans doublons.
+        assert_eq!(info.permissions, ["tabs", "storage"]);
+        assert_eq!(info.hosts, ["https://*.proton.me/*", "<all_urls>", "https://mail.exemple.fr/*"]);
+        assert_eq!(info.optional, ["history"]);
         add_key(&dir, b"cle").unwrap();
         assert!(read_manifest(&dir).unwrap().has_key);
         assert_eq!(manifest_root(&dir).unwrap(), dir);
