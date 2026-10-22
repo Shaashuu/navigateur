@@ -69,7 +69,8 @@ function Lire([string]$Fichier, [string]$Cle) {
 
 # Feather et tous ses descendants.
 function Get-Arbre([int]$Racine) {
-    $tous = Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, WorkingSetSize
+    # Délai : WMI peut rester bloqué sur les machines de compilation.
+    $tous = Get-CimInstance Win32_Process -OperationTimeoutSec 30 | Select-Object ProcessId, ParentProcessId, WorkingSetSize
     $ids = @{ $Racine = $true }
     do {
         $ajoutes = 0
