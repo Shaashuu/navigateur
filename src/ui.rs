@@ -633,6 +633,7 @@ pub fn home_page(settings: &Settings, bookmarks: &[Bookmark], recent: &[&Visit])
         HOME_HTML,
         &[
             ("THEME", theme.to_string()),
+            ("MOTION", settings.animations.effective(settings.economy).to_string()),
             ("NAME", escape_html(&settings.name)),
             ("BOOKMARKS", bookmark_tiles(bookmarks)),
             ("RECENT", recent_cards(recent)),
