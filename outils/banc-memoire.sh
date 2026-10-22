@@ -52,10 +52,12 @@ mesurer() {
   local liste
   liste=$(processus "$1")
   [ -n "$liste" ] || { echo "? | ? | 0"; return; }
+  # La liste passe par l'environnement : l'awk de macOS refuse un saut de
+  # ligne dans une valeur donnée par -v (« newline in string »).
   # shellcheck disable=SC2046
-  empreintes $(echo "$liste" | awk '{ print $1 }') | awk -v liste="$liste" '
+  empreintes $(echo "$liste" | awk '{ print $1 }') | LISTE="$liste" awk '
     BEGIN {
-      n = split(liste, lignes, "\n")
+      n = split(ENVIRON["LISTE"], lignes, "\n")
       for (i = 1; i <= n; i++) { split(lignes[i], c, " "); sorte[c[1]] = c[2] }
     }
     ($1 in sorte) { ko[sorte[$1]] += $2; total += $2; compte++ }
