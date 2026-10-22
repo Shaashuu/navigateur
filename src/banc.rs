@@ -14,6 +14,13 @@
 //!   et `moteur <id> <message>` pour chaque erreur notée par le moteur (macOS :
 //!   arrière-plan refusé, erreur de script…).
 //!
+//! - `FEATHER_BANC_ONGLETS=1` (avec `FEATHER_BANC`) : après le démarrage, ouvre
+//!   l'un après l'autre un onglet d'accueil puis deux onglets Netflix, comme un
+//!   clic sur un favori, et écrit pour chacun `onglet-<nom>-creation <ms>` (le
+//!   programme bloqué pendant la création de la page), `onglet-<nom>-debut <ms>`
+//!   (la page commence à s'afficher) et `onglet-<nom>-charge <ms>` (chargement
+//!   fini), comptés depuis l'ordre d'ouverture ; `?` si rien après 30 s.
+//!
 //! Réservé aux machines de compilation : les extensions installées ainsi
 //! restent dans le profil, comme une installation normale.
 
@@ -34,6 +41,26 @@ const AVANT_OUVERTURE: Duration = Duration::from_secs(20);
 const AVANT_LECTURE: Duration = Duration::from_secs(10);
 
 /// Mots d'un message d'erreur dans la page d'une extension (en minuscules).
+/// Onglets ouverts par `FEATHER_BANC_ONGLETS` : nom dans le fichier, adresse.
+/// Netflix deux fois : le premier onglet d'un site, puis le même site déjà en cache.
+const ONGLETS: [(&str, &str); 3] = [
+    ("accueil", crate::network::HOME_URL),
+    ("netflix1", "https://www.netflix.com/fr/"),
+    ("netflix2", "https://www.netflix.com/fr/"),
+];
+
+/// Pause avant chaque ouverture d'onglet, et attente maximale de son chargement.
+const AVANT_ONGLET: Duration = Duration::from_secs(5);
+const ONGLET_MAX: Duration = Duration::from_secs(30);
+
+/// Onglet en cours de mesure : son nom, son numéro et l'instant de l'ordre d'ouverture.
+struct Mesure {
+    nom: &'static str,
+    onglet: TabId,
+    ordre: Instant,
+    debut_note: bool,
+}
+
 const ERREURS: [&str; 6] = ["difficult", "went wrong", "try again", "réessay", "erreur", "failed"];
 
 struct Etat {
@@ -48,6 +75,10 @@ struct Etat {
     a_lire: Vec<(String, TabId, Instant)>,
     /// Erreurs du moteur déjà écrites (« id message »).
     erreurs_vues: HashSet<String>,
+    /// Onglets encore à mesurer, moment du prochain, et celui en cours.
+    onglets: VecDeque<(&'static str, &'static str)>,
+    onglet_prochain: Option<Instant>,
+    mesure: Option<Mesure>,
 }
 
 static ETAT: OnceLock<Option<Mutex<Etat>>> = OnceLock::new();
@@ -64,6 +95,7 @@ pub fn init() {
             .filter(|id| !id.is_empty())
             .map(String::from)
             .collect();
+        let onglets = if std::env::var_os("FEATHER_BANC_ONGLETS").is_some() { ONGLETS.into() } else { VecDeque::new() };
         Some(Mutex::new(Etat {
             fichier,
             debut,
@@ -73,6 +105,9 @@ pub fn init() {
             a_ouvrir: Vec::new(),
             a_lire: Vec::new(),
             erreurs_vues: HashSet::new(),
+            onglets,
+            onglet_prochain: None,
+            mesure: None,
         }))
     });
 }
@@ -108,12 +143,32 @@ pub fn etape(nom: &str) {
     avec(|e| ecrire(&e.fichier, &format!("{nom} {}", e.debut.elapsed().as_millis())));
 }
 
-/// Une page a fini de charger : la première donne le temps de démarrage.
-pub fn page_chargee() {
+/// Une page commence (`loading`) ou finit de charger : la première finie donne
+/// le temps de démarrage ; celle de l'onglet mesuré, ses temps d'ouverture.
+pub fn chargement(onglet: TabId, loading: bool) {
     avec(|e| {
-        if !e.demarrage_note {
+        if !loading && !e.demarrage_note {
             e.demarrage_note = true;
             ecrire(&e.fichier, &format!("demarrage {}", e.debut.elapsed().as_millis()));
+            if !e.onglets.is_empty() {
+                e.onglet_prochain = Some(Instant::now() + AVANT_ONGLET);
+            }
+        }
+        let Some(m) = e.mesure.as_mut().filter(|m| m.onglet == onglet) else { return };
+        let ms = m.ordre.elapsed().as_millis();
+        if loading {
+            if !m.debut_note {
+                m.debut_note = true;
+                let ligne = format!("onglet-{}-debut {ms}", m.nom);
+                ecrire(&e.fichier, &ligne);
+            }
+        } else if m.debut_note {
+            let ligne = format!("onglet-{}-charge {ms}", m.nom);
+            ecrire(&e.fichier, &ligne);
+            e.mesure = None;
+            if !e.onglets.is_empty() {
+                e.onglet_prochain = Some(Instant::now() + AVANT_ONGLET);
+            }
         }
     });
 }
@@ -166,7 +221,7 @@ impl App {
     pub(crate) fn banc_tick(&mut self) {
         let Some(etat) = ETAT.get().and_then(Option::as_ref) else { return };
         let maintenant = Instant::now();
-        let (suivante, a_ouvrir, a_lire) = {
+        let (suivante, a_ouvrir, a_lire, onglet) = {
             let Ok(mut e) = etat.lock() else { return };
             if !e.a_installer.is_empty()
                 && let Err(raison) = support()
@@ -183,8 +238,25 @@ impl App {
             e.a_ouvrir = autres;
             let (lues, autres): (Vec<_>, Vec<_>) = e.a_lire.drain(..).partition(|(_, _, t)| *t <= maintenant);
             e.a_lire = autres;
-            (suivante, dues, lues)
+            // Onglet mesuré resté sans fin de chargement : noté inconnu, on passe au suivant.
+            if let Some(m) = e.mesure.take_if(|m| maintenant - m.ordre >= ONGLET_MAX) {
+                let fin = if m.debut_note { "charge" } else { "debut" };
+                ecrire(&e.fichier, &format!("onglet-{}-{fin} ?", m.nom));
+                if !e.onglets.is_empty() {
+                    e.onglet_prochain = Some(maintenant);
+                }
+            }
+            let onglet = if e.mesure.is_none() && e.onglet_prochain.is_some_and(|t| t <= maintenant) {
+                e.onglet_prochain = None;
+                e.onglets.pop_front()
+            } else {
+                None
+            };
+            (suivante, dues, lues, onglet)
         };
+        if let Some((nom, url)) = onglet {
+            self.banc_onglet(nom, url);
+        }
         if let Some(id) = suivante {
             self.install_extension(&id);
             // Refus immédiat (lien illisible…) : on passe à la suivante.
@@ -209,6 +281,25 @@ impl App {
             });
             if let Err(err) = lu {
                 noter(&format!("fenetre {id} vide {}", resume(&err.to_string())));
+            }
+        }
+    }
+
+    /// Ouvre un onglet comme un clic sur un favori, et chronomètre sa création ;
+    /// la suite (début et fin du chargement) est notée par `chargement`.
+    fn banc_onglet(&mut self, nom: &'static str, url: &str) {
+        let avant: Vec<TabId> = self.tabs.iter().map(|t| t.id).collect();
+        let ordre = Instant::now();
+        self.open_tab(url, false);
+        let creation = ordre.elapsed().as_millis();
+        noter(&format!("onglet-{nom}-creation {creation}"));
+        match self.tabs.iter().map(|t| t.id).find(|t| !avant.contains(t)) {
+            Some(onglet) => {
+                avec(|e| e.mesure = Some(Mesure { nom, onglet, ordre, debut_note: false }));
+            }
+            None => {
+                noter(&format!("onglet-{nom}-debut ?"));
+                avec(|e| e.onglet_prochain = Some(Instant::now() + AVANT_ONGLET));
             }
         }
     }
