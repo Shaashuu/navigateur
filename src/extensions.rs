@@ -1243,7 +1243,7 @@ pub fn prepare_builder<'a>(builder: WebViewBuilder<'a>, attach: bool, url: &str)
     engine::prepare_builder(builder, attach, url)
 }
 
-pub use engine::{add, close_popup, open_popup, options_url, popup_shown, remove, replace, set_enabled, start, sync_tabs};
+pub use engine::{add, close_popup, open_popup, options_url, page_url, popup_shown, remove, replace, set_enabled, start, sync_tabs};
 
 /// Un onglet non privé tel que les extensions le voient (macOS, voir `sync_tabs`).
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -1838,7 +1838,8 @@ mod engine {
         remove_then(old, move || add(&new, &proxy));
     }
 
-    fn page_url(ext: &Extension, page: &str) -> Option<String> {
+    /// Adresse d'une page de l'extension (`popup.html`…), une fois chargée.
+    pub fn page_url(ext: &Extension, page: &str) -> Option<String> {
         Some(format!("chrome-extension://{}/{page}", ext.engine_id.as_ref()?))
     }
 
@@ -2548,6 +2549,14 @@ mod engine {
         add(new, proxy);
     }
 
+    /// Adresse d'une page de l'extension (`popup.html`…), une fois chargée.
+    pub fn page_url(ext: &Extension, page: &str) -> Option<String> {
+        let context = context(&ext.id)?;
+        // SAFETY : fil principal, contexte valide.
+        let base = unsafe { context.baseURL().absoluteString() }?.to_string();
+        Some(format!("{}/{page}", base.trim_end_matches('/')))
+    }
+
     pub fn options_url(ext: &Extension) -> Option<String> {
         let context = context(&ext.id)?;
         // SAFETY : fil principal, contexte valide.
@@ -2648,6 +2657,10 @@ mod engine {
     pub fn remove(_ext: &Extension) {}
 
     pub fn replace(_old: &Extension, _new: &Extension, _proxy: &EventLoopProxy<UserEvent>) {}
+
+    pub fn page_url(_ext: &Extension, _page: &str) -> Option<String> {
+        None
+    }
 
     pub fn options_url(_ext: &Extension) -> Option<String> {
         None
