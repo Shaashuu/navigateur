@@ -110,6 +110,10 @@ pub enum UserEvent {
     AdRulesReady,
     /// Une extension est téléchargée et décompressée (ou la raison de l'échec).
     ExtensionPrepared(Result<Box<extensions::Extension>, String>),
+    /// Nouvelle version d'une extension, trouvée par la recherche hebdomadaire.
+    ExtensionUpdated(Result<Box<extensions::Extension>, String>),
+    /// La recherche hebdomadaire des nouvelles versions est terminée.
+    ExtensionUpdatesChecked,
     /// Le moteur a chargé une extension (avec son identifiant WebView2), ou l'a refusée.
     ExtensionLoaded { id: String, result: Result<Option<String>, String> },
     /// Message de la petite fenêtre d'une extension (Windows).
@@ -584,6 +588,11 @@ impl App {
                 self.extension_prepared(result);
                 self.push_state();
             }
+            UserEvent::ExtensionUpdated(result) => {
+                self.extension_updated(result);
+                self.push_state();
+            }
+            UserEvent::ExtensionUpdatesChecked => self.extensions.checking = false,
             UserEvent::ExtensionLoaded { id, result } => {
                 self.extension_loaded(&id, result);
                 self.push_state();
@@ -830,6 +839,7 @@ impl App {
             ChromeMessage::ExtensionAction { id, x, y, w, h } => self.extension_action(&id, (x, y, w, h)),
             ChromeMessage::CloseExtensionPopup => self.close_extension_popup(),
             ChromeMessage::ClearExtensionError => self.extensions.error = None,
+            ChromeMessage::ConfirmExtension { accept } => self.confirm_extension(accept),
         }
         // L'interface a pu changer sa copie de l'état sans attendre (réglages,
         // liste vidée…) : on lui renvoie tout, pour qu'elle reparte du vrai.
