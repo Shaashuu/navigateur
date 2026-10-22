@@ -172,6 +172,11 @@ struct App {
     pointer_due: Option<Instant>,
     /// Mode concentration (Ctrl+Maj+F) : la barre se réduit à un rail.
     focus: bool,
+    /// La fenêtre est en plein écran (F11, ⌃⌘F).
+    fullscreen: bool,
+    /// Plein écran : l'interface a fait s'envoler la barre, la page prend toute
+    /// la fenêtre. La barre revient par-dessus quand la souris touche son bord.
+    bar_hidden: bool,
     /// L'interface passe au-dessus des pages quand un panneau est ouvert.
     layers: layers::Layers,
     /// Le bandeau du bas (recherche, question, minuteur) est ouvert : la page rétrécit.
@@ -310,6 +315,8 @@ fn main() -> wry::Result<()> {
         pointer_sent: None,
         pointer_due: None,
         focus: false,
+        fullscreen: false,
+        bar_hidden: false,
         layers: layers::Layers::default(),
         strip: false,
         update: UpdateState::Idle,
@@ -413,6 +420,7 @@ fn main() -> wry::Result<()> {
                 ..
             } => {
                 app.placement.track(&app.window);
+                app.sync_fullscreen();
                 app.relayout();
             }
             Event::WindowEvent { event: WindowEvent::Moved(_), .. } => app.placement.track(&app.window),
@@ -628,6 +636,8 @@ impl App {
                 self.persist();
             }
             UserEvent::Tick => {
+                // macOS : l'entrée en plein écran finit parfois après le dernier redimensionnement.
+                self.sync_fullscreen();
                 self.tick();
                 // Aucune page chargée après 5 s (hors ligne…) : les extensions démarrent quand même.
                 if self.ticks >= 5 {
@@ -759,6 +769,14 @@ impl App {
                 }
             }
             // Messages fréquents (à chaque image) : rien à redessiner dans l'interface.
+            ChromeMessage::BarHidden { hidden } => {
+                let hidden = hidden && self.fullscreen && layers::SUPPORTED;
+                if hidden != self.bar_hidden {
+                    self.bar_hidden = hidden;
+                    self.relayout();
+                }
+                return;
+            }
             ChromeMessage::Shape { rects } => {
                 self.layers.set_shape(&self.window, &self.chrome, rects);
                 return;
@@ -1180,6 +1198,7 @@ impl App {
             side: s.sidebar_width,
             strip: self.strip,
             focus: self.focus,
+            full: self.bar_hidden,
         };
         ui::page_bounds(&self.window, &frame)
     }
@@ -1193,7 +1212,8 @@ impl App {
     /// Démarre ou arrête la lecture de la souris. `fresh` : la position est
     /// renvoyée tout de suite, même inchangée.
     fn update_pointer_watch(&mut self, fresh: bool) {
-        let on = layers::SUPPORTED && (self.expanded || self.pointer_wanted);
+        // En plein écran, la souris est suivie pour faire revenir la barre.
+        let on = layers::SUPPORTED && (self.expanded || self.pointer_wanted || self.fullscreen);
         if !on {
             self.pointer_due = None;
         } else if fresh || self.pointer_due.is_none() {
@@ -1516,6 +1536,23 @@ impl App {
         self.settings.read().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// Entrée ou sortie du plein écran : l'interface fait s'envoler la barre
+    /// (puis répond `bar_hidden`), ou la fait revenir ; la page reprend sa place
+    /// tout de suite à la sortie.
+    fn sync_fullscreen(&mut self) {
+        let full = self.window.fullscreen().is_some();
+        if full == self.fullscreen {
+            return;
+        }
+        self.fullscreen = full;
+        if !full && self.bar_hidden {
+            self.bar_hidden = false;
+            self.relayout();
+        }
+        self.update_pointer_watch(full);
+        self.push_state();
+    }
+
     fn relayout(&mut self) {
         self.close_extension_popup();
         let _ = self.chrome.set_bounds(ui::chrome_bounds(&self.window));
@@ -1633,6 +1670,8 @@ impl App {
             // Extension qui bloque les publicités à la place du bloqueur intégré.
             "adblock_by": self.extensions.ad_blocker(),
             "focus": self.focus,
+            // Sous Linux, l'interface ne passe pas devant la page : la barre reste.
+            "fullscreen": self.fullscreen && layers::SUPPORTED,
             "extensions": self.extensions.snapshot(),
         });
         drop(lib);

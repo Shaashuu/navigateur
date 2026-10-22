@@ -118,6 +118,10 @@ pub enum ChromeMessage {
     Expand {
         open: bool,
     },
+    /// Plein écran : la barre a fini de s'envoler (`true`), la page prend toute la fenêtre.
+    BarHidden {
+        hidden: bool,
+    },
     /// Forme de l'interface pendant qu'un panneau est ouvert : la barre et les panneaux.
     Shape {
         rects: Vec<crate::layers::ShapeRect>,
@@ -583,10 +587,16 @@ pub struct Frame {
     pub side: u32,
     pub strip: bool,
     pub focus: bool,
+    /// Plein écran, barre envolée : la page prend toute la fenêtre (sauf le bandeau du bas).
+    pub full: bool,
 }
 
 /// Zone des pages (x, y, largeur, hauteur) dans une fenêtre de cette taille.
 pub fn page_area(width: f64, height: f64, f: &Frame) -> (f64, f64, f64, f64) {
+    if f.full {
+        let bottom = if f.strip { STRIP_HEIGHT } else { 0.0 };
+        return (0.0, 0.0, width, height - bottom);
+    }
     let bottom = if f.strip { STRIP_HEIGHT } else { PAGE_GAP };
     if f.focus {
         // Le rail reste du côté de la barre (à gauche quand elle est en haut).
@@ -774,7 +784,7 @@ mod tests {
 
     #[test]
     fn zone_de_la_page() {
-        let f = |bar, style, side, strip, focus| Frame { bar, style, side, strip, focus };
+        let f = |bar, style, side, strip, focus| Frame { bar, style, side, strip, focus, full: false };
         let (l, t) = (BarPosition::Left, SidebarStyle::Palette);
         // Barre à gauche : la page est posée en carte, avec une marge autour.
         assert_eq!(page_area(1000.0, 800.0, &f(l, t, 56, false, false)), (56.0, 8.0, 936.0, 784.0));
@@ -788,6 +798,9 @@ mod tests {
         assert_eq!(page_area(1000.0, 800.0, &f(BarPosition::Top, t, 56, false, false)), (8.0, 44.0, 984.0, 748.0));
         // Mode concentration : un rail de 14 px.
         assert_eq!(page_area(1000.0, 800.0, &f(l, SidebarStyle::Wide, 300, false, true)), (14.0, 4.0, 982.0, 792.0));
+        // Plein écran, barre envolée : toute la fenêtre, sauf le bandeau du bas.
+        let full = Frame { full: true, ..f(BarPosition::Top, t, 56, true, false) };
+        assert_eq!(page_area(1000.0, 800.0, &full), (0.0, 0.0, 1000.0, 752.0));
     }
 
     #[test]
