@@ -9,7 +9,8 @@
 # écart au-delà de la marge donne une alerte dans la compilation, jamais un échec.
 #
 # Avec -Extensions, un troisième lancement installe Proton Pass et uBlock
-# Origin Lite, puis vérifie que leur page s'affiche sans message d'erreur.
+# Origin Lite, puis vérifie que leur page s'affiche sans message d'erreur ; un
+# quatrième relance Feather avec ces extensions (mémoire et démarrage).
 # Réservé aux machines de compilation : elles restent installées ensuite.
 #
 # Utilisation : outils\banc-memoire.ps1 -Programme chemin\vers\feather.exe [-Attente 30] [-Extensions]
@@ -128,7 +129,7 @@ function Scenario-Extensions {
             })
         if ($finies.Count -eq $extensionsTestees.Count) { break }
     }
-    $mo, $null = Mesurer-Fermer $p
+    $null = Mesurer-Fermer $p
     $lignes = if (Test-Path $banc) { @(Get-Content $banc) } else { @() }
     $sortie = @('', '| Extension | Installée | Chargée | Page | Texte de la page |', '| --- | :---: | :---: | :---: | --- |')
     $indispo = $lignes | Where-Object { $_ -like 'extensions indisponibles*' } | Select-Object -First 1
@@ -152,7 +153,22 @@ function Scenario-Extensions {
             $alertes.Add("Extension $nom (Windows) : installée $installee, chargée $chargee, page $page. $texte")
         }
     }
-    $sortie + @('', "Mémoire avec les deux extensions (accueil) : $mo Mo.")
+    if ($indispo) { return $sortie }
+    # Relance avec les extensions déjà installées : c'est le démarrage de tous
+    # les jours pour qui en a (piste 8 : elles ne doivent pas le retarder).
+    $relance = Join-Path $temp 'relance.txt'
+    $p = Lancer $relance @()
+    Start-Sleep -Seconds $Attente
+    $mo, $null = Mesurer-Fermer $p
+    Comparer 'windows-relance' $mo 'Mo' 'Windows, relance avec extensions'
+    Comparer 'windows-demarrage-extensions' (Lire $relance 'demarrage') 'ms' 'Windows, démarrage avec extensions'
+    $sortie + @('', "Relance avec les deux extensions installées : $mo Mo après $Attente s ; $(Etapes $relance).")
+}
+
+# Les étapes du démarrage écrites par Feather, en une phrase.
+function Etapes([string]$Fichier) {
+    $v = foreach ($cle in 'rust', 'interface', 'demarrage') { $x = Lire $Fichier $cle; if ($null -ne $x) { $x } else { '?' } }
+    "Rust prêt en $($v[0]) ms, barre prête en $($v[1]) ms, accueil chargé en $($v[2]) ms"
 }
 
 $lignes = @(
@@ -164,10 +180,8 @@ $lignes = @(
     (Scenario "$($sites.Count) sites" 'sites' $sites)
 )
 $accueil = Join-Path $temp 'accueil.txt'
-$interface = Lire $accueil 'interface'
-$demarrage = Lire $accueil 'demarrage'
-$lignes += @('', "Démarrage : barre prête en $(if ($null -ne $interface) { $interface } else { '?' }) ms, accueil chargé en $(if ($null -ne $demarrage) { $demarrage } else { '?' }) ms.")
-Comparer 'windows-demarrage' $demarrage 'ms' 'Windows, démarrage'
+$lignes += @('', "Démarrage : $(Etapes $accueil).")
+Comparer 'windows-demarrage' (Lire $accueil 'demarrage') 'ms' 'Windows, démarrage'
 if ($Extensions) { $lignes += Scenario-Extensions }
 if ($alertes.Count) { $lignes += @('', '**Alertes**', '') + ($alertes | ForEach-Object { "- $_" }) }
 

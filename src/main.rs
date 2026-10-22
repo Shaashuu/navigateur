@@ -378,6 +378,9 @@ fn main() -> wry::Result<()> {
         app.start_check(false);
     }
 
+    // Fichiers lus, interface et premier onglet créés : le reste est l'affaire du moteur.
+    banc::etape("rust");
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         match event {
@@ -644,7 +647,7 @@ impl App {
         match message {
             // L'interface est prête : elle montre les fichiers abîmés mis de côté au lancement.
             ChromeMessage::Ready => {
-                banc::interface_prete();
+                banc::etape("interface");
                 let warnings = storage::take_warnings();
                 if !warnings.is_empty() {
                     let text = serde_json::to_string(&warnings.join(" ")).unwrap_or_default();

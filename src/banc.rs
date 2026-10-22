@@ -1,9 +1,9 @@
 //! Mode « banc de mesure » (outils/banc-memoire.sh et .ps1), éteint d'habitude.
 //!
 //! - `FEATHER_BANC=fichier` : Feather écrit dans ce fichier, une ligne par
-//!   événement, le temps de démarrage (`interface <ms>` : la barre est prête ;
-//!   `demarrage <ms>` : la première page a fini de charger), comptés depuis le
-//!   début de `main`.
+//!   événement, les étapes du démarrage comptées depuis le début de `main`
+//!   (`rust <ms>` : fichiers lus et premier onglet créé ; `interface <ms>` : la
+//!   barre est prête ; `demarrage <ms>` : la première page a fini de charger).
 //! - `FEATHER_BANC_EXTENSIONS=id,id` (avec `FEATHER_BANC`) : installe ces
 //!   extensions du Chrome Web Store sans demander l'accord, l'une après
 //!   l'autre, puis ouvre la page de leur bouton dans un onglet et y cherche un
@@ -93,9 +93,9 @@ fn resume(texte: &str) -> String {
     texte.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(160).collect()
 }
 
-/// La barre de Feather est prête.
-pub fn interface_prete() {
-    avec(|e| ecrire(&e.fichier, &format!("interface {}", e.debut.elapsed().as_millis())));
+/// Une étape du démarrage (`rust`, `interface`) : le temps écoulé depuis `init`.
+pub fn etape(nom: &str) {
+    avec(|e| ecrire(&e.fichier, &format!("{nom} {}", e.debut.elapsed().as_millis())));
 }
 
 /// Une page a fini de charger : la première donne le temps de démarrage.
