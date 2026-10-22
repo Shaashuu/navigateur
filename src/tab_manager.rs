@@ -7,6 +7,8 @@
 //!
 //! Un onglet peut aussi être « en veille » : sa webview est détruite mais on
 //! garde son adresse, son titre et son icône ; elle est recréée quand on y revient.
+//! Son historique Précédent/Suivant et sa position dans la page sont gardés
+//! aussi (voir `Souvenir`), pour que la veille passe presque inaperçue.
 
 use std::borrow::Cow;
 use std::sync::{Arc, RwLock};
@@ -94,6 +96,13 @@ pub struct Tab {
     key: String,
     /// Hôte de la page, partagé avec les rappels de la webview (autorisations, traqueurs).
     host: Arc<RwLock<String>>,
+    /// Historique et position de la page détruite, rendus au réveil (macOS 12 ou plus).
+    souvenir: Option<Souvenir>,
+    /// Dernière position dans la page, envoyée par la page quand l'onglet est
+    /// caché (voir `assets/page.js`) : sert au réveil là où `Souvenir` manque.
+    pub scroll: Option<Scroll>,
+    /// Position à rendre à la page quand son chargement se termine (après un réveil).
+    pub scroll_due: Option<Scroll>,
     /// `None` : l'onglet est en veille.
     webview: Option<WebView>,
 }
@@ -264,6 +273,9 @@ impl TabManager {
             reader_asked: false,
             key: new_key(),
             host: Arc::default(),
+            souvenir: None,
+            scroll: None,
+            scroll_due: None,
             webview: None,
         };
         tab.set_url(url.to_string());
@@ -279,7 +291,20 @@ impl TabManager {
         if tab.webview.is_some() {
             return Ok(());
         }
-        let webview = build_page(id, &tab.url, &tab.key, ctx, tab.private, Arc::clone(&tab.host))?;
+        // Avec un souvenir, la page ne charge rien elle-même : WebKit rend
+        // l'historique, puis rouvre la page au même endroit.
+        let souvenir = tab.souvenir.take();
+        let webview = build_page(id, &tab.url, &tab.key, ctx, tab.private, Arc::clone(&tab.host), souvenir.is_none())?;
+        match souvenir {
+            Some(s) => {
+                if !souvenir::rendre(&webview, &s) {
+                    let _ = webview.load_url(&tab.url);
+                    tab.scroll_due = tab.scroll.take();
+                }
+            }
+            // Sans souvenir (Windows, Linux, macOS 11), au moins la position.
+            None => tab.scroll_due = tab.scroll.take(),
+        }
         crate::layers::round_page(&webview);
         let host = tab.host();
         adblock::apply(&webview, &host, tab.private);
@@ -307,6 +332,9 @@ impl TabManager {
         let Some(webview) = tab.webview.take() else {
             return false;
         };
+        // Avant `stop_page`, qui remplace la page par about:blank.
+        tab.souvenir = remember(tab, &webview);
+        softsleep::oublier(&webview);
         tab.loading = false;
         tab.weight = Weight::default();
         tab.repos = Repos::Eveille;
@@ -319,7 +347,8 @@ impl TabManager {
     /// l'ancienne, et son processus WebKit, sont détruits avec la mémoire
     /// qu'ils avaient accumulée. Contrairement à la veille, vaut aussi pour
     /// l'onglet actif et un onglet qui joue du son. L'appelant réveille ensuite
-    /// l'onglet. Faux si l'onglet n'avait pas de page.
+    /// l'onglet, qui garde son historique sous macOS 12 ou plus (voir `Souvenir`).
+    /// Faux si l'onglet n'avait pas de page.
     pub fn detach(&mut self, id: TabId) -> bool {
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) else {
             return false;
@@ -327,6 +356,9 @@ impl TabManager {
         let Some(webview) = tab.webview.take() else {
             return false;
         };
+        tab.souvenir = remember(tab, &webview);
+        // La position relevée quand l'onglet a été caché n'est plus la bonne.
+        tab.scroll = None;
         tab.weight = Weight::default();
         tab.audible = false;
         // Pas de passage par about:blank : son titre vide remplacerait celui de la
@@ -365,6 +397,7 @@ impl TabManager {
         // On arrête le son avant de détruire la page, et on lui laisse quelques secondes
         // pour s'arrêter (voir `reap`) : détruite tout de suite, sa vidéo pouvait continuer.
         if let Some(webview) = closed.webview.take() {
+            softsleep::oublier(&webview);
             stop_page(&webview);
             self.closing.push((Instant::now(), webview));
         }
@@ -687,6 +720,76 @@ fn new_key() -> String {
         .collect()
 }
 
+/// Souvenir d'une page qu'on va détruire, sauf pour une page Feather (erreur,
+/// lecture) : elle se recrée autrement (voir `App::load_failed`, `App::open_reader`).
+fn remember(tab: &Tab, webview: &WebView) -> Option<Souvenir> {
+    if tab.on_internal_page() {
+        return None;
+    }
+    souvenir::garder(webview)
+}
+
+/// Position dans une page, en pixels CSS, et l'adresse où elle a été relevée.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Scroll {
+    pub x: f64,
+    pub y: f64,
+    pub url: String,
+}
+
+/// Historique Précédent/Suivant d'une page et sa position, tels que WebKit les
+/// garde (`WKWebView.interactionState`, macOS 12 ou plus). Opaque : on le prend
+/// à la page avant de la détruire, on le rend à la nouvelle. Ailleurs, il n'y
+/// en a jamais : WebView2 ne sait pas rendre un historique, et seule la
+/// position est gardée, par la page elle-même (voir `Tab::scroll`).
+#[cfg(target_os = "macos")]
+pub struct Souvenir(objc2::rc::Retained<objc2::runtime::AnyObject>);
+
+#[cfg(not(target_os = "macos"))]
+pub enum Souvenir {}
+
+#[cfg(target_os = "macos")]
+mod souvenir {
+    use wry::{WebView, WebViewExtMacOS};
+
+    use super::Souvenir;
+
+    pub fn garder(webview: &WebView) -> Option<Souvenir> {
+        if !objc2::available!(macos = 12.0) {
+            return None;
+        }
+        // SAFETY : fil principal, vue vivante ; propriété de macOS 12.
+        unsafe { webview.webview().interactionState() }.map(Souvenir)
+    }
+
+    /// Rend l'historique à une page neuve, qui rouvre aussitôt la page
+    /// courante. Faux si WebKit n'en a rien fait (l'appelant charge l'adresse).
+    pub fn rendre(webview: &WebView, souvenir: &Souvenir) -> bool {
+        let wk = webview.webview();
+        // SAFETY : fil principal, vue vivante ; l'objet vient de `interactionState`
+        // d'une autre vue, le seul type que WebKit attend ici.
+        unsafe {
+            wk.setInteractionState(Some(&souvenir.0));
+            wk.backForwardList().currentItem().is_some()
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+mod souvenir {
+    use wry::WebView;
+
+    use super::Souvenir;
+
+    pub fn garder(_webview: &WebView) -> Option<Souvenir> {
+        None
+    }
+
+    pub fn rendre(_webview: &WebView, _souvenir: &Souvenir) -> bool {
+        false
+    }
+}
+
 /// Coupe le son et vide une page avant de la détruire.
 fn stop_page(webview: &WebView) {
     silence_page(webview);
@@ -792,6 +895,7 @@ fn build_page(
     ctx: &PageContext,
     private: bool,
     host: Arc<RwLock<String>>,
+    load: bool,
 ) -> wry::Result<WebView> {
     let settings = Arc::clone(ctx.settings);
     let library = Arc::clone(ctx.library);
@@ -816,7 +920,6 @@ fn build_page(
 
     let builder = WebViewBuilder::new()
         .with_bounds(ctx.bounds)
-        .with_url(url)
         .with_devtools(cfg!(debug_assertions))
         // Onglet privé : stockage à part, effacé à la fermeture.
         .with_incognito(private)
@@ -910,6 +1013,8 @@ fn build_page(
             NewWindowResponse::Deny
         });
 
+    // Sans `load`, la page reste vide : l'appelant lui rend son historique (voir `Souvenir`).
+    let builder = if load { builder.with_url(url) } else { builder };
     // Identité Safari sur Google seulement (voir `is_google`).
     let builder = match page_user_agent(url) {
         Some(agent) => builder.with_user_agent(agent),

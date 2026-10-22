@@ -380,6 +380,16 @@ pub struct PageMessage {
     /// Bouton « Ajouter à Feather » sur le Chrome Web Store : adresse de la
     /// page de l'extension (vérifiée côté Rust, voir `extensions::store_page`).
     pub store_install: Option<String>,
+    /// Position dans la page, envoyée quand l'onglet est caché (voir `Tab::scroll`).
+    pub scroll: Option<ScrollPosition>,
+}
+
+/// Position dans une page, en pixels CSS.
+#[derive(Debug, Default, Deserialize, Clone, Copy)]
+#[serde(default)]
+pub struct ScrollPosition {
+    pub x: f64,
+    pub y: f64,
 }
 
 impl PageMessage {

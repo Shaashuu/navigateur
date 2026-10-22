@@ -557,6 +557,11 @@ impl App {
                         // Nouvelle page : on garde l'onglet en sourdine.
                         tab.apply_mute();
                     }
+                    // Onglet réveillé : la page retrouve sa position, si c'est bien
+                    // la même adresse (sinon, une redirection l'a menée ailleurs).
+                    if !loading && let Some(pos) = tab.scroll_due.take() && pos.url == tab.url() {
+                        tab.eval(&format!("window.__featherRestoreScroll && __featherRestoreScroll({}, {})", pos.x, pos.y));
+                    }
                 }
                 self.apply_zoom(id);
                 self.apply_economy(id);
@@ -944,6 +949,16 @@ impl App {
             }
             self.push_state();
         }
+        // Position dans la page, rendue si la veille la détruit.
+        if let Some(pos) = message.scroll
+            && let Some(tab) = self.tabs.get_mut(id)
+            && pos.x.is_finite()
+            && pos.y.is_finite()
+            && !tab.on_internal_page()
+        {
+            let url = tab.url().to_string();
+            tab.scroll = Some(tab_manager::Scroll { x: pos.x.max(0.0), y: pos.y.max(0.0), url });
+        }
         // Travail en cours que la veille perdrait : formulaire modifié, caméra ou micro.
         if let Some(tab) = self.tabs.get_mut(id) {
             if let Some(dirty) = message.dirty {
@@ -1162,6 +1177,10 @@ impl App {
 
     /// Recharge la page de l'onglet affiché s'il était en veille.
     fn wake_active(&mut self) {
+        // Une page gelée remise dans la fenêtre (macOS) est passée au-dessus de tout.
+        if softsleep::remise() {
+            self.layers.restack(&self.window, &self.chrome);
+        }
         let Some(id) = self.tabs.active().filter(|t| t.is_asleep()).map(|t| t.id) else {
             return;
         };
