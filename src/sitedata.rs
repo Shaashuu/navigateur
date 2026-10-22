@@ -64,6 +64,8 @@ pub struct SiteData {
     permissions: BTreeMap<String, BTreeMap<Permission, bool>>,
     /// Sites où le bloqueur de publicités est coupé.
     ads_off: BTreeSet<String>,
+    /// Sites « toujours actifs » : leurs onglets ne sont jamais mis en veille.
+    awake: BTreeSet<String>,
     /// Réponses « pour cette fois » : valables jusqu'à la fermeture de Feather.
     #[serde(skip)]
     temporary: BTreeMap<(String, Permission), bool>,
@@ -115,6 +117,21 @@ impl SiteData {
             return;
         }
         let changed = if on { self.ads_off.remove(host) } else { self.ads_off.insert(host.to_string()) };
+        self.changed |= changed;
+    }
+
+    // --- Veille ---
+
+    pub fn is_awake(&self, host: &str) -> bool {
+        self.awake.contains(host)
+    }
+
+    /// « Toujours actif » (`true`) : les onglets de ce site ne dorment jamais.
+    pub fn set_awake(&mut self, host: &str, on: bool) {
+        if host.is_empty() {
+            return;
+        }
+        let changed = if on { self.awake.insert(host.to_string()) } else { self.awake.remove(host) };
         self.changed |= changed;
     }
 
@@ -184,6 +201,18 @@ impl SiteData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn toujours_actif() {
+        let mut s = SiteData::default();
+        assert!(!s.is_awake("mail.fr"));
+        s.set_awake("mail.fr", true);
+        assert!(s.is_awake("mail.fr") && s.changed);
+        s.set_awake("mail.fr", false);
+        assert!(!s.is_awake("mail.fr"));
+        s.set_awake("", true);
+        assert!(s.awake.is_empty());
+    }
 
     #[test]
     fn zoom_et_autorisations() {

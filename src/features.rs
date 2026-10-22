@@ -308,6 +308,7 @@ impl App {
             self.check_extension_updates();
         }
         if self.ticks.is_multiple_of(5) {
+            self.probe_media();
             // Un bloqueur en extension qui a fini de se préparer prend le relais.
             let before = self.extensions.ad_blocker().is_some();
             self.sync_ad_blocker();
@@ -361,8 +362,15 @@ impl App {
     /// épargne, puisqu'elle effacerait leur session.
     fn soft_sleep(&mut self) {
         let active = self.tabs.active_id();
-        for tab in self.tabs.iter_mut().filter(|t| Some(t.id) != active && !t.audible) {
-            let vise = softsleep::palier(tab.last_active.elapsed());
+        let downloading = self.downloading();
+        let sites = std::sync::Arc::clone(&self.sites);
+        let sites = sites.read().ok();
+        for tab in self.tabs.iter_mut().filter(|t| Some(t.id) != active && !t.sounds()) {
+            let mut vise = softsleep::palier(tab.last_active.elapsed());
+            // Une page qui travaille peut rendre de la mémoire, pas être gelée.
+            if keep_awake(tab, sites.as_deref(), downloading) {
+                vise = vise.min(softsleep::Repos::Allege);
+            }
             let actuel = tab.repos;
             if let Some(w) = tab.webview() {
                 let atteint = softsleep::reposer(w, actuel, vise);
@@ -371,23 +379,45 @@ impl App {
         }
     }
 
+    /// Un téléchargement est en cours (détruire une page pourrait l'arrêter).
+    fn downloading(&self) -> bool {
+        self.downloads.iter().any(|d| d.state == State::Progress)
+    }
+
+    /// Demande au moteur le son et la caméra de chaque page (voir `media.rs`).
+    fn probe_media(&self) {
+        for tab in self.tabs.iter() {
+            if let Some(w) = tab.webview() {
+                crate::media::probe(w, tab.id, &self.proxy);
+            }
+        }
+    }
+
     /// Met en veille les onglets cachés depuis longtemps (réglage « veille »),
-    /// et plus tôt ceux qui pèsent lourd.
+    /// et plus tôt ceux qui pèsent lourd. Réglage « jamais » : aucun onglet,
+    /// même lourd (avant, un onglet lourd dormait quand même après 5 minutes).
     fn auto_sleep(&mut self) -> bool {
         // Le mode économie raccourcit le délai (voir `Settings::sleep_after`).
         let minutes = self.settings().sleep_after();
+        if minutes == 0 {
+            return false;
+        }
         let active = self.tabs.active_id();
         let idle = Duration::from_secs(u64::from(minutes) * 60);
+        let downloading = self.downloading();
+        let sites = self.sites.read().ok();
         let candidates: Vec<TabId> = self
             .tabs
             .iter()
-            .filter(|t| Some(t.id) != active && !t.is_asleep() && !t.audible && !t.private)
+            .filter(|t| Some(t.id) != active && !t.is_asleep() && !t.private)
+            .filter(|t| !keep_awake(t, sites.as_deref(), downloading))
             .filter(|t| {
                 let hidden = t.last_active.elapsed();
-                (minutes > 0 && hidden >= idle) || (t.weight.level >= 2 && hidden >= HEAVY_SLEEP)
+                hidden >= idle || (t.weight.level >= 2 && hidden >= HEAVY_SLEEP)
             })
             .map(|t| t.id)
             .collect();
+        drop(sites);
         let mut slept = false;
         for id in candidates {
             slept |= self.tabs.sleep(id);
@@ -709,6 +739,7 @@ impl App {
             // Une extension bloque les publicités à la place du bloqueur intégré
             // (sauf dans un onglet privé, qui n'a pas d'extensions).
             "ads_by": if tab.private { None } else { self.extensions.ad_blocker() },
+            "awake": self.sites.read().is_ok_and(|s| s.is_awake(&host)),
             "error": tab.failed.is_some(),
         })
     }
@@ -845,4 +876,16 @@ impl App {
         }
         json!(items)
     }
+}
+
+/// Un onglet qui ne doit pas être détruit par la veille (ni gelé) : il est
+/// épinglé, il travaille (son, caméra, formulaire en cours, voir `Tab::busy`),
+/// son site est « toujours actif » ou peut envoyer des notifications (messagerie,
+/// agenda…), ou un téléchargement est en cours.
+fn keep_awake(tab: &crate::tab_manager::Tab, sites: Option<&crate::sitedata::SiteData>, downloading: bool) -> bool {
+    if tab.pinned || tab.busy() || downloading {
+        return true;
+    }
+    let host = tab.host();
+    sites.is_some_and(|s| s.is_awake(&host) || s.permission(&host, Permission::Notifications) == Some(true))
 }

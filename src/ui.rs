@@ -220,6 +220,11 @@ pub enum ChromeMessage {
         host: String,
         on: bool,
     },
+    /// « Toujours actif » pour un site : ses onglets ne sont jamais mis en veille.
+    SetSiteAwake {
+        host: String,
+        on: bool,
+    },
     /// Télécharge de nouveau les listes du bloqueur (paramètres).
     UpdateAdLists,
     /// Épingle un onglet, ou le détache.
@@ -340,6 +345,12 @@ pub struct PageMessage {
     pub open_bar: Option<String>,
     /// La page joue du son (ou vient d'arrêter).
     pub audible: Option<bool>,
+    /// Envoyé avec `audible` : une vidéo de la page joue, mais sans son (voir `Tab::busy`).
+    pub quiet: Option<bool>,
+    /// Un champ de la page a été modifié (formulaire, message en cours d'écriture).
+    pub dirty: Option<bool>,
+    /// La page filme ou enregistre (caméra, micro, écran).
+    pub capturing: Option<bool>,
     /// Clic de molette sur un lien : adresse à ouvrir dans un nouvel onglet.
     pub open_tab: Option<String>,
     /// Icône et nom du site (voir `clean_site`).

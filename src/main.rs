@@ -23,6 +23,7 @@ mod layers;
 mod library;
 #[cfg(target_os = "macos")]
 mod mac_mouse;
+mod media;
 mod network;
 mod reader;
 mod settings;
@@ -114,6 +115,8 @@ pub enum UserEvent {
     ExtensionUpdated(Result<Box<extensions::Extension>, String>),
     /// La recherche hebdomadaire des nouvelles versions est terminée.
     ExtensionUpdatesChecked,
+    /// Son et caméra d'une page, lus dans le moteur (voir `media.rs`).
+    Media(TabId, media::MediaState),
     /// Le moteur a chargé une extension (avec son identifiant WebView2), ou l'a refusée.
     ExtensionLoaded { id: String, result: Result<Option<String>, String> },
     /// Message de la petite fenêtre d'une extension (Windows).
@@ -475,6 +478,9 @@ impl App {
                     // Nouvelle page : l'article demandé à la précédente n'est plus attendu.
                     if loading {
                         tab.reader_asked = false;
+                        // La nouvelle page n'a encore rien de modifié ni rien à filmer.
+                        tab.dirty = false;
+                        tab.capturing = false;
                     }
                     // macOS : identité Safari sur Google seulement (la page est
                     // rechargée si l'onglet entre sur Google ou en sort). À la fin du
@@ -577,6 +583,14 @@ impl App {
                 self.persist();
             }
             UserEvent::Tick => self.tick(),
+            UserEvent::Media(id, state) => {
+                if let Some(tab) = self.tabs.get_mut(id)
+                    && tab.engine != state
+                {
+                    tab.engine = state;
+                    self.push_state();
+                }
+            }
             UserEvent::TimerDone { seconds, label } => self.timer_done(seconds, &label),
             UserEvent::Captured(result) => self.captured(result),
             UserEvent::AdFilters(filters, status) => self.ad_filters(filters, status),
@@ -807,6 +821,12 @@ impl App {
             }
             ChromeMessage::ClearSiteData => self.clear_site_data(),
             ChromeMessage::SetSiteAds { host, on } => self.set_site_ads(&host, on),
+            ChromeMessage::SetSiteAwake { host, on } => {
+                if let Ok(mut sites) = self.sites.write() {
+                    sites.set_awake(&host, on);
+                }
+                self.schedule_persist();
+            }
             ChromeMessage::UpdateAdLists => {
                 self.adblock.updating = true;
                 adblock::load(self.proxy.clone(), true);
@@ -906,8 +926,18 @@ impl App {
         if let Some(audible) = message.audible {
             if let Some(tab) = self.tabs.get_mut(id) {
                 tab.audible = audible;
+                tab.quiet = message.quiet.unwrap_or(false);
             }
             self.push_state();
+        }
+        // Travail en cours que la veille perdrait : formulaire modifié, caméra ou micro.
+        if let Some(tab) = self.tabs.get_mut(id) {
+            if let Some(dirty) = message.dirty {
+                tab.dirty = dirty;
+            }
+            if let Some(capturing) = message.capturing {
+                tab.capturing = capturing;
+            }
         }
         if let Some(result) = message.find_result
             && Some(id) == self.tabs.active_id()

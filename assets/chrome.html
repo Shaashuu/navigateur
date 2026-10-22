@@ -1041,6 +1041,8 @@
       <div class="line"><span>Blocage des traqueurs</span><span class="v" id="site-trackers"></span></div>
       <div class="line"><label for="site-ads">Bloqueur de publicités</label><span class="v" id="site-ads-v"></span>
         <input type="checkbox" class="tg" id="site-ads"></div>
+      <div class="line"><label for="site-awake">Toujours actif</label><span class="v">jamais mis en veille</span>
+        <input type="checkbox" class="tg" id="site-awake"></div>
       <button type="button" id="site-clear">Effacer les données de ce site</button>
     </div>
   </div>
@@ -2938,6 +2940,9 @@
     renderAdLists();
     send({ type: 'update_ad_lists' });
   });
+  $('site-awake').addEventListener('change', () => {
+    if (state.site) send({ type: 'set_site_awake', host: state.site.host, on: $('site-awake').checked });
+  });
   $('site-ads').addEventListener('change', () => {
     if (state.site) send({ type: 'set_site_ads', host: state.site.host, on: $('site-ads').checked });
   });
@@ -3393,6 +3398,7 @@
     // n'aurait aucun effet, c'est dans l'extension que l'on règle le site.
     $('site-ads').checked = !!site.ads && site.ads_site !== false && !site.ads_by;
     $('site-ads').disabled = !site.ads || !!site.ads_by;
+    $('site-awake').checked = !!site.awake;
     $('site-ads-v').textContent = site.ads_by ? 'Géré par ' + site.ads_by
       : !site.ads ? 'Désactivé dans les paramètres' : site.ads_site === false ? 'Désactivé sur ce site' : '';
   }
