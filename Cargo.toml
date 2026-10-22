@@ -22,7 +22,7 @@ gtk = "0.18"
 block2 = "0.6"
 libc = "0.2"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSResponder", "NSView", "block2", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSPasteboard", "NSPopover"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSEvent", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "block2", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSPasteboard", "NSPopover"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSString", "NSError", "NSArray", "NSData", "NSDictionary", "NSURL", "NSSet", "NSEnumerator", "NSGeometry", "NSDate", "NSURLRequest", "NSNotification", "NSOperation", "block2"] }
 objc2-photos = { version = "0.3", default-features = false, features = ["std", "block2", "PHPhotoLibrary", "PHChangeRequest", "PHAssetChangeRequest", "PHAssetCreationRequest", "PhotosTypes", "dispatch2"] }
 objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "block2", "WKBackForwardList", "WKBackForwardListItem", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "WKWebView", "WKWebViewConfiguration", "WKWebsiteDataStore", "WKWebsiteDataRecord", "WKNavigation", "WKSnapshotConfiguration", "WKWebExtension", "WKWebExtensionAction", "WKWebExtensionContext", "WKWebExtensionController", "WKWebExtensionControllerDelegate", "WKWebExtensionMatchPattern", "WKWebExtensionPermission", "WKWebExtensionTab", "WKWebExtensionTabConfiguration", "WKWebExtensionWindow", "objc2-app-kit"] }

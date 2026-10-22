@@ -2309,6 +2309,16 @@
     ['Ajouter aux favoris', 'Ctrl+D'], ['Couper le son de l\'onglet', 'Ctrl+M'], ['Imprimer', 'Ctrl+P'],
     ['Zoom', 'Ctrl++ · Ctrl+- · Ctrl+0'], ['Capture de la page', 'Ctrl+Maj+S'], ['Utilisation de la mémoire', 'Maj+Échap'],
     ['Mode concentration', 'Ctrl+Maj+F'], ['Paramètres', 'Ctrl+,'],
+    ['Aller à l\'onglet 1 à 8 · au dernier', 'Ctrl+1…8 · Ctrl+9'],
+    ...(isMac ? [
+      ['Onglet précédent / suivant', '⌥⌘← · ⌥⌘→'], ['Historique', '⌘Y'], ['Téléchargements', '⌥⌘L'], ['Favoris', '⌥⌘B'],
+      ['Copier · Couper · Coller', '⌘C · ⌘X · ⌘V'], ['Tout sélectionner · Annuler', '⌘A · ⌘Z'],
+      ['Plein écran', '⌃⌘F'], ['Réduire · Masquer · Quitter', '⌘M · ⌘H · ⌘Q'],
+    ] : [
+      ['Onglet précédent / suivant', 'Ctrl+Pg préc · Ctrl+Pg suiv'], ['Historique', 'Ctrl+H'], ['Téléchargements', 'Ctrl+J'], ['Favoris', 'Ctrl+Maj+O'],
+      ['Copier · Couper · Coller', 'Ctrl+C · Ctrl+X · Ctrl+V'], ['Tout sélectionner · Annuler', 'Ctrl+A · Ctrl+Z'],
+      ['Plein écran', 'F11'],
+    ]),
   ];
   for (const [what, keys] of KEYS) {
     const row = document.createElement('div');
@@ -3552,6 +3562,27 @@
   $('u-restart').addEventListener('click', () => send({ type: 'restart_update' }));
   $('u-page').addEventListener('click', () => { send({ type: 'open_release_page' }); closeSettings(); });
 
+  // Raccourcis ajoutés en 0.6 : même calcul que dans les pages (page.js).
+  function extraShortcut(e) {
+    const k = e.key.toLowerCase(), code = e.code;
+    const ctrl = (e.ctrlKey || e.metaKey) && !e.altKey;
+    if (ctrl && !e.shiftKey && /^Digit[1-9]$/.test(code)) return 'tab' + code.slice(5);
+    if (e.ctrlKey && !e.metaKey && !e.altKey && (k === 'pageup' || k === 'pagedown')) return k === 'pageup' ? 'previous_tab' : 'next_tab';
+    if (k === 'f11' && !isMac) return 'fullscreen';
+    if (isMac) {
+      if (e.metaKey && e.altKey && !e.ctrlKey && (k === 'arrowleft' || k === 'arrowright')) return k === 'arrowleft' ? 'previous_tab' : 'next_tab';
+      if (e.metaKey && e.shiftKey && !e.altKey && (code === 'BracketLeft' || code === 'BracketRight')) return code === 'BracketLeft' ? 'previous_tab' : 'next_tab';
+      if (e.metaKey && !e.altKey && !e.shiftKey && code === 'KeyY') return 'history';
+      if (e.metaKey && e.altKey && !e.shiftKey && code === 'KeyL') return 'downloads';
+      if (e.metaKey && e.altKey && !e.shiftKey && code === 'KeyB') return 'bookmarks';
+      return null;
+    }
+    if (ctrl && !e.shiftKey && k === 'h') return 'history';
+    if (ctrl && !e.shiftKey && k === 'j') return 'downloads';
+    if (ctrl && e.shiftKey && k === 'o') return 'bookmarks';
+    return null;
+  }
+
   // --- Raccourcis quand l'interface a le focus ---
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) { openLibrary('memory'); e.preventDefault(); return; }
@@ -3573,6 +3604,8 @@
       return;
     }
     if (k === 'f5') { send({ type: 'reload' }); e.preventDefault(); return; }
+    const extra = extraShortcut(e);
+    if (extra) { shortcut(extra); e.preventDefault(); return; }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     if (e.shiftKey && k === 't') shortcut('reopen_tab');
     else if (e.shiftKey && k === 's') shortcut('capture');
@@ -3650,6 +3683,8 @@
     openBar,
     openSettings,
     openMemory() { openLibrary('memory'); },
+    // Raccourcis Ctrl+H, Ctrl+J et Ctrl+Maj+O (voir `Shortcut` côté Rust).
+    openLibrary(kind) { if (['history', 'downloads', 'bookmarks'].includes(kind)) openLibrary(kind); },
     openExtensions() { if (mode !== 'extensions') openExtensions(); },
     closePanel,
     // Position de la souris lue par Rust pendant qu'un panneau est ouvert.

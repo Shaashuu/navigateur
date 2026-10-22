@@ -23,9 +23,12 @@ mod import;
 mod layers;
 mod library;
 #[cfg(target_os = "macos")]
+mod mac_menu;
+#[cfg(target_os = "macos")]
 mod mac_mouse;
 mod media;
 mod network;
+mod placement;
 mod reader;
 mod settings;
 mod siteclear;
@@ -218,6 +221,8 @@ struct App {
     adblock: adblock::Status,
     /// Extensions installées et leur petite fenêtre ouverte.
     extensions: extensions::Extensions,
+    /// Taille et place de la fenêtre, enregistrées à la fermeture.
+    placement: placement::Placement,
 }
 
 fn main() -> wry::Result<()> {
@@ -226,16 +231,21 @@ fn main() -> wry::Result<()> {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
-    let window = WindowBuilder::new()
+    // En grand au premier lancement, puis à la taille laissée à la fermeture.
+    let placement = placement::Placement::load();
+    let window = placement
+        .apply(WindowBuilder::new(), &event_loop)
         .with_title("Feather")
         .with_window_icon(window_icon())
-        .with_inner_size(LogicalSize::new(1200.0, 800.0))
-        .with_min_inner_size(LogicalSize::new(480.0, 360.0))
+        .with_min_inner_size(LogicalSize::new(placement::MIN_WIDTH, placement::MIN_HEIGHT))
         .build(&event_loop)
         .expect("impossible de créer la fenêtre");
 
     #[cfg(target_os = "macos")]
-    mac_mouse::install(proxy.clone());
+    {
+        mac_mouse::install(proxy.clone());
+        mac_menu::install();
+    }
 
     let surface = Surface::new(&window);
 
@@ -325,6 +335,7 @@ fn main() -> wry::Result<()> {
         ticks: 0,
         adblock: adblock::Status::default(),
         extensions: extensions::Extensions::load(),
+        placement,
     };
     // Les extensions sont confiées au moteur après la première page (voir `start_extensions`).
     adblock::set_replaced(app.extensions.ad_blocker().is_some());
@@ -383,6 +394,8 @@ fn main() -> wry::Result<()> {
     // Fichiers lus, interface et premier onglet créés : le reste est l'affaire du moteur.
     banc::etape("rust");
 
+    // Tout est déjà enregistré quand la fenêtre a été fermée.
+    let mut saved_on_close = false;
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         match event {
@@ -392,12 +405,23 @@ fn main() -> wry::Result<()> {
             } => {
                 app.persist_all();
                 storage::flush();
+                saved_on_close = true;
                 *control_flow = ControlFlow::Exit;
             }
             Event::WindowEvent {
                 event: WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. },
                 ..
-            } => app.relayout(),
+            } => {
+                app.placement.track(&app.window);
+                app.relayout();
+            }
+            Event::WindowEvent { event: WindowEvent::Moved(_), .. } => app.placement.track(&app.window),
+            // macOS : « Quitter Feather » (⌘Q, menu ou Dock) ne passe pas par la
+            // fermeture de la fenêtre. Tout est enregistré ici aussi.
+            Event::LoopDestroyed if !saved_on_close => {
+                app.persist_all();
+                storage::flush();
+            }
             Event::UserEvent(event) => app.handle(event),
             // Tous les événements en attente sont traités : un seul envoi de l'état.
             Event::MainEventsCleared => {
@@ -1099,6 +1123,31 @@ impl App {
             Shortcut::NewPrivateTab => self.open_tab(network::HOME_URL, true),
             Shortcut::TaskManager => self.focus_chrome("navigateur.openMemory()"),
             Shortcut::Capture => self.capture(false),
+            Shortcut::Tab1
+            | Shortcut::Tab2
+            | Shortcut::Tab3
+            | Shortcut::Tab4
+            | Shortcut::Tab5
+            | Shortcut::Tab6
+            | Shortcut::Tab7
+            | Shortcut::Tab8
+            | Shortcut::Tab9 => {
+                let count = self.tabs.iter().count();
+                let n = shortcut.tab_number().unwrap_or(1);
+                // Comme dans les autres navigateurs : 9 va toujours au dernier onglet.
+                let index = if n == 9 { count.saturating_sub(1) } else { n - 1 };
+                if index < count {
+                    let visible = self.page_visible();
+                    self.tabs.activate_index(index, visible);
+                }
+            }
+            Shortcut::History => self.focus_chrome("navigateur.openLibrary('history')"),
+            Shortcut::Downloads => self.focus_chrome("navigateur.openLibrary('downloads')"),
+            Shortcut::Bookmarks => self.focus_chrome("navigateur.openLibrary('bookmarks')"),
+            Shortcut::Fullscreen => {
+                let full = self.window.fullscreen().is_some();
+                self.window.set_fullscreen((!full).then_some(tao::window::Fullscreen::Borderless(None)));
+            }
             Shortcut::Focus => {
                 self.focus = !self.focus;
                 self.relayout();
@@ -1406,6 +1455,7 @@ impl App {
     /// Tout enregistrer, texte des pages compris (avant de quitter).
     fn persist_all(&mut self) {
         self.persist();
+        self.placement.save();
         if let Err(err) = self.fulltext.save() {
             eprintln!("texte des pages non enregistré : {err}");
         }

@@ -28,9 +28,24 @@
     if (!e.isTrusted) return;
     const k = e.key.toLowerCase();
     const ctrl = (e.ctrlKey || e.metaKey) && !e.altKey;
+    const code = e.code;
+    const mac = /Mac/.test(navigator.platform);
     let a = null;
+    // Ctrl+1 à Ctrl+9, onglet précédent ou suivant, historique, téléchargements,
+    // favoris et plein écran : même calcul que dans l'interface (chrome.html).
+    if (ctrl && !e.shiftKey && /^Digit[1-9]$/.test(code)) a = 'tab' + code.slice(5);
+    else if (e.ctrlKey && !e.metaKey && !e.altKey && (k === 'pageup' || k === 'pagedown')) a = k === 'pageup' ? 'previous_tab' : 'next_tab';
+    else if (k === 'f11' && !mac) a = 'fullscreen';
+    else if (mac && e.metaKey && e.altKey && !e.ctrlKey && (k === 'arrowleft' || k === 'arrowright')) a = k === 'arrowleft' ? 'previous_tab' : 'next_tab';
+    else if (mac && e.metaKey && e.shiftKey && !e.altKey && (code === 'BracketLeft' || code === 'BracketRight')) a = code === 'BracketLeft' ? 'previous_tab' : 'next_tab';
+    else if (mac && e.metaKey && !e.altKey && !e.shiftKey && code === 'KeyY') a = 'history';
+    else if (mac && e.metaKey && e.altKey && !e.shiftKey && code === 'KeyL') a = 'downloads';
+    else if (mac && e.metaKey && e.altKey && !e.shiftKey && code === 'KeyB') a = 'bookmarks';
+    else if (!mac && ctrl && !e.shiftKey && k === 'h') a = 'history';
+    else if (!mac && ctrl && !e.shiftKey && k === 'j') a = 'downloads';
+    else if (!mac && ctrl && e.shiftKey && k === 'o') a = 'bookmarks';
     // Ctrl+Maj+T et Ctrl+Maj+N passent avant Ctrl+T (même touche).
-    if (ctrl && e.shiftKey && k === 't') a = 'reopen_tab';
+    else if (ctrl && e.shiftKey && k === 't') a = 'reopen_tab';
     else if (ctrl && e.shiftKey && k === 's') a = 'capture';
     else if (ctrl && e.shiftKey && k === 'n') a = 'new_private_tab';
     else if (ctrl && e.shiftKey && k === 'f') a = 'focus';

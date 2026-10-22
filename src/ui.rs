@@ -533,6 +533,42 @@ pub enum Shortcut {
     Capture,
     /// Ctrl+Maj+F : mode concentration (la barre se réduit à un rail).
     Focus,
+    /// Ctrl+1 à Ctrl+8 : l'onglet à cette place ; Ctrl+9 : le dernier.
+    Tab1,
+    Tab2,
+    Tab3,
+    Tab4,
+    Tab5,
+    Tab6,
+    Tab7,
+    Tab8,
+    Tab9,
+    /// Ctrl+H (⌘Y sous macOS) : l'historique.
+    History,
+    /// Ctrl+J (⌥⌘L sous macOS) : les téléchargements.
+    Downloads,
+    /// Ctrl+Maj+O (⌥⌘B sous macOS) : les favoris.
+    Bookmarks,
+    /// F11 : plein écran (⌃⌘F sous macOS, par le menu Fenêtre).
+    Fullscreen,
+}
+
+impl Shortcut {
+    /// Place de l'onglet visé par Ctrl+1 à Ctrl+9 (9 : le dernier).
+    pub fn tab_number(self) -> Option<usize> {
+        Some(match self {
+            Self::Tab1 => 1,
+            Self::Tab2 => 2,
+            Self::Tab3 => 3,
+            Self::Tab4 => 4,
+            Self::Tab5 => 5,
+            Self::Tab6 => 6,
+            Self::Tab7 => 7,
+            Self::Tab8 => 8,
+            Self::Tab9 => 9,
+            _ => return None,
+        })
+    }
 }
 
 /// Ce qui entoure la page : la barre (position, style, largeur), le bandeau du
@@ -765,6 +801,8 @@ mod tests {
         let m: ChromeMessage =
             serde_json::from_str(r#"{"type":"shortcut","shortcut":"next_tab"}"#).unwrap();
         assert!(matches!(m, ChromeMessage::Shortcut { shortcut: Shortcut::NextTab }));
+        let m: ChromeMessage = serde_json::from_str(r#"{"type":"shortcut","shortcut":"tab9"}"#).unwrap();
+        assert!(matches!(m, ChromeMessage::Shortcut { shortcut: Shortcut::Tab9 }));
         let m: ChromeMessage = serde_json::from_str(
             r#"{"type":"set_permission","host":"meet.jit.si","permission":"camera","allow":true}"#,
         )
