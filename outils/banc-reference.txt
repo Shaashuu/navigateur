@@ -12,6 +12,8 @@ macos-sites           562      25
 macos-demarrage       10260    50
 macos-relance         -        25
 macos-demarrage-extensions  -  50
+macos-onglet-sans    -        50
+macos-onglet-extensions  -    50
 windows-accueil       401      25
 windows-sites         1064     25
 windows-demarrage     13586    50

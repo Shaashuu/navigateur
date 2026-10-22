@@ -510,9 +510,7 @@ impl App {
                 // réveillait sur une page blanche.
                 let tab = self.tabs.get_mut(id).filter(|t| !t.is_asleep() && url != "about:blank");
                 if let Some(tab) = tab {
-                    if !loading {
-                        banc::page_chargee();
-                    }
+                    banc::chargement(id, loading);
                     // Nouvelle page : l'article demandé à la précédente n'est plus attendu.
                     if loading {
                         tab.reader_asked = false;

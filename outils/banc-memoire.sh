@@ -13,6 +13,9 @@
 # src/banc.rs). Chaque chiffre est comparé à outils/banc-reference.txt : un
 # écart au-delà de la marge donne une alerte dans la compilation, jamais un échec.
 #
+# Un lancement de plus mesure l'ouverture d'un onglet (accueil, puis Netflix
+# deux fois, comme un clic sur un favori), refait avec les extensions.
+#
 # Avec --extensions, un troisième lancement installe Proton Pass et uBlock
 # Origin Lite, puis vérifie que leur page s'affiche sans message d'erreur ; un
 # quatrième relance Feather avec ces extensions (mémoire et démarrage).
@@ -92,6 +95,13 @@ mesurer() {
 # Valeur d'une ligne « clé valeur » du fichier écrit par Feather (vide sinon).
 lu() {
   awk -v cle="$2" '$1 == cle { print $2; exit }' "$1" 2>/dev/null || true
+}
+
+# Comme `lu`, avec « ? » quand la ligne manque.
+ou_rien() {
+  local v
+  v=$(lu "$1" "$2")
+  echo "${v:-?}"
 }
 
 # Compare un chiffre à la référence ; une alerte si l'écart dépasse la marge.
@@ -193,6 +203,40 @@ scenario_extensions() {
   echo "Relance avec les deux extensions installées : ${memoire%% |*} après ${attente} s ; $(etapes "$relance")."
   comparer macos-relance "${memoire%% Mo*}" Mo "macOS, relance avec extensions"
   comparer macos-demarrage-extensions "$(lu "$relance" demarrage)" ms "macOS, démarrage avec extensions"
+  scenario_onglets "Avec les deux extensions" extensions
+}
+
+# Ouverture d'onglets (src/banc.rs, FEATHER_BANC_ONGLETS) : une ligne du
+# tableau des onglets, écrite dans $temp/onglets-lignes.
+scenario_onglets() {
+  local nom=$1 cle=$2
+  local banc="$temp/onglets-$cle.txt"
+  FEATHER_BANC_ONGLETS=1 FEATHER_BANC=$banc "$programme" >/dev/null 2>&1 &
+  local pid=$!
+  # Démarrage, puis trois onglets de 30 s au plus chacun, 5 s d'écart.
+  local debut=$SECONDS
+  while [ $((SECONDS - debut)) -lt 150 ]; do
+    sleep 3
+    grep -Eq '^onglet-netflix2-(charge|debut \?)' "$banc" 2>/dev/null && break
+  done
+  fermer "$pid"
+  local ligne="| $nom" o
+  for o in accueil netflix1 netflix2; do
+    ligne="$ligne | $(ou_rien "$banc" "onglet-$o-creation") / $(ou_rien "$banc" "onglet-$o-debut") / $(ou_rien "$banc" "onglet-$o-charge")"
+  done
+  echo "$ligne |" >> "$temp/onglets-lignes"
+  comparer "macos-onglet-$cle" "$(lu "$banc" onglet-netflix1-debut)" ms "macOS, ouverture d'un onglet Netflix ($nom)"
+}
+
+# Tableau des onglets mesurés (vide si aucun).
+tableau_onglets() {
+  [ -s "$temp/onglets-lignes" ] || return 0
+  echo
+  echo "Ouverture d'un onglet, en ms depuis l'ordre : création de la page (programme bloqué) / début d'affichage / chargement fini."
+  echo
+  echo "| Scénario | Accueil | Netflix (1er) | Netflix (2e) |"
+  echo "| --- | --- | --- | --- |"
+  cat "$temp/onglets-lignes"
 }
 
 # Les étapes du démarrage écrites par Feather, en une phrase.
@@ -210,7 +254,9 @@ etapes() {
   echo
   echo "Démarrage : $(etapes "$temp/accueil.txt")."
   comparer macos-demarrage "$(lu "$temp/accueil.txt" demarrage)" ms "macOS, démarrage"
+  scenario_onglets "Sans extension" sans
   if [ "$extensions" = 1 ]; then scenario_extensions; fi
+  tableau_onglets
   if [ -s "$alertes" ]; then
     echo
     echo "**Alertes**"
