@@ -77,6 +77,12 @@ pub struct Tab {
     /// macOS : la page vient d'être rechargée parce qu'une redirection l'a fait
     /// entrer sur Google ou en sortir (voir `match_identity`) ; une seule fois de suite.
     pub identity_retry: bool,
+    /// Mode lecture demandé (clic sur le bouton livre) : l'article attendu peut
+    /// arriver, une seule fois (voir `PageMessage::from_untrusted`).
+    pub reader_asked: bool,
+    /// Clé secrète de l'onglet, connue du seul script de Feather dans la page :
+    /// elle distingue ses messages de ceux du site (voir `ui::split_key`).
+    key: String,
     /// Hôte de la page, partagé avec les rappels de la webview (autorisations, traqueurs).
     host: Arc<RwLock<String>>,
     /// `None` : l'onglet est en veille.
@@ -109,6 +115,10 @@ impl Tab {
             *host = network::host_of(&url).unwrap_or_default();
         }
         self.url = url;
+    }
+
+    pub fn key(&self) -> &str {
+        &self.key
     }
 
     pub fn host(&self) -> String {
@@ -217,6 +227,8 @@ impl TabManager {
             failed: None,
             identity_retry: false,
             ads: None,
+            reader_asked: false,
+            key: new_key(),
             host: Arc::default(),
             webview: None,
         };
@@ -233,7 +245,7 @@ impl TabManager {
         if tab.webview.is_some() {
             return Ok(());
         }
-        let webview = build_page(id, &tab.url, ctx, tab.private, Arc::clone(&tab.host))?;
+        let webview = build_page(id, &tab.url, &tab.key, ctx, tab.private, Arc::clone(&tab.host))?;
         crate::layers::round_page(&webview);
         let host = tab.host();
         adblock::apply(&webview, &host, tab.private);
@@ -622,6 +634,25 @@ fn clean_name(name: &str) -> String {
     if name.is_empty() { "Groupe".to_string() } else { name.to_string() }
 }
 
+/// Clé de 128 bits tirée au hasard (voir `Tab::key`). `RandomState` est semé
+/// par le système avec des octets aléatoires : sans ses graines, impossible de
+/// deviner le résultat, et chaque appel donne une clé différente.
+fn new_key() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    (0..2u8)
+        .map(|i| {
+            let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+            h.write_u8(i);
+            h.write_u128(nanos);
+            format!("{:016x}", h.finish())
+        })
+        .collect()
+}
+
 /// Coupe le son et vide une page avant de la détruire.
 fn stop_page(webview: &WebView) {
     silence_page(webview);
@@ -723,6 +754,7 @@ pub fn match_identity(_webview: &WebView, _url: &str) -> bool {
 fn build_page(
     id: TabId,
     url: &str,
+    key: &str,
     ctx: &PageContext,
     private: bool,
     host: Arc<RwLock<String>>,
@@ -766,9 +798,9 @@ fn build_page(
         .with_initialization_script(format!("window.__featherEconomy = {economy}; window.__featherNoIndex = {no_index};"))
         // FEATHER_SANS_SCRIPT=1 : pas de script injecté (pour chercher l'origine d'un défaut).
         .with_initialization_script(if std::env::var_os("FEATHER_SANS_SCRIPT").is_some() {
-            ""
+            String::new()
         } else {
-            ui::PAGE_SCRIPT
+            ui::page_script(key)
         })
         // La page d'accueil intégrée est générée à chaque visite avec les paramètres
         // actuels ; `navigateur://erreur/` sert les pages d'erreur (voir errorpage.rs).

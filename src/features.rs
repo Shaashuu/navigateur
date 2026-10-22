@@ -464,11 +464,13 @@ impl App {
     // --- Mode lecture ---------------------------------------------------------
 
     /// Bouton livre : extrait l'article de la page, ou quitte la lecture.
-    pub(crate) fn toggle_reader(&self) {
-        let Some(tab) = self.tabs.active() else { return };
+    pub(crate) fn toggle_reader(&mut self) {
+        let Some(id) = self.tabs.active_id() else { return };
+        let Some(tab) = self.tabs.get_mut(id) else { return };
         if tab.reading.is_some() {
             tab.eval("history.back()");
         } else if network::is_web(tab.url()) && !tab.on_internal_page() {
+            tab.reader_asked = true;
             tab.eval(&reader::extraction_script());
         }
     }

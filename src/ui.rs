@@ -33,7 +33,22 @@ const HOME_HTML: &str = include_str!("../assets/home.html");
 
 /// Injecté dans chaque page : raccourcis clavier, son, icône du site, recherche
 /// dans la page, menu des liens, mesures, autorisations (voir le fichier).
-pub const PAGE_SCRIPT: &str = include_str!("../assets/page.js");
+const PAGE_SCRIPT: &str = include_str!("../assets/page.js");
+
+/// Le script des pages, avec la clé de l'onglet (voir `split_key`).
+pub fn page_script(key: &str) -> String {
+    PAGE_SCRIPT.replacen("__FEATHER_KEY__", key, 1)
+}
+
+/// Sépare la clé de l'onglet du message d'une page. `true` : le message vient
+/// bien du script de Feather (`assets/page.js`), pas d'un script du site, qui ne
+/// connaît pas la clé. Sans elle, il ne garde que `PageMessage::from_untrusted`.
+pub fn split_key<'a>(raw: &'a str, key: &str) -> (bool, &'a str) {
+    match raw.strip_prefix(key) {
+        Some(rest) if !key.is_empty() => (true, rest),
+        _ => (false, raw),
+    }
+}
 
 /// Mode de diagnostic (FEATHER_DIAG=1) : affiche sur la page les derniers événements de
 /// souris reçus (type, bouton, élément visé), pour comprendre des clics perdus.
@@ -361,6 +376,20 @@ impl PageMessage {
     /// faire télécharger une adresse du réseau local.
     pub fn from_other_frame(self) -> Self {
         Self { open_tab: self.open_tab, link: self.link, pressed: self.pressed, ..Self::default() }
+    }
+
+    /// Ce qu'on garde d'un message sans la clé de l'onglet, donc écrit par un script
+    /// du site ou par un script que Feather lance à la demande : la barre de
+    /// recherche de l'accueil (vérifiée ensuite : seulement sur l'accueil) et
+    /// l'article du mode lecture (seulement après un clic sur le bouton livre).
+    pub fn from_untrusted(self) -> Self {
+        Self {
+            navigate: self.navigate,
+            open_bar: self.open_bar,
+            reader: self.reader,
+            reader_failed: self.reader_failed,
+            ..Self::default()
+        }
     }
 }
 
@@ -724,6 +753,26 @@ mod tests {
             serde_json::from_str::<ChromeMessage>(r#"{"type":"watch_memory","on":true}"#).unwrap(),
             ChromeMessage::WatchMemory { on: true }
         ));
+    }
+
+    #[test]
+    fn cle_des_pages() {
+        let key = "0123456789abcdef0123456789abcdef";
+        let script = page_script(key);
+        assert!(script.contains(&format!("const KEY = '{key}';")) && !script.contains("__FEATHER_KEY__"));
+        assert_eq!(split_key(&format!("{key}{{\"pressed\":true}}"), key), (true, "{\"pressed\":true}"));
+        // Message du site : pas de clé, ou une autre.
+        assert_eq!(split_key("{\"pressed\":true}", key), (false, "{\"pressed\":true}"));
+        assert!(!split_key("fedcba9876543210fedcba9876543210{}", key).0);
+        assert!(!split_key("{}", "").0);
+        let m: PageMessage = serde_json::from_str(
+            r#"{"shortcut":"close_tab","link":{"url":"https://a.fr/","how":"tab"},"pressed":true,
+                "navigate":"rust","reader_failed":true,"text":"abc"}"#,
+        )
+        .unwrap();
+        let m = m.from_untrusted();
+        assert!(m.shortcut.is_none() && m.link.is_none() && !m.pressed && m.text.is_none());
+        assert!(m.navigate.as_deref() == Some("rust") && m.reader_failed);
     }
 
     #[test]

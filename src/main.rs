@@ -37,7 +37,7 @@ mod update;
 mod weight;
 
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -61,10 +61,6 @@ use tab_manager::{PageContext, TabId, TabManager};
 use ui::{ChromeMessage, LibraryKind, LinkHow, PageMessage, Shortcut, Surface};
 use weight::Sampler;
 
-/// Une page peut ouvrir au plus ce nombre d'onglets (clic de molette)…
-const PAGE_TAB_LIMIT: usize = 10;
-/// … sur cette durée : au-delà, une page malveillante pourrait en ouvrir sans fin.
-const PAGE_TAB_WINDOW: Duration = Duration::from_secs(10);
 /// Au plus un envoi par seconde pour des titres : certains sites font défiler
 /// le leur (« (3) Nouveau message… ») plusieurs fois par seconde.
 const TITLE_PAUSE: Duration = Duration::from_secs(1);
@@ -196,8 +192,6 @@ struct App {
     full_state: Cell<bool>,
     /// Dernière session écrite sur le disque, pour ne pas la réécrire à l'identique.
     saved_session: RefCell<Option<Session>>,
-    /// Heures des derniers onglets ouverts à la demande d'une page (voir `PAGE_TAB_LIMIT`).
-    page_opens: VecDeque<Instant>,
     /// Demandes d'autorisation en attente d'une réponse de l'utilisateur.
     permission_requests: HashMap<u32, PendingPermission>,
     next_permission_request: u32,
@@ -309,7 +303,6 @@ fn main() -> wry::Result<()> {
         sent_state: RefCell::new(serde_json::Map::new()),
         full_state: Cell::new(false),
         saved_session: RefCell::new(None),
-        page_opens: VecDeque::new(),
         permission_requests: HashMap::new(),
         next_permission_request: 1,
         sampler: Sampler::default(),
@@ -432,10 +425,15 @@ impl App {
                 Err(err) => eprintln!("message de l'interface ignoré : {err}"),
             },
             UserEvent::Page(id, frame, raw) => {
-                if let Ok(message) = serde_json::from_str::<PageMessage>(&raw) {
+                let Some(tab) = self.tabs.get(id) else { return };
+                // Seul le script de Feather connaît la clé de l'onglet : sans elle, le
+                // message vient d'un script du site et ne garde presque rien.
+                let (keyed, json) = ui::split_key(&raw, tab.key());
+                if let Ok(message) = serde_json::from_str::<PageMessage>(json) {
+                    let message = if keyed { message } else { message.from_untrusted() };
                     // Sous macOS, tout cadre de la page (publicité comprise) peut écrire à
                     // Feather : seul un message du site affiché garde tous ses droits.
-                    let page = self.tabs.get(id).and_then(|t| t.webview()).and_then(|w| w.url().ok());
+                    let page = tab.webview().and_then(|w| w.url().ok());
                     let message = if page.is_some_and(|p| network::same_origin(&frame, &p)) {
                         message
                     } else {
@@ -470,6 +468,10 @@ impl App {
                 // réveillait sur une page blanche.
                 let tab = self.tabs.get_mut(id).filter(|t| !t.is_asleep() && url != "about:blank");
                 if let Some(tab) = tab {
+                    // Nouvelle page : l'article demandé à la précédente n'est plus attendu.
+                    if loading {
+                        tab.reader_asked = false;
+                    }
                     // macOS : identité Safari sur Google seulement (la page est
                     // rechargée si l'onglet entre sur Google ou en sort). À la fin du
                     // chargement, pour les redirections ; un seul rechargement de suite,
@@ -837,11 +839,12 @@ impl App {
 
     fn handle_page(&mut self, id: TabId, message: PageMessage) {
         // Un raccourci ne vient que de l'onglet affiché : un onglet en arrière-plan
-        // (ou un script de page) ne doit pas imprimer, capturer ou fermer à sa place.
-        // Ceux qui ouvrent des onglets sont limités comme les ouvertures des pages.
+        // ne doit pas imprimer, capturer ou fermer à sa place. Raccourcis, clics de
+        // molette et menus viennent de vrais gestes (message avec la clé de
+        // l'onglet, événement `isTrusted`) : plus de limite d'onglets, qui frappait
+        // aussi l'utilisateur qui ouvrait vite une dizaine de résultats.
         if let Some(shortcut) = message.shortcut
             && Some(id) == self.tabs.active_id()
-            && (!matches!(shortcut, Shortcut::NewTab | Shortcut::NewPrivateTab | Shortcut::ReopenTab) || self.allow_page_tab())
         {
             self.handle_shortcut(Some(id), shortcut);
             self.push_state();
@@ -859,13 +862,11 @@ impl App {
         }
         if let Some(url) = message.open_tab
             && network::is_web(&url)
-            && self.allow_page_tab()
         {
             self.open_tab_in_background(&url);
         }
         if let Some(link) = message.link
             && network::is_web(&link.url)
-            && self.allow_page_tab()
         {
             match link.how {
                 LinkHow::Tab => self.open_tab(&link.url, false),
@@ -873,11 +874,10 @@ impl App {
                 LinkHow::Private => self.open_tab(&link.url, true),
             }
         }
-        // Même limite que les onglets : une page ne peut pas remplir les
-        // téléchargements (ou Photos) à coups de messages.
+        // Choisi dans le menu d'une image : la page ne peut pas, seule, remplir les
+        // téléchargements (ou Photos).
         if let Some(image) = message.image
             && network::is_web(&image.url)
-            && self.allow_page_tab()
         {
             self.save_image(id, image.url, image.how);
         }
@@ -918,11 +918,17 @@ impl App {
             tab.readable = readable;
             self.push_state();
         }
-        if let Some(article) = message.reader {
-            self.open_reader(id, article);
-        }
-        if message.reader_failed {
-            self.chrome_call("navigateur.showNotice('Feather n\\'a pas trouvé d\\'article à lire sur cette page.')");
+        // L'article n'est accepté qu'une fois, après un clic sur le bouton livre :
+        // sinon le site pourrait remplacer sa page par un faux mode lecture.
+        if (message.reader.is_some() || message.reader_failed)
+            && let Some(tab) = self.tabs.get_mut(id)
+            && std::mem::take(&mut tab.reader_asked)
+        {
+            if let Some(article) = message.reader {
+                self.open_reader(id, article);
+            } else {
+                self.chrome_call("navigateur.showNotice('Feather n\\'a pas trouvé d\\'article à lire sur cette page.')");
+            }
         }
         // Clic dans la page pendant qu'un panneau est ouvert par-dessus : il se ferme.
         if message.pressed && self.expanded {
@@ -1008,23 +1014,6 @@ impl App {
                 }
             }
         }
-    }
-
-    /// Une page a-t-elle encore le droit d'ouvrir un onglet ? (voir `PAGE_TAB_LIMIT`)
-    fn allow_page_tab(&mut self) -> bool {
-        let now = Instant::now();
-        while self
-            .page_opens
-            .front()
-            .is_some_and(|t| now.duration_since(*t) > PAGE_TAB_WINDOW)
-        {
-            self.page_opens.pop_front();
-        }
-        if self.page_opens.len() >= PAGE_TAB_LIMIT {
-            return false;
-        }
-        self.page_opens.push_back(now);
-        true
     }
 
     /// Un nouvel onglet s'ouvre toujours sur l'accueil Feather (heure et recherche).

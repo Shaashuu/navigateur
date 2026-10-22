@@ -1,7 +1,31 @@
 (() => {
-  const post = (msg) => window.ipc.postMessage(JSON.stringify(msg));
+  // Clé propre à l'onglet, posée par Feather à la création de la page : un message
+  // qui ne commence pas par elle n'a presque aucun droit (voir `ui::split_key`).
+  // Le site ne peut pas la lire : elle ne vit que dans cette fonction, et le canal
+  // vers Feather est pris avant que le site ne puisse le remplacer. Elle passe
+  // devant le JSON plutôt que dedans : un `toJSON` posé par le site ne la voit pas.
+  const KEY = '__FEATHER_KEY__';
+  const stringify = JSON.stringify;
+  const channel = (() => {
+    try {
+      const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ipc;
+      if (h) return h.postMessage.bind(h);
+      const w = window.chrome && window.chrome.webview;
+      if (w) return w.postMessage.bind(w);
+    } catch (_) {}
+    return null;
+  })();
+  const post = (msg) => { if (channel) channel(KEY + stringify(msg)); };
+  // Fonctions que Feather appelle dans la page : le site ne peut ni les
+  // remplacer ni les effacer (il pourrait sinon lire ce que Feather y passe).
+  const expose = (name, fn) => {
+    try { Object.defineProperty(window, name, { value: fn, writable: false, configurable: false }); } catch (_) {}
+  };
   const send = (shortcut) => post({ shortcut });
+  // Seuls les vrais gestes (`isTrusted`) comptent : un événement fabriqué par le
+  // site ne ferme pas l'onglet et n'ouvre rien.
   window.addEventListener('keydown', (e) => {
+    if (!e.isTrusted) return;
     const k = e.key.toLowerCase();
     const ctrl = (e.ctrlKey || e.metaKey) && !e.altKey;
     let a = null;
@@ -33,7 +57,7 @@
   // Boutons latéraux de la souris : précédent et suivant (aussi dans les cadres).
   for (const type of ['mousedown', 'mouseup', 'auxclick']) {
     window.addEventListener(type, (e) => {
-      if (e.button !== 3 && e.button !== 4) return;
+      if (!e.isTrusted || (e.button !== 3 && e.button !== 4)) return;
       e.preventDefault();
       if (type === 'mouseup') send(e.button === 3 ? 'back' : 'forward');
     }, true);
@@ -46,7 +70,7 @@
   };
   window.addEventListener('mousedown', (e) => { if (e.button === 1 && linkOf(e)) e.preventDefault(); }, true);
   window.addEventListener('auxclick', (e) => {
-    if (e.button !== 1) return;
+    if (!e.isTrusted || e.button !== 1) return;
     const url = linkOf(e);
     if (!url) return;
     e.preventDefault();
@@ -81,7 +105,7 @@
   const isMac = /Mac/.test(navigator.platform);
   window.addEventListener('contextmenu', (e) => {
     closeMenu();
-    if (e.shiftKey) return;
+    if (!e.isTrusted || e.shiftKey) return;
     const url = linkOf(e);
     const image = imageOf(e);
     if (!url && !image) return;
@@ -110,7 +134,7 @@
     menu.addEventListener('mousedown', (ev) => ev.stopPropagation());
     menu.addEventListener('click', (ev) => {
       const b = ev.target.closest('button');
-      if (!b) return;
+      if (!b || !ev.isTrusted) return;
       if (b.dataset.img) post({ image: { url: image, how: b.dataset.img } });
       else if (b.dataset.how === 'copy') copy(url);
       else post({ link: { url, how: b.dataset.how } });
@@ -165,6 +189,8 @@
   // - quand l'onglet est caché, les vidéos muettes ou silencieuses sont mises en
   //   pause, puis reprennent au retour. Le son qu'on écoute continue.
   let economy = window.__featherEconomy === true;
+  // Lu tout de suite : plus tard, le site aurait pu le changer.
+  const noIndex = window.__featherNoIndex === true;
   let acted = false;
   for (const type of ['pointerdown', 'keydown']) {
     window.addEventListener(type, (e) => { if (e.isTrusted) acted = true; }, true);
@@ -186,7 +212,7 @@
       pausedHidden.clear();
     }
   });
-  window.__featherSetEconomy = (on) => { economy = on === true; };
+  expose('__featherSetEconomy', (on) => { economy = on === true; });
 
   // Mode économie sur YouTube : la vidéo arrive en H.264 plutôt qu'en VP9 ou AV1.
   // Tous les Mac et PC décodent le H.264 avec la puce graphique ; le VP9 et l'AV1
@@ -283,7 +309,7 @@
       for (const r of records) for (const n of r.addedNodes) if (n.nodeType === 1) pending.push(n);
       if (pending.length && !adTimer) adTimer = setTimeout(flush, 400);
     });
-    window.__featherHide = (list) => {
+    expose('__featherHide', (list) => {
       if (list === null) { active = false; observer.disconnect(); pending = []; clearTimeout(adTimer); adTimer = 0; return; }
       if (!list.length) return;
       if (!sheet || !sheet.ownerNode || !sheet.ownerNode.isConnected) {
@@ -294,7 +320,7 @@
       for (const sel of list) {
         try { sheet.insertRule(sel + '{display:none!important}', sheet.cssRules.length); } catch (_) {}
       }
-    };
+    });
     document.addEventListener('DOMContentLoaded', () => {
       const tokens = [];
       collect(document.documentElement, tokens);
@@ -303,19 +329,19 @@
     });
   }
 
-  window.__featherSetMuted = (on) => {
+  expose('__featherSetMuted', (on) => {
     muted = on;
     for (const m of media()) {
       if (on) silence(m);
       else if (m.__featherMuted) { m.muted = false; m.__featherMuted = false; }
     }
     report();
-  };
+  });
 
   // Petit message en bas de la page (niveau de zoom, fin d'un minuteur).
   let toastTimer = 0;
   let toastHost = null;
-  window.__featherToast = (text) => {
+  expose('__featherToast', (text) => {
     if (!toastHost) {
       toastHost = document.createElement('feather-toast');
       const root = toastHost.attachShadow({ mode: 'closed' });
@@ -333,7 +359,7 @@
     toastHost.box.style.opacity = '1';
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { toastHost.box.style.opacity = '0'; }, 1600);
-  };
+  });
 
   // Recherche dans la page (Ctrl+F). Les occurrences sont repérées dans les nœuds
   // de texte visibles ; la courante est sélectionnée (partout) et toutes sont
@@ -390,7 +416,7 @@
       }
     }
   };
-  window.__featherFind = (text, backwards) => {
+  expose('__featherFind', (text, backwards) => {
     if (!text) {
       if (find.index >= 0) getSelection().removeAllRanges();
       find.text = ''; find.ranges = []; find.index = -1;
@@ -406,7 +432,7 @@
     find.text = text;
     paint();
     post({ find_result: { current: find.index + 1, total } });
-  };
+  });
 
   // Poids de l'onglet : retard de la boucle d'événements (la page calcule-t-elle
   // sans arrêt ?) et, quand le moteur le donne, mémoire du JavaScript. Une page
@@ -442,7 +468,7 @@
   // Texte de la page, pour retrouver une page de l'historique par son contenu.
   // Envoyé une fois, deux secondes après le chargement (Feather décide s'il le garde).
   window.addEventListener('load', () => setTimeout(() => {
-    if (window.__featherNoIndex || (location.protocol !== 'http:' && location.protocol !== 'https:')) return;
+    if (noIndex || (location.protocol !== 'http:' && location.protocol !== 'https:')) return;
     const body = document.body;
     if (!body) return;
     const text = (body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 8000);
@@ -477,10 +503,10 @@
     waiting.set(id, resolve);
     post({ permission: { id, permission } });
   });
-  window.__featherPermissionAnswer = (id, allow) => {
+  expose('__featherPermissionAnswer', (id, allow) => {
     const resolve = waiting.get(id);
     if (resolve) { waiting.delete(id); resolve(allow === true); }
-  };
+  });
   const denied = () => new DOMException('Autorisation refusée', 'NotAllowedError');
   const askAll = async (list) => {
     for (const p of list) if (!(await ask(p))) return false;
@@ -553,7 +579,7 @@
   }
 
   // Clic dans la page : Feather ferme le panneau ouvert par-dessus, s'il y en a un.
-  if (window.top === window) window.addEventListener('pointerdown', () => post({ pressed: true }), true);
+  if (window.top === window) window.addEventListener('pointerdown', (e) => { if (e.isTrusted) post({ pressed: true }); }, true);
 
   // Chrome Web Store : le bouton « Ajouter à Chrome » est réservé à Chrome. Sur la
   // page d'une extension, Feather pose le sien en bas à droite (pas sous Linux,
@@ -580,7 +606,7 @@
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (btn.disabled) return;
+        if (!e.isTrusted || btn.disabled) return;
         btn.disabled = true;
         root.querySelector('span').textContent = 'Installation…';
         post({ store_install: location.href });
