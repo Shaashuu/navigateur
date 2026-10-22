@@ -286,9 +286,13 @@ impl App {
         if tab.private || network::is_home(tab.url()) || tab.on_internal_page() {
             return;
         }
+        // Messageries, banques, santé et sites exclus : rien n'est gardé.
+        if crate::fulltext::excluded(&tab.host(), &self.settings().index_exclude) {
+            return;
+        }
         let (url, title) = (tab.url().to_string(), tab.title.clone());
+        // Enregistré avec le reste du texte, une fois par minute (voir `tick`).
         self.fulltext.add(&url, &title, text);
-        self.schedule_persist();
     }
 
     /// Chaque seconde : progression des téléchargements ; toutes les cinq
@@ -306,6 +310,11 @@ impl App {
         // toutes les heures (la recherche n'a lieu qu'une fois par semaine).
         if self.ticks % 3600 == 120 {
             self.check_extension_updates();
+        }
+        if self.ticks.is_multiple_of(60)
+            && let Err(err) = self.fulltext.save()
+        {
+            eprintln!("texte des pages non enregistré : {err}");
         }
         if self.ticks.is_multiple_of(5) {
             self.probe_media();

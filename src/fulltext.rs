@@ -3,7 +3,10 @@
 //! À la fin du chargement, le script injecté envoie le texte lisible de la
 //! page (voir `assets/page.js`). On en garde le début, rangé dans
 //! `contenu.json` à côté de l'historique, et la Bibliothèque peut retrouver une
-//! page par ce qu'elle contenait. Les onglets privés ne sont jamais indexés.
+//! page par ce qu'elle contenait. Ne sont jamais gardés : les onglets privés,
+//! les pages avec un champ de mot de passe (voir `assets/page.js`), les
+//! messageries, banques et sites de santé (voir `excluded`), et les sites que
+//! l'utilisateur a exclus dans les paramètres.
 
 use std::sync::OnceLock;
 
@@ -18,6 +21,45 @@ const FICHIER: &str = "contenu.json";
 const MAX_PAGES: usize = 2000;
 /// Caractères gardés par page : de quoi retrouver un article sans grossir le fichier.
 const MAX_TEXTE: usize = 4000;
+
+/// Sites dont le texte n'est jamais gardé : messageries, documents en ligne,
+/// administrations (le site et ses sous-domaines).
+const SENSIBLES: &[&str] = &[
+    "mail.google.com", "docs.google.com", "drive.google.com", "outlook.live.com", "outlook.office.com",
+    "outlook.office365.com", "mail.proton.me", "proton.me", "mail.yahoo.com", "icloud.com", "web.whatsapp.com",
+    "messenger.com", "web.telegram.org", "app.slack.com", "discord.com", "teams.microsoft.com", "teams.live.com",
+    "onedrive.live.com", "dropbox.com", "notion.so", "1password.com", "bitwarden.com", "lastpass.com",
+    "impots.gouv.fr", "ameli.fr", "doctolib.fr", "caf.fr", "service-public.fr", "franceconnect.gouv.fr",
+    "laposte.net", "orange.fr", "free.fr", "sfr.fr", "paypal.com",
+];
+/// Mots qui, dans le nom d'un site, désignent une banque, une assurance ou la santé.
+const MOTS_SENSIBLES: &[&str] = &["banque", "bank", "credit", "bourse", "assurance", "mutuelle", "sante", "health", "epargne"];
+
+/// Le texte des pages de ce site ne doit pas être gardé (`user` : sites exclus
+/// dans les paramètres).
+pub fn excluded(host: &str, user: &[String]) -> bool {
+    let host = host.trim_start_matches("www.");
+    let under = |site: &str| host == site || host.ends_with(&format!(".{site}"));
+    SENSIBLES.iter().any(|s| under(s))
+        || user.iter().any(|s| under(s.trim_start_matches("www.")))
+        || MOTS_SENSIBLES.iter().any(|m| host.contains(m))
+}
+
+/// Nettoie la liste des sites exclus : noms de domaine seuls, en minuscules.
+pub fn clean_hosts(list: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for item in list {
+        let item = item.trim().to_lowercase();
+        let item = item.split_once("://").map_or(item.as_str(), |(_, rest)| rest);
+        let host = item.split('/').next().unwrap_or("").trim_start_matches("www.").to_string();
+        let valid = !host.is_empty() && host.len() <= 253 && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+        if valid && !out.contains(&host) {
+            out.push(host);
+        }
+    }
+    out.truncate(200);
+    out
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Page {
@@ -128,6 +170,13 @@ impl FullText {
         self.changed |= self.pages.len() != avant;
     }
 
+    /// Oublie les pages des sites exclus (liste des paramètres changée).
+    pub fn forget_excluded(&mut self, user: &[String]) {
+        let avant = self.pages.len();
+        self.pages.retain(|p| !url::Url::parse(&p.url).ok().and_then(|u| u.host_str().map(|h| excluded(h, user))).unwrap_or(false));
+        self.changed |= self.pages.len() != avant;
+    }
+
     pub fn clear(&mut self) {
         self.pages.clear();
         self.changed = true;
@@ -230,6 +279,23 @@ fn normaliser(texte: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sites_exclus() {
+        let user = clean_hosts(&["https://www.Intranet.fr/page".into(), " ".into(), "a b".into(), "intranet.fr".into()]);
+        assert_eq!(user, ["intranet.fr"]);
+        assert!(excluded("mail.google.com", &[]));
+        assert!(excluded("www.labanquepostale.fr", &[]));
+        assert!(excluded("particuliers.credit-agricole.fr", &[]));
+        assert!(excluded("docs.intranet.fr", &user));
+        assert!(!excluded("fr.wikipedia.org", &user));
+        assert!(!excluded("google.com", &[]));
+        let mut f = FullText::default();
+        f.add("https://mail.google.com/x", "Boîte", &"courrier ".repeat(10));
+        f.add("https://fr.wikipedia.org/wiki/Plume", "Plume", &"oiseau ".repeat(10));
+        f.forget_excluded(&[]);
+        assert_eq!(f.pages.len(), 1);
+    }
 
     #[test]
     fn retrouver_une_page_par_son_texte() {

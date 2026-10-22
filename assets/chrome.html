@@ -1244,8 +1244,10 @@
               <option value="365">1 an</option>
               <option value="0">Toujours</option>
             </select></div>
-          <div class="srow"><label class="lab" for="s-index">Retrouver les pages par leur texte<small>Le texte des pages visitées reste sur cet ordinateur</small></label>
+          <div class="srow"><label class="lab" for="s-index">Retrouver les pages par leur texte<small>Le texte des pages visitées est gardé en clair sur cet ordinateur. Jamais celui des onglets privés, des pages avec un mot de passe, des messageries, banques et sites de santé</small></label>
             <input type="checkbox" class="tg" id="s-index"></div>
+          <div class="srow"><label class="lab" for="s-index-ex">Sites dont le texte n'est jamais gardé<small>Séparés par des virgules ; leurs pages déjà gardées sont oubliées</small></label>
+            <input type="text" id="s-index-ex" placeholder="exemple.fr, intranet.fr" autocomplete="off" spellcheck="false"></div>
           <div class="srow"><span class="lab">Effacer l'historique<small>Toutes les pages visitées et leur texte</small></span>
             <button type="button" class="danger" id="s-clear">Effacer l'historique</button></div>
           <div class="srow"><span class="lab">Importer des favoris<small>Depuis Chrome, Edge, Brave, ou un fichier exporté par Firefox ou Safari</small></span>
@@ -2150,6 +2152,7 @@
     $('s-ads').checked = s.block_ads !== false;
     renderAdLists();
     $('s-index').checked = s.index_pages !== false;
+    set('s-index-ex', (s.index_exclude || []).join(', '));
     $('s-sleep').value = String(s.sleep_minutes ?? 15);
     if (!$('s-sleep').value) $('s-sleep').value = '15';
     $('s-economy').checked = !!s.economy;
@@ -2284,6 +2287,7 @@
       block_ads: $('s-ads').checked,
       sleep_minutes: Number($('s-sleep').value),
       index_pages: $('s-index').checked,
+      index_exclude: $('s-index-ex').value.split(/[,\s]+/).filter(Boolean),
       sidebar_width: state.settings.sidebar_width,
       economy: $('s-economy').checked,
     };
@@ -2924,7 +2928,7 @@
     $(id).addEventListener('change', saveSettings);
   }
   // Champs de texte : enregistrés en quittant le champ ou avec Entrée.
-  for (const id of ['s-name', 's-home', 's-dldir']) {
+  for (const id of ['s-name', 's-home', 's-dldir', 's-index-ex']) {
     $(id).addEventListener('change', saveSettings);
     $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $(id).blur(); } });
   }
