@@ -17,6 +17,8 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    # Dernier filet si une machine se fige (6 h par défaut sinon).
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -28,11 +30,26 @@ jobs:
       # affichés dans le résumé de l'exécution. Un écart avec
       # outils/banc-reference.txt donne une alerte ; jamais d'échec de la
       # compilation ni de la publication.
+      # Le banc tourne dans un processus à part, arrêté au bout de 8 minutes
+      # (2 à 3 minutes d'habitude) : le 22/10, il s'est figé trois fois sur
+      # Windows et le délai de l'étape ne le coupait pas (plus de 30 minutes).
       - name: Banc (mémoire, démarrage, extensions)
         continue-on-error: true
         timeout-minutes: 10
         shell: pwsh
-        run: ./outils/banc-memoire.ps1 -Programme target/release/feather.exe -Extensions
+        run: |
+          $banc = Start-Process pwsh -NoNewWindow -PassThru -ArgumentList @(
+            '-NoProfile', '-File', 'outils/banc-memoire.ps1',
+            '-Programme', 'target/release/feather.exe', '-Extensions')
+          $null = $banc.Handle  # garde le code de sortie lisible
+          $code = 0
+          if (-not $banc.WaitForExit(8 * 60 * 1000)) {
+            taskkill /T /F /PID $banc.Id | Out-Null
+            Write-Output "::warning title=Banc de Feather::Banc arrêté après 8 minutes (bloqué), mesures Windows incomplètes."
+          } else { $code = $banc.ExitCode }
+          # Feather et ses pages encore ouverts, quoi qu'il arrive.
+          Get-Process feather, msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          exit $code
       # La version vient de Cargo.toml : elle n'est plus recopiée à la main ici.
       - name: Nommer le fichier avec la version
         shell: bash
