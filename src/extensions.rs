@@ -22,6 +22,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -998,6 +999,61 @@ pub fn site_labels(hosts: &[String]) -> Vec<String> {
     out
 }
 
+/// Site qu'une extension active déclare pour lui parler depuis ses pages
+/// (`externally_connectable`, comme `https://*.proton.me/*` pour Proton Pass).
+#[derive(Debug, PartialEq)]
+struct Declared {
+    /// `https`, `http`, ou `*` pour les deux.
+    scheme: String,
+    host: String,
+    /// `*.proton.me` : le domaine et tous ses sous-domaines.
+    subdomains: bool,
+}
+
+/// Sites déclarés par les extensions actives (voir `declared_site`).
+static DECLARED: RwLock<Vec<Declared>> = RwLock::new(Vec::new());
+
+/// Lit un motif de `externally_connectable.matches`. Les motifs trop larges
+/// (tous les sites, `*.com`) sont ignorés, comme dans Chrome.
+fn declared(pattern: &str) -> Option<Declared> {
+    let (scheme, rest) = pattern.split_once("://")?;
+    if !matches!(scheme, "https" | "http" | "*") {
+        return None;
+    }
+    let host = rest.split('/').next()?.split(':').next()?.to_ascii_lowercase();
+    let (subdomains, host) = match host.strip_prefix("*.") {
+        Some(base) => (true, base.to_string()),
+        None => (false, host),
+    };
+    if host.contains('*') || !host.contains('.') || host.starts_with('.') || host.ends_with('.') {
+        return None;
+    }
+    Some(Declared { scheme: scheme.into(), host, subdomains })
+}
+
+/// Vrai si une extension active a déclaré ce site pour lui parler. Sous macOS,
+/// ces sites reçoivent l'identité Safari (voir `tab_manager::wants_safari`) :
+/// la page de connexion de Proton (account.proton.me) ne parle à l'extension
+/// que dans Chrome ou Safari. Avec l'identité de WebKit seule, elle attendait
+/// une réponse par un autre chemin, qui ne venait jamais (« Extension timed
+/// out » au bout de 15 s), et la connexion à Proton Pass échouait.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn declared_site(url: &str) -> bool {
+    DECLARED.read().is_ok_and(|list| site_matches(&list, url))
+}
+
+/// Vrai si l'adresse est sur l'un des sites de `list`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn site_matches(list: &[Declared], url: &str) -> bool {
+    let Ok(url) = url::Url::parse(url) else { return false };
+    let Some(host) = url.host_str().map(str::to_ascii_lowercase) else { return false };
+    let scheme = url.scheme();
+    list.iter().any(|d| {
+        (d.scheme == scheme || (d.scheme == "*" && matches!(scheme, "http" | "https")))
+            && (host == d.host || (d.subdomains && host.strip_suffix(d.host.as_str()).is_some_and(|sub| sub.ends_with('.'))))
+    })
+}
+
 /// `true` si `new` est une version plus récente que `old` (« 1.10.2 » > « 1.9 »).
 pub fn is_newer(new: &str, old: &str) -> bool {
     let parts = |v: &str| -> Vec<u64> { v.split(['.', '-']).map(|p| p.parse().unwrap_or(0)).collect() };
@@ -1142,6 +1198,7 @@ impl Extensions {
             }
         }
         me.sweep();
+        me.sync_declared();
         me
     }
 
@@ -1193,6 +1250,7 @@ impl Extensions {
             }
         };
         self.save();
+        self.sync_declared();
         old
     }
 
@@ -1203,7 +1261,29 @@ impl Extensions {
         self.errors.remove(id);
         let ext = self.list.remove(i);
         self.save();
+        self.sync_declared();
         Some(ext)
+    }
+
+    /// Relit les sites déclarés par les extensions actives (voir `declared_site`) :
+    /// seul le Mac s'en sert.
+    fn sync_declared(&self) {
+        if !cfg!(target_os = "macos") {
+            return;
+        }
+        let sites = self
+            .list
+            .iter()
+            .filter(|e| e.enabled)
+            .filter_map(|e| read_json(&e.path()?.join("manifest.json")))
+            .flat_map(|manifest| {
+                let matches = manifest.pointer("/externally_connectable/matches").and_then(Value::as_array).cloned();
+                matches.into_iter().flatten().filter_map(|p| declared(p.as_str()?))
+            })
+            .collect();
+        if let Ok(mut list) = DECLARED.write() {
+            *list = sites;
+        }
     }
 
     pub fn set_problem(&mut self, id: &str, problem: Option<String>) {
@@ -1592,6 +1672,7 @@ impl crate::App {
         ext.enabled = enabled;
         let ext = ext.clone();
         self.extensions.save();
+        self.extensions.sync_declared();
         set_enabled(&ext, enabled);
         self.sync_ad_blocker();
     }
@@ -3122,6 +3203,24 @@ mod tests {
         assert_eq!(wrapped_original(&wrapper_js(odd, false).unwrap()).as_deref(), Some(odd));
         assert_eq!(wrapped_original(&wrapper_js(odd, true).unwrap()).as_deref(), Some(odd));
         assert_eq!(wrapped_original("importScripts('/feather-compat.js');\n"), None);
+    }
+
+    #[test]
+    fn sites_declares_par_les_extensions() {
+        // Motifs de Proton Pass ; les motifs trop larges sont ignorés.
+        let proton = declared("https://*.proton.me/*").unwrap();
+        assert_eq!(proton, Declared { scheme: "https".into(), host: "proton.me".into(), subdomains: true });
+        assert_eq!(declared("*://Mail.Exemple.fr:8443/boite/*").map(|d| (d.host, d.subdomains)), Some(("mail.exemple.fr".into(), false)));
+        for broad in ["<all_urls>", "*://*/*", "https://*/*", "https://*.com/*", "https://localhost/*", "ftp://a.b/*", "https://*.*.fr/*", "pas un motif"] {
+            assert_eq!(declared(broad), None, "{broad}");
+        }
+        let list = [proton, declared("*://mail.exemple.fr/*").unwrap()];
+        for url in ["https://account.proton.me/authorize?app=proton-pass-extension", "https://proton.me/", "https://PASS.proton.me/", "http://mail.exemple.fr/", "https://mail.exemple.fr/x"] {
+            assert!(site_matches(&list, url), "{url}");
+        }
+        for url in ["http://account.proton.me/", "https://evilproton.me/", "https://proton.me.exemple.org/", "https://a.mail.exemple.fr/", "navigateur://accueil/", "pas une adresse"] {
+            assert!(!site_matches(&list, url), "{url}");
+        }
     }
 
     #[test]

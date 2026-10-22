@@ -86,7 +86,8 @@ pub struct Tab {
     /// Bloqueur de publicités posé sur la page (`None` : pas encore ; voir `adblock::apply`).
     pub ads: Option<bool>,
     /// macOS : la page vient d'être rechargée parce qu'une redirection l'a fait
-    /// entrer sur Google ou en sortir (voir `match_identity`) ; une seule fois de suite.
+    /// entrer sur Google (ou un autre site à identité Safari) ou en sortir (voir
+    /// `match_identity`) ; une seule fois de suite.
     pub identity_retry: bool,
     /// Mode lecture demandé (clic sur le bouton livre) : l'article attendu peut
     /// arriver, une seule fois (voir `PageMessage::from_untrusted`).
@@ -848,28 +849,37 @@ fn safari_version() -> Option<String> {
         .then_some(version)
 }
 
+/// macOS : les sites qui reçoivent l'identité Safari. Google (voir `is_google`), et
+/// les sites déclarés par une extension active pour lui parler, comme la page de
+/// connexion de Proton pour Proton Pass (voir `extensions::declared_site`).
+#[cfg(target_os = "macos")]
+fn wants_safari(url: &str) -> bool {
+    is_google(url) || extensions::declared_site(url)
+}
+
 /// Identité de départ d'une page, selon sa première adresse. Windows (WebView2 = Edge)
 /// et Linux (WebKitGTK) envoient déjà un identifiant complet : on le garde.
 fn page_user_agent(url: &str) -> Option<&'static str> {
     #[cfg(target_os = "macos")]
-    if is_google(url) {
+    if wants_safari(url) {
         return Some(safari_agent());
     }
     let _ = url;
     None
 }
 
-/// macOS, au début et à la fin de chaque chargement : un onglet qui arrive sur Google,
-/// ou qui en sort, change d'identité puis recharge l'adresse (la première requête est
-/// déjà partie avec l'ancienne). La fin compte aussi : une redirection (lien d'un
-/// résultat Google vers YouTube, retour de la connexion Google vers YouTube) change
-/// de site sans nouveau début de chargement, et YouTube gardait l'identité Safari.
+/// macOS, au début et à la fin de chaque chargement : un onglet qui arrive sur Google
+/// (ou un autre site de `wants_safari`), ou qui en sort, change d'identité puis
+/// recharge l'adresse (la première requête est déjà partie avec l'ancienne). La
+/// fin compte aussi : une redirection (lien d'un résultat Google vers YouTube,
+/// retour de la connexion Google vers YouTube) change de site sans nouveau début
+/// de chargement, et YouTube gardait l'identité Safari.
 /// Vrai si la page est rechargée.
 #[cfg(target_os = "macos")]
 pub fn match_identity(webview: &WebView, url: &str) -> bool {
     use objc2_foundation::NSString;
     use wry::WebViewExtMacOS;
-    let wanted = is_google(url);
+    let wanted = wants_safari(url);
     let wk = webview.webview();
     // SAFETY : fil principal (boucle d'évènements), vue vivante.
     let current = unsafe { wk.customUserAgent() }.is_some_and(|ua| ua.length() > 0);
@@ -1015,7 +1025,7 @@ fn build_page(
 
     // Sans `load`, la page reste vide : l'appelant lui rend son historique (voir `Souvenir`).
     let builder = if load { builder.with_url(url) } else { builder };
-    // Identité Safari sur Google seulement (voir `is_google`).
+    // Identité Safari sur Google et les sites des extensions (voir `wants_safari`).
     let builder = match page_user_agent(url) {
         Some(agent) => builder.with_user_agent(agent),
         None => builder,
