@@ -272,6 +272,8 @@ fn main() -> wry::Result<()> {
     library.prune(settings.history_days);
     let mut fulltext = FullText::load();
     fulltext.prune(settings.history_days);
+    // Pages gardées avant 0.5.8, de sites qu'on n'indexe plus (messageries, banques…).
+    fulltext.forget_excluded(&settings.index_exclude);
 
     // Une seconde : progression des téléchargements, poids et veille des onglets.
     let tick_proxy = proxy.clone();
@@ -380,7 +382,8 @@ fn main() -> wry::Result<()> {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
-                app.persist();
+                app.persist_all();
+                storage::flush();
                 *control_flow = ControlFlow::Exit;
             }
             Event::WindowEvent {
@@ -623,13 +626,21 @@ impl App {
 
     fn handle_chrome(&mut self, message: ChromeMessage) {
         match message {
-            ChromeMessage::Ready => {}
+            // L'interface est prête : elle montre les fichiers abîmés mis de côté au lancement.
+            ChromeMessage::Ready => {
+                let warnings = storage::take_warnings();
+                if !warnings.is_empty() {
+                    let text = serde_json::to_string(&warnings.join(" ")).unwrap_or_default();
+                    self.chrome_call(&format!("navigateur.showNotice({text})"));
+                }
+            }
             ChromeMessage::CheckUpdate => self.start_check(true),
             ChromeMessage::InstallUpdate => self.start_install(),
             ChromeMessage::RestartUpdate => {
                 // On garde `restart` en cas d'échec : le bouton reste utilisable.
                 if self.restart.is_some() {
-                    self.persist();
+                    self.persist_all();
+                    storage::flush();
                 }
                 if let Some(restart) = &self.restart {
                     match restart.launch() {
@@ -746,12 +757,15 @@ impl App {
                     lib.remove_visits(&url);
                 }
                 self.fulltext.remove(&url);
+                // Effacé à la demande : sur le disque tout de suite, sans attendre la minute.
+                let _ = self.fulltext.save();
             }
             ChromeMessage::ClearHistory => {
                 if let Ok(mut lib) = self.library.write() {
                     lib.clear_history();
                 }
                 self.fulltext.clear();
+                let _ = self.fulltext.save();
                 self.send_library(LibraryKind::History, "");
             }
             ChromeMessage::RevealDownload { id } => {
@@ -1280,6 +1294,11 @@ impl App {
         // Désactiver la recherche dans le texte des pages efface ce qui était gardé.
         if before.index_pages && !settings.index_pages {
             self.fulltext.clear();
+            let _ = self.fulltext.save();
+        }
+        if before.index_exclude != settings.index_exclude {
+            self.fulltext.forget_excluded(&settings.index_exclude);
+            let _ = self.fulltext.save();
         }
         if before.blocks_trackers() != settings.blocks_trackers() {
             for w in self.tabs.iter().filter_map(|t| t.webview()) {
@@ -1339,6 +1358,14 @@ impl App {
 
     /// Enregistre tout de suite l'historique, les favoris, les réglages par site,
     /// les notes, le texte des pages et les onglets ouverts (seul ce qui a changé).
+    /// Tout enregistrer, texte des pages compris (avant de quitter).
+    fn persist_all(&mut self) {
+        self.persist();
+        if let Err(err) = self.fulltext.save() {
+            eprintln!("texte des pages non enregistré : {err}");
+        }
+    }
+
     fn persist(&mut self) {
         if let Ok(mut lib) = self.library.write()
             && let Err(err) = lib.save()
@@ -1353,9 +1380,8 @@ impl App {
         if let Err(err) = self.notes.save() {
             eprintln!("notes non enregistrées : {err}");
         }
-        if let Err(err) = self.fulltext.save() {
-            eprintln!("texte des pages non enregistré : {err}");
-        }
+        // Le texte des pages (jusqu'à 10 Mo) n'est réécrit qu'une fois par minute
+        // (voir `tick`), pas deux secondes après chaque page visitée.
         if self.tabs.is_empty() {
             return;
         }

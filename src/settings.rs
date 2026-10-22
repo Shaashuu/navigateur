@@ -46,6 +46,8 @@ pub struct Settings {
     pub sleep_minutes: u32,
     /// Garder le texte des pages visitées pour les retrouver par leur contenu.
     pub index_pages: bool,
+    /// Sites dont le texte n'est jamais gardé, en plus de ceux de `fulltext::excluded`.
+    pub index_exclude: Vec<String>,
     /// Largeur de la barre à gauche ou à droite, en pixels (voir `SIDEBAR_MIN`).
     pub sidebar_width: u32,
     /// Façon d'atteindre l'adresse avec la barre à gauche ou à droite (voir `SidebarStyle`).
@@ -87,6 +89,7 @@ impl Default for Settings {
             block_ads: true,
             sleep_minutes: DEFAULT_SLEEP_MINUTES,
             index_pages: true,
+            index_exclude: Vec::new(),
             sidebar_width: SIDEBAR_MIN,
             sidebar_style: SidebarStyle::Palette,
             economy: false,
@@ -197,6 +200,7 @@ impl Settings {
         self.name = self.name.trim().chars().take(40).collect();
         self.home_page = network::normalize_home_page(&self.home_page).unwrap_or_default();
         self.download_dir = self.download_dir.trim().to_string();
+        self.index_exclude = crate::fulltext::clean_hosts(&self.index_exclude);
         self.sleep_minutes = self.sleep_minutes.min(24 * 60);
         self.sidebar_width = self.sidebar_width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
         self

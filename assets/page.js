@@ -476,6 +476,8 @@
     if (noIndex || (location.protocol !== 'http:' && location.protocol !== 'https:')) return;
     const body = document.body;
     if (!body) return;
+    // Page de connexion ou de compte : rien n'est gardé.
+    if (document.querySelector('input[type="password"]')) return;
     const text = (body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 8000);
     if (text.length > 40) post({ text });
   }, 2000));
