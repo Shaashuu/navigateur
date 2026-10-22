@@ -25,6 +25,15 @@
     return target[name] === value;
   };
 
+  // Les objets complétés sont retenus ici, pour toute la vie de la page ou de
+  // l'arrière-plan. WebKit ne garde browser.runtime, browser.tabs,
+  // browser.webRequest et leurs évènements qu'en cache faible : après un
+  // ramasse-miettes, il en refaisait des neufs, sans les compléments. Proton
+  // Pass trouvait alors runtime.onUpdateAvailable absent, et son arrière-plan
+  // s'arrêtait comme si ce fichier n'existait pas.
+  const keep = [];
+  try { Object.defineProperty(globalThis, Symbol('feather'), { value: keep }); } catch (e) {}
+
   // Ajoute à un espace (runtime…) ce qui lui manque. Directement si WebKit le
   // permet, sinon l'espace est remplacé par un mandataire qui le complète.
   const complete = (space, extra) => {
@@ -33,6 +42,7 @@
       if (!target) continue;
       const absent = Object.keys(extra).filter((n) => !(n in target) || target[n] == null);
       if (absent.length === 0) continue;
+      keep.push(target);
       for (const name of absent) define(target, name, extra[name]);
       if (absent.every((n) => target[n] != null)) continue;
       const p = new Proxy(target, {
@@ -68,6 +78,7 @@
       define(root, 'webRequest', Object.fromEntries(webRequestEvents.map((n) => [n, event()])));
       continue;
     }
+    keep.push(space);
     for (const name of webRequestEvents) {
       const ev = space[name];
       if (!ev || typeof ev.addListener !== 'function' || ev.addListener.featherTolerant) continue;
@@ -80,6 +91,7 @@
       };
       tolerant.featherTolerant = true;
       define(ev, 'addListener', tolerant);
+      keep.push(ev);
     }
   }
 
@@ -113,6 +125,7 @@
     };
     getCurrent.featherPopup = true;
     define(tabs, 'getCurrent', getCurrent);
+    keep.push(tabs);
   }
   // Certaines extensions mesurent la fenêtre dès le chargement pour figer leur
   // taille (variables --popup-width / --popup-height de Proton Pass). Dans la

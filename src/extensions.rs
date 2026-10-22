@@ -765,7 +765,9 @@ const WRAPPER_FILE: &str = "feather-background.js";
 
 /// Sur Mac, fait passer l'arrière-plan de l'extension après les compléments de
 /// Feather. Le manifeste désigne alors `feather-background.js`, qui charge
-/// `feather-compat.js` puis le fichier d'origine. Sans effet la deuxième fois.
+/// `feather-compat.js` puis le fichier d'origine. Ce fichier est réécrit à
+/// chaque chargement (une nouvelle version de Feather y met la sienne) ; le
+/// manifeste, lui, n'est modifié qu'une fois.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn add_compat(dir: &Path) -> Result<(), String> {
     let path = dir.join("manifest.json");
@@ -783,17 +785,20 @@ pub fn add_compat(dir: &Path) -> Result<(), String> {
     }
     let Some(Value::Object(background)) = manifest.get_mut("background") else { return Ok(()) };
     if let Some(worker) = background.get("service_worker").and_then(Value::as_str) {
-        if worker.trim_start_matches(['.', '/']) == WRAPPER_FILE {
+        let worker = worker.trim_start_matches(['.', '/']);
+        // Déjà enveloppé à un lancement précédent : l'original est relu dans l'enveloppe.
+        let wrapped = worker == WRAPPER_FILE;
+        let original = if wrapped {
+            let text = fs::read_to_string(dir.join(WRAPPER_FILE)).map_err(|e| e.to_string())?;
+            wrapped_original(&text).ok_or("arrière-plan d'origine introuvable dans feather-background.js")?
+        } else {
+            format!("/{worker}")
+        };
+        let module = background.get("type").and_then(Value::as_str) == Some("module");
+        fs::write(dir.join(WRAPPER_FILE), wrapper_js(&original, module)?).map_err(|e| e.to_string())?;
+        if wrapped {
             return Ok(());
         }
-        // Chemin depuis la racine de l'extension, échappé pour JavaScript.
-        let original = serde_json::to_string(&format!("/{}", worker.trim_start_matches(['.', '/']))).map_err(|e| e.to_string())?;
-        let wrapper = if background.get("type").and_then(Value::as_str) == Some("module") {
-            format!("import '/{COMPAT_FILE}';\nimport {original};\n")
-        } else {
-            format!("importScripts('/{COMPAT_FILE}', {original});\n")
-        };
-        fs::write(dir.join(WRAPPER_FILE), wrapper).map_err(|e| e.to_string())?;
         background.insert("service_worker".into(), Value::String(WRAPPER_FILE.into()));
     } else if let Some(Value::Array(scripts)) = background.get_mut("scripts") {
         // Manifeste v2 (ou arrière-plan de Firefox) : les compléments en premier.
@@ -806,6 +811,49 @@ pub fn add_compat(dir: &Path) -> Result<(), String> {
     }
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     fs::write(path, text).map_err(|e| e.to_string())
+}
+
+/// Contenu de `feather-background.js` : les compléments, puis l'arrière-plan
+/// d'origine (`original` : chemin depuis la racine de l'extension).
+///
+/// Arrière-plan classique (Proton Pass) : une erreur au premier niveau du
+/// fichier d'origine ne l'empêche plus de s'installer. WebKit le refusait
+/// entier, et l'extension ne répondait plus à rien (« difficulties
+/// activating ») ; ce qui a été préparé avant l'erreur marche désormais, et
+/// l'erreur reste signalée (console, liste des erreurs du moteur, panneau).
+/// Un module ne peut pas être chargé ainsi : `import()` est interdit dans un
+/// service worker.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn wrapper_js(original: &str, module: bool) -> Result<String, String> {
+    // Échappé pour JavaScript ; premier guillemet double du fichier (voir `wrapped_original`).
+    let original = serde_json::to_string(original).map_err(|e| e.to_string())?;
+    // WebKit garde avec l'arrière-plan les fichiers qu'il charge : l'empreinte
+    // des compléments change ce fichier-ci quand ils changent, et l'arrière-plan
+    // est alors réinstallé avec les nouveaux.
+    let version = short_hash(COMPAT_JS);
+    Ok(if module {
+        format!("// Compléments de Feather {version}\nimport '/{COMPAT_FILE}';\nimport {original};\n")
+    } else {
+        format!(
+            r"// Compléments de Feather {version}
+importScripts('/{COMPAT_FILE}');
+try {{
+  importScripts({original});
+}} catch (e) {{
+  // Filet de Feather : l'arrière-plan s'installe avec ce qu'il a préparé avant l'erreur.
+  if (typeof reportError === 'function') reportError(e); else console.error(e);
+}}
+"
+        )
+    })
+}
+
+/// L'arrière-plan d'origine noté dans `feather-background.js` : le premier
+/// texte entre guillemets doubles, dans toutes les versions de l'enveloppe.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn wrapped_original(wrapper: &str) -> Option<String> {
+    let start = wrapper.find('"')?;
+    serde_json::Deserializer::from_str(&wrapper[start..]).into_iter::<String>().next()?.ok()
 }
 
 /// Balise qui charge les compléments en tête d'une page de l'extension.
@@ -1010,6 +1058,9 @@ const UPDATE_EVERY: u64 = 7 * 24 * 3600;
 /// en attendant.
 const BLOCKER_WARMUP: std::time::Duration = std::time::Duration::from_secs(45);
 
+/// Erreurs du moteur gardées par extension (voir `extension_errors`).
+const MAX_ERRORS: usize = 20;
+
 fn now_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default()
 }
@@ -1029,6 +1080,9 @@ pub struct Extensions {
     icons: HashMap<String, String>,
     /// Ce que le moteur a refusé, par extension.
     problems: HashMap<String, String>,
+    /// Erreurs notées par le moteur pendant que l'extension tourne (macOS :
+    /// arrière-plan refusé, erreur de script…), montrées dans le panneau.
+    errors: HashMap<String, Vec<String>>,
     /// Chargées par le moteur, et depuis quand (voir `ad_blocker`).
     loaded: HashMap<String, std::time::Instant>,
     /// Installées ou mises à jour pendant cette session : leur bloqueur se prépare.
@@ -1124,6 +1178,7 @@ impl Extensions {
     /// Ajoute (ou remplace) une extension ; renvoie l'ancienne version.
     pub fn insert(&mut self, ext: Extension) -> Option<Extension> {
         self.problems.remove(&ext.id);
+        self.errors.remove(&ext.id);
         match icon_data(&ext) {
             Some(icon) => self.icons.insert(ext.id.clone(), icon),
             None => self.icons.remove(&ext.id),
@@ -1143,6 +1198,7 @@ impl Extensions {
         let i = self.list.iter().position(|e| e.id == id)?;
         self.icons.remove(id);
         self.problems.remove(id);
+        self.errors.remove(id);
         let ext = self.list.remove(i);
         self.save();
         Some(ext)
@@ -1207,6 +1263,7 @@ impl Extensions {
                     "all_sites": e.all_sites,
                     "firefox": e.firefox,
                     "problem": self.problems.get(&e.id),
+                    "errors": self.errors.get(&e.id),
                 })
             })
             .collect();
@@ -1490,6 +1547,23 @@ impl crate::App {
             Err(err) => self.extensions.set_problem(id, Some(err)),
         }
         self.sync_ad_blocker();
+    }
+
+    /// Le moteur a noté de nouvelles erreurs (ou en a effacé) : le panneau
+    /// les montre, le banc les écrit. Avant, une extension qui s'arrêtait au
+    /// démarrage (Proton Pass) ne laissait aucune trace dans Feather.
+    pub(crate) fn extension_errors(&mut self) {
+        for (id, errors) in engine::errors() {
+            crate::banc::erreurs_moteur(&id, &errors);
+            if errors.is_empty() {
+                self.extensions.errors.remove(&id);
+            } else {
+                // Quelques-unes suffisent au panneau, raccourcies.
+                let shown = errors.iter().take(MAX_ERRORS).map(|e| e.chars().take(300).collect()).collect();
+                self.extensions.errors.insert(id, shown);
+            }
+        }
+        self.push_state();
     }
 
     pub(crate) fn set_extension(&mut self, id: &str, enabled: bool) {
@@ -1838,6 +1912,11 @@ mod engine {
         remove_then(old, move || add(&new, &proxy));
     }
 
+    /// WebView2 ne tient pas de liste des erreurs des extensions.
+    pub fn errors() -> Vec<(String, Vec<String>)> {
+        Vec::new()
+    }
+
     /// Adresse d'une page de l'extension (`popup.html`…), une fois chargée.
     pub fn page_url(ext: &Extension, page: &str) -> Option<String> {
         Some(format!("chrome-extension://{}/{page}", ext.engine_id.as_ref()?))
@@ -1887,12 +1966,14 @@ mod engine {
     use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
     use objc2_app_kit::{NSPopover, NSPopoverBehavior, NSView};
     use objc2_foundation::{
-        NSArray, NSDate, NSError, NSPoint, NSRect, NSRectEdge, NSSet, NSSize, NSString, NSUInteger, NSURL, NSURLRequest,
+        NSArray, NSDate, NSError, NSNotification, NSNotificationCenter, NSPoint, NSRect, NSRectEdge, NSSet, NSSize, NSString,
+        NSUInteger, NSURL, NSURLRequest,
     };
     use objc2_web_kit::{
-        WKWebExtension, WKWebExtensionAction, WKWebExtensionContext, WKWebExtensionContextPermissionStatus,
-        WKWebExtensionController, WKWebExtensionControllerDelegate, WKWebExtensionMatchPattern, WKWebExtensionTab,
-        WKWebExtensionTabChangedProperties, WKWebExtensionTabConfiguration, WKWebExtensionWindow,
+        WKWebExtension, WKWebExtensionAction, WKWebExtensionContext, WKWebExtensionContextErrorsDidUpdateNotification,
+        WKWebExtensionContextPermissionStatus, WKWebExtensionController, WKWebExtensionControllerDelegate,
+        WKWebExtensionMatchPattern, WKWebExtensionTab, WKWebExtensionTabChangedProperties, WKWebExtensionTabConfiguration,
+        WKWebExtensionWindow,
         WKUserContentController, WKWebExtensionWindowState, WKWebExtensionWindowType, WKWebView, WKWebViewConfiguration,
         WKWebsiteDataStore,
     };
@@ -1937,6 +2018,10 @@ mod engine {
         active: Option<u32>,
         /// Onglets demandés par une extension, en attente de leur création.
         new_tabs: Vec<NewTabDone>,
+        /// Abonnement aux erreurs notées par WebKit (voir `errors`), et une
+        /// lecture déjà demandée à la boucle d'évènements.
+        errors_observer: Option<Retained<ProtocolObject<dyn NSObjectProtocol>>>,
+        errors_due: bool,
     }
 
     thread_local! {
@@ -2274,11 +2359,53 @@ mod engine {
         // SAFETY : fil principal ; le contrôleur ne garde qu'une référence faible
         // au délégué, gardé dans `STATE`.
         unsafe { controller.setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
+        // Erreurs notées par WebKit pendant que les extensions tournent : une
+        // seule lecture demandée pour une rafale de notifications.
+        let block = RcBlock::new(|_: NonNull<NSNotification>| {
+            let proxy = STATE.with_borrow_mut(|s| {
+                let proxy = if s.errors_due { None } else { s.proxy.clone() };
+                s.errors_due |= proxy.is_some();
+                proxy
+            });
+            if let Some(proxy) = proxy {
+                let _ = proxy.send_event(UserEvent::ExtensionErrors);
+            }
+        });
+        // SAFETY : nom publié par WebKit depuis macOS 15.4 (vérifié par `support`) ;
+        // sans file d'attente, le bloc est appelé sur le fil qui publie, le
+        // principal pour WebKit. L'abonnement est gardé dans `STATE`.
+        let observer = unsafe {
+            NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
+                Some(WKWebExtensionContextErrorsDidUpdateNotification),
+                None,
+                None,
+                &block,
+            )
+        };
         STATE.with_borrow_mut(|s| {
             s.controller = Some(controller.clone());
             s.delegate = Some(delegate);
+            s.errors_observer = Some(observer);
         });
         Some(controller)
+    }
+
+    /// Les erreurs notées par WebKit, par extension : manifeste, arrière-plan
+    /// refusé, erreur de script (selon la version de macOS). Toutes à chaque
+    /// fois ; WebKit ne garde qu'un exemplaire de chacune.
+    pub fn errors() -> Vec<(String, Vec<String>)> {
+        let contexts: Vec<_> = STATE.with_borrow_mut(|s| {
+            s.errors_due = false;
+            s.contexts.iter().map(|(id, c)| (id.clone(), c.clone())).collect()
+        });
+        contexts
+            .into_iter()
+            .map(|(id, context)| {
+                // SAFETY : fil principal, contexte valide.
+                let errors = unsafe { context.errors() };
+                (id, errors.iter().map(|e| e.localizedDescription().to_string()).collect())
+            })
+            .collect()
     }
 
     /// Toute page non privée reçoit le contrôleur des extensions. Avant, seulement
@@ -2658,6 +2785,10 @@ mod engine {
 
     pub fn replace(_old: &Extension, _new: &Extension, _proxy: &EventLoopProxy<UserEvent>) {}
 
+    pub fn errors() -> Vec<(String, Vec<String>)> {
+        Vec::new()
+    }
+
     pub fn page_url(_ext: &Extension, _page: &str) -> Option<String> {
         None
     }
@@ -2911,20 +3042,35 @@ mod tests {
         };
         let manifest = || read_json(&dir.join("manifest.json")).unwrap();
         let wrapper = || fs::read_to_string(dir.join(WRAPPER_FILE)).unwrap();
-        // Arrière-plan classique (Proton Pass).
+        // Arrière-plan classique (Proton Pass) : chargé dans un filet.
         write(r#"{"name":"a","background":{"service_worker":"background.js"}}"#);
         add_compat(&dir).unwrap();
         assert_eq!(manifest()["background"]["service_worker"], WRAPPER_FILE);
-        assert_eq!(wrapper(), "importScripts('/feather-compat.js', \"/background.js\");\n");
+        let classic = wrapper();
+        let version = format!("// Compléments de Feather {}\n", short_hash(COMPAT_JS));
+        assert!(classic.starts_with(&version));
+        assert!(classic.contains("importScripts('/feather-compat.js');\ntry {\n  importScripts(\"/background.js\");\n} catch (e) {"));
+        assert!(classic.contains("reportError(e)"));
         assert_eq!(fs::read_to_string(dir.join(COMPAT_FILE)).unwrap(), COMPAT_JS);
         // Deuxième fois : rien ne change (l'original n'est pas perdu).
         add_compat(&dir).unwrap();
-        assert_eq!(wrapper(), "importScripts('/feather-compat.js', \"/background.js\");\n");
+        assert_eq!(wrapper(), classic);
+        // Enveloppe des versions précédentes, sans filet : réécrite au chargement suivant.
+        fs::write(dir.join(WRAPPER_FILE), "importScripts('/feather-compat.js', \"/background.js\");\n").unwrap();
+        add_compat(&dir).unwrap();
+        assert_eq!(wrapper(), classic);
+        assert_eq!(manifest()["background"]["service_worker"], WRAPPER_FILE);
+        // Enveloppe perdue : l'original est introuvable, elle n'est pas réécrite.
+        fs::remove_file(dir.join(WRAPPER_FILE)).unwrap();
+        assert!(add_compat(&dir).is_err());
         // Module (uBlock Origin Lite).
         write(r#"{"name":"b","background":{"service_worker":"/js/background.js","type":"module"}}"#);
         add_compat(&dir).unwrap();
-        assert_eq!(wrapper(), "import '/feather-compat.js';\nimport \"/js/background.js\";\n");
+        let module = format!("{version}import '/feather-compat.js';\nimport \"/js/background.js\";\n");
+        assert_eq!(wrapper(), module);
         assert_eq!(manifest()["background"]["type"], "module");
+        add_compat(&dir).unwrap();
+        assert_eq!(wrapper(), module);
         // Manifeste v2 : les compléments en tête de liste, une seule fois.
         write(r#"{"name":"c","background":{"scripts":["a.js","b.js"]}}"#);
         add_compat(&dir).unwrap();
@@ -2947,6 +3093,17 @@ mod tests {
         add_compat(&dir).unwrap();
         assert_eq!(manifest(), serde_json::json!({"name": "d"}));
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn original_relu_dans_l_enveloppe() {
+        // Toutes les versions de l'enveloppe, et un chemin à échapper.
+        assert_eq!(wrapped_original("importScripts('/feather-compat.js', \"/background.js\");\n").as_deref(), Some("/background.js"));
+        assert_eq!(wrapped_original("import '/feather-compat.js';\nimport \"/js/bg.js\";\n").as_deref(), Some("/js/bg.js"));
+        let odd = "/arrière \"plan\"\\x.js";
+        assert_eq!(wrapped_original(&wrapper_js(odd, false).unwrap()).as_deref(), Some(odd));
+        assert_eq!(wrapped_original(&wrapper_js(odd, true).unwrap()).as_deref(), Some(odd));
+        assert_eq!(wrapped_original("importScripts('/feather-compat.js');\n"), None);
     }
 
     #[test]

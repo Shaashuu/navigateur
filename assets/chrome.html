@@ -2821,9 +2821,13 @@
       const meta = [e.version ? 'version ' + e.version : '', SOURCES[e.source] || '', e.all_sites ? 'tous les sites' : ''];
       row.querySelector('.m').textContent = meta.filter(Boolean).join(' · ');
       row.querySelector('.d').textContent = e.description || '';
+      // Erreurs notées par le moteur (macOS) : la première, le reste au survol.
+      const errs = e.errors || [];
       const warn = e.problem ? 'Refusée par le moteur : ' + e.problem
+        : errs.length ? 'Erreur signalée par le moteur : ' + errs[0] + (errs.length > 1 ? ` (et ${errs.length - 1} autre${errs.length > 2 ? 's' : ''})` : '')
         : (e.firefox && x.platform === 'windows' ? 'Extension Firefox : certaines fonctions peuvent manquer sous Windows.' : '');
       row.querySelector('.warn').textContent = warn;
+      row.querySelector('.warn').title = errs.length > 1 ? errs.join('\n') : '';
       row.querySelector('.warn').classList.toggle('soft', !e.problem);
       const tg = row.querySelector('.tg');
       tg.checked = e.enabled;
