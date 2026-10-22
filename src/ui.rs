@@ -353,6 +353,8 @@ pub struct PageMessage {
     pub capturing: Option<bool>,
     /// Clic de molette sur un lien : adresse à ouvrir dans un nouvel onglet.
     pub open_tab: Option<String>,
+    /// Clic sur un lien qui quitte la page (`true`), ou lien resté sans suite (`false`).
+    pub leaving: Option<bool>,
     /// Icône et nom du site (voir `clean_site`).
     pub site: Option<SiteInfo>,
     /// Résultat d'une recherche dans la page.

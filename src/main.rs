@@ -957,6 +957,13 @@ impl App {
             }
             self.push_state();
         }
+        // Le chargement se voit dès le clic, sans attendre la réponse du site.
+        if let Some(leaving) = message.leaving
+            && let Some(tab) = self.tabs.get_mut(id)
+        {
+            tab.loading = leaving;
+            self.push_state();
+        }
         if let Some(url) = message.open_tab
             && network::is_web(&url)
         {
@@ -1072,6 +1079,7 @@ impl App {
                 && let Some(w) = tab.webview()
             {
                 let _ = w.load_url(&url);
+                self.show_loading(Some(id));
             }
         }
         if let Some(text) = message.open_bar {
@@ -1309,11 +1317,22 @@ impl App {
         });
     }
 
+    /// L'onglet affiché charge une adresse : l'indicateur part tout de suite. Le
+    /// moteur ne prévient qu'à l'arrivée de la réponse (0,6 à 0,9 s pour Netflix
+    /// au banc), et jusque-là le clic sur un favori semblait sans effet.
+    fn show_loading(&mut self, id: Option<TabId>) {
+        if let Some(tab) = id.and_then(|id| self.tabs.get_mut(id)) {
+            tab.loading = true;
+        }
+        self.push_state();
+    }
+
     fn load_in_active(&mut self, url: &str) {
         match self.tabs.active().and_then(|t| t.webview()) {
             Some(w) => {
                 let _ = w.load_url(url);
                 self.focus_page();
+                self.show_loading(self.tabs.active_id());
             }
             None => self.open_tab(url, false),
         }

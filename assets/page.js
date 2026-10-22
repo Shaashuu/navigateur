@@ -93,6 +93,26 @@
     post({ open_tab: url });
   }, true);
 
+  // Clic sur un lien qui quitte la page : Feather montre tout de suite que la
+  // page charge. Le moteur ne le dit qu'à l'arrivée de la réponse : sur Netflix,
+  // 0,6 à 0,9 s sans aucun signe (mesuré par le banc), le clic semblait perdu.
+  // Seulement la page elle-même, et seulement si le site n'a pas gardé le clic.
+  if (window.top === window) {
+    let waiting = 0;
+    window.addEventListener('click', (e) => {
+      if (!e.isTrusted || e.button !== 0 || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+      if (!a || a.hasAttribute('download') || (a.target && a.target !== '_self' && a.target !== '_top')) return;
+      if (!/^https?:/i.test(a.href) || a.href.split('#')[0] === location.href.split('#')[0]) return;
+      post({ leaving: true });
+      clearTimeout(waiting);
+      // Lien resté sans suite (téléchargement, réponse vide) : l'indicateur s'arrête.
+      waiting = setTimeout(() => post({ leaving: false }), 10000);
+    });
+    // Page mise de côté (retour arrière) : son minuteur ne doit pas repartir au retour.
+    window.addEventListener('pagehide', () => clearTimeout(waiting));
+  }
+
   // Menu d'un lien (clic droit) : ouvrir dans un nouvel onglet, en arrière-plan,
   // dans un onglet privé, ou copier l'adresse. Sur une image : l'enregistrer
   // (dans Photos sous macOS). Maj+clic droit garde le menu du système.
