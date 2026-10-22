@@ -28,7 +28,7 @@ const DOWNLOAD_PREFIX: &str = "https://github.com/Shaashuu/feather-releases/rele
 /// prouve seulement que le fichier n'est pas abîmé ; la signature prouve qu'il
 /// vient bien de nous, même si le compte GitHub ou un jeton était volé.
 #[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
-const PUBLIC_KEY: &str = "";
+const PUBLIC_KEY: &str = "WOIfoSPOb+EFKvrVFylv+Hfa8i+31x62yhvXatPi7Gc=";
 
 /// Une version plus récente, prête à être téléchargée.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -539,6 +539,14 @@ mod tests {
     const TEST_KEY: &str = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
     const TEST_SHA: &str = "91e3faafd322bcdf160f3f0ce886acb092b9b9e2a1e8526b40f21a8898a8700b";
     const TEST_SIG: &str = "gQd3p7OCtIL+Pq1xvD4aAilTPHQ1YlyZ5yncuv/7rXrv7RB4fNikDi1KS4HidpI3MW0xKIh7tVIgNAtbNiXLCw==\n";
+
+    #[test]
+    fn cle_publique_valide() {
+        // La clé de Feather doit être un point Ed25519 valide, sinon aucune mise
+        // à jour ne pourrait être vérifiée.
+        let key = crate::extensions::base64_decode(PUBLIC_KEY).expect("base64");
+        assert!(ed25519_compact::PublicKey::from_slice(&key).is_ok());
+    }
 
     #[test]
     fn signature() {
