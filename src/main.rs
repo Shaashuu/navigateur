@@ -10,6 +10,7 @@
 //! les commandes natives, la mise en veille et le suivi des téléchargements.
 
 mod adblock;
+mod banc;
 mod capture;
 mod commands;
 mod downloads;
@@ -218,6 +219,8 @@ struct App {
 }
 
 fn main() -> wry::Result<()> {
+    // Zéro du temps de démarrage mesuré par le banc (voir banc.rs).
+    banc::init();
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
@@ -478,6 +481,9 @@ impl App {
                 // réveillait sur une page blanche.
                 let tab = self.tabs.get_mut(id).filter(|t| !t.is_asleep() && url != "about:blank");
                 if let Some(tab) = tab {
+                    if !loading {
+                        banc::page_chargee();
+                    }
                     // Nouvelle page : l'article demandé à la précédente n'est plus attendu.
                     if loading {
                         tab.reader_asked = false;
@@ -590,7 +596,10 @@ impl App {
                 self.persist_pending.set(false);
                 self.persist();
             }
-            UserEvent::Tick => self.tick(),
+            UserEvent::Tick => {
+                self.tick();
+                self.banc_tick();
+            }
             UserEvent::Media(id, state) => {
                 if let Some(tab) = self.tabs.get_mut(id)
                     && tab.engine != state
@@ -608,6 +617,7 @@ impl App {
             }
             UserEvent::ExtensionPrepared(result) => {
                 self.extension_prepared(result);
+                self.banc_extension_preparee();
                 self.push_state();
             }
             UserEvent::ExtensionUpdated(result) => {
@@ -616,6 +626,7 @@ impl App {
             }
             UserEvent::ExtensionUpdatesChecked => self.extensions.checking = false,
             UserEvent::ExtensionLoaded { id, result } => {
+                banc::extension_chargee(&id, &result);
                 self.extension_loaded(&id, result);
                 self.push_state();
             }
@@ -633,6 +644,7 @@ impl App {
         match message {
             // L'interface est prête : elle montre les fichiers abîmés mis de côté au lancement.
             ChromeMessage::Ready => {
+                banc::interface_prete();
                 let warnings = storage::take_warnings();
                 if !warnings.is_empty() {
                     let text = serde_json::to_string(&warnings.join(" ")).unwrap_or_default();

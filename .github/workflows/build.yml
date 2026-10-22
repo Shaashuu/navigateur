@@ -23,13 +23,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --release
       - run: cargo build --release
-      # Mémoire de Feather sur quelques sites, affichée dans le résumé de
-      # l'exécution. N'empêche jamais la publication si la mesure échoue.
-      - name: Mesurer la mémoire
+      # Banc de Feather : mémoire sur quelques sites, temps de démarrage, et
+      # Proton Pass et uBlock Origin Lite (chargement, page sans erreur),
+      # affichés dans le résumé de l'exécution. Un écart avec
+      # outils/banc-reference.txt donne une alerte ; jamais d'échec de la
+      # compilation ni de la publication.
+      - name: Banc (mémoire, démarrage, extensions)
         continue-on-error: true
-        timeout-minutes: 5
+        timeout-minutes: 10
         shell: pwsh
-        run: ./outils/banc-memoire.ps1 -Programme target/release/feather.exe
+        run: ./outils/banc-memoire.ps1 -Programme target/release/feather.exe -Extensions
       # La version vient de Cargo.toml : elle n'est plus recopiée à la main ici.
       - name: Nommer le fichier avec la version
         shell: bash
@@ -56,10 +59,11 @@ jobs:
         run: |
           cargo build --release --target aarch64-apple-darwin
           cargo build --release --target x86_64-apple-darwin
-      - name: Mesurer la mémoire
+      # Même banc que sous Windows (voir plus haut).
+      - name: Banc (mémoire, démarrage, extensions)
         continue-on-error: true
-        timeout-minutes: 5
-        run: bash outils/banc-memoire.sh target/x86_64-apple-darwin/release/feather
+        timeout-minutes: 10
+        run: bash outils/banc-memoire.sh --extensions target/x86_64-apple-darwin/release/feather
       - name: Créer l'application et le .dmg
         run: |
           mkdir -p dmg/Feather.app/Contents/MacOS

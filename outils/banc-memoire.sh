@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Banc de mesure de la mémoire de Feather (macOS).
+# Banc de mesure de Feather (macOS) : mémoire, temps de démarrage, extensions.
 #
 # Lance Feather deux fois : accueil seul, puis avec cinq sites ouverts, et
 # relève l'empreinte mémoire de Feather et de chaque sorte de processus WebKit
@@ -9,11 +9,31 @@
 # fois par processus. À lancer sans autre application WebKit ouverte (Safari,
 # Mail…), qui partagerait ces processus et fausserait le total.
 #
-# Utilisation : outils/banc-memoire.sh chemin/vers/feather [secondes d'attente]
+# Le temps de démarrage est écrit par Feather lui-même (mode banc, voir
+# src/banc.rs). Chaque chiffre est comparé à outils/banc-reference.txt : un
+# écart au-delà de la marge donne une alerte dans la compilation, jamais un échec.
+#
+# Avec --extensions, un troisième lancement installe Proton Pass et uBlock
+# Origin Lite, puis vérifie que leur page s'affiche sans message d'erreur.
+# Réservé aux machines de compilation : elles restent installées ensuite.
+#
+# Utilisation : outils/banc-memoire.sh [--extensions] chemin/vers/feather [secondes d'attente]
 set -euo pipefail
 
+extensions=0
+if [ "${1:-}" = "--extensions" ]; then extensions=1; shift; fi
 programme=${1:?"chemin du programme Feather"}
 attente=${2:-30}
+dossier=$(cd "$(dirname "$0")" && pwd)
+temp=$(mktemp -d)
+# Alertes à afficher dans la compilation, après le tableau.
+alertes="$temp/alertes"
+: > "$alertes"
+# Extensions testées : identifiant du Chrome Web Store et nom.
+extensions_testees=(
+  "ghmbeldphafepmbegfdlkpapadhbakde Proton Pass"
+  "ddkjiahejlhfcafbddmgiahcphecmpfh uBlock Origin Lite"
+)
 sites=(
   "https://fr.wikipedia.org/wiki/Rust_(langage)"
   "https://www.lemonde.fr/"
@@ -68,24 +88,120 @@ mesurer() {
     }'
 }
 
+# Valeur d'une ligne « clé valeur » du fichier écrit par Feather (vide sinon).
+lu() {
+  awk -v cle="$2" '$1 == cle { print $2; exit }' "$1" 2>/dev/null || true
+}
+
+# Compare un chiffre à la référence ; une alerte si l'écart dépasse la marge.
+comparer() {
+  local cle=$1 valeur=$2 unite=$3 libelle=$4
+  local ref marge
+  ref=$(awk -v cle="$cle" '$1 == cle { print $2; exit }' "$dossier/banc-reference.txt")
+  marge=$(awk -v cle="$cle" '$1 == cle { print $3; exit }' "$dossier/banc-reference.txt")
+  case "$valeur" in ''|*[!0-9]*) return ;; esac
+  case "$ref" in ''|*[!0-9]*) return ;; esac
+  awk -v v="$valeur" -v r="$ref" -v m="${marge:-25}" -v u="$unite" -v l="$libelle" 'BEGIN {
+    if (r > 0 && (ecart = (v - r) * 100 / r) > m) printf "%s : %d %s, référence %d %s (+%d %%, marge %d %%)\n", l, v, u, r, u, ecart, m
+  }' >> "$alertes"
+}
+
+fermer() {
+  kill "$1" 2>/dev/null || true
+  wait "$1" 2>/dev/null || true
+  sleep 3
+}
+
 scenario() {
-  local nom=$1; shift
-  "$programme" "$@" >/dev/null 2>&1 &
+  local nom=$1 cle=$2; shift 2
+  local banc="$temp/$cle.txt"
+  # Mode banc (src/banc.rs) : Feather écrit son temps de démarrage dans $banc.
+  FEATHER_BANC=$banc "$programme" "$@" >/dev/null 2>&1 &
   local pid=$!
   sleep "$attente"
   local resultat
   resultat=$(mesurer "$pid" || echo "? | ? | ?")
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-  sleep 3
+  fermer "$pid"
   echo "| $nom | $resultat |"
+  comparer "macos-$cle" "${resultat%% Mo*}" Mo "macOS, $nom"
+}
+
+# Troisième lancement : les extensions s'installent, se chargent, et leur page
+# est lue par Feather (lignes « extension … » et « fenetre … » du fichier).
+scenario_extensions() {
+  local banc="$temp/extensions.txt"
+  local ids="" e
+  for e in "${extensions_testees[@]}"; do ids="$ids${ids:+,}${e%% *}"; done
+  FEATHER_BANC_EXTENSIONS=$ids FEATHER_BANC=$banc "$programme" >/dev/null 2>&1 &
+  local pid=$!
+  # Jusqu'à 3 minutes : téléchargement, chargement, 30 s avant la lecture de la page.
+  local debut=$SECONDS fini
+  while [ $((SECONDS - debut)) -lt 180 ]; do
+    sleep 5
+    grep -q '^extensions indisponibles' "$banc" 2>/dev/null && break
+    fini=1
+    for e in "${extensions_testees[@]}"; do
+      grep -Eq "^(fenetre ${e%% *} |extension ${e%% *} erreur)" "$banc" 2>/dev/null || fini=0
+    done
+    [ "$fini" = 1 ] && break
+  done
+  local memoire
+  memoire=$(mesurer "$pid" || echo "? | ? | ?")
+  fermer "$pid"
+  echo
+  echo "| Extension | Installée | Chargée | Page | Texte de la page |"
+  echo "| --- | :---: | :---: | :---: | --- |"
+  local indispo
+  indispo=$(sed -n 's/^extensions indisponibles //p' "$banc" 2>/dev/null | head -1)
+  for e in "${extensions_testees[@]}"; do
+    local id=${e%% *} nom=${e#* }
+    if [ -n "$indispo" ]; then
+      echo "| $nom | — | — | — | non testée : $indispo |"
+      continue
+    fi
+    local installee=non chargee=non page="?" texte="" erreur
+    grep -q "^extension $id preparee" "$banc" 2>/dev/null && installee=oui
+    grep -q "^extension $id chargee" "$banc" 2>/dev/null && chargee=oui
+    erreur=$(sed -n "s/^extension $id erreur //p" "$banc" 2>/dev/null | head -1)
+    local ligne
+    ligne=$(grep "^fenetre $id " "$banc" 2>/dev/null | head -1 || true)
+    if [ -n "$ligne" ]; then
+      page=$(echo "$ligne" | awk '{ print $3 }')
+      texte=$(echo "$ligne" | cut -d' ' -f4- | tr '|' '/' | cut -c1-100)
+    fi
+    [ -n "$erreur" ] && texte="erreur : $(echo "$erreur" | tr '|' '/')"
+    echo "| $nom | $installee | $chargee | $page | $texte |"
+    if [ "$chargee" != oui ] || [ "$page" != ok ]; then
+      echo "Extension $nom (macOS) : installée $installee, chargée $chargee, page $page. ${texte}" >> "$alertes"
+    fi
+  done
+  echo
+  echo "Mémoire avec les deux extensions (accueil) : ${memoire%% |*}."
 }
 
 {
-  echo "### Mémoire de Feather (macOS, empreinte après ${attente} s)"
+  echo "### Banc de Feather (macOS, empreinte après ${attente} s)"
   echo
   echo "| Scénario | Total | Détail | Processus |"
   echo "| --- | ---: | --- | ---: |"
-  scenario "Accueil seul"
-  scenario "${#sites[@]} sites" "${sites[@]}"
+  scenario "Accueil seul" accueil
+  scenario "${#sites[@]} sites" sites "${sites[@]}"
+  interface=$(lu "$temp/accueil.txt" interface)
+  demarrage=$(lu "$temp/accueil.txt" demarrage)
+  echo
+  echo "Démarrage : barre prête en ${interface:-?} ms, accueil chargé en ${demarrage:-?} ms."
+  comparer macos-demarrage "$demarrage" ms "macOS, démarrage"
+  if [ "$extensions" = 1 ]; then scenario_extensions; fi
+  if [ -s "$alertes" ]; then
+    echo
+    echo "**Alertes**"
+    echo
+    sed 's/^/- /' "$alertes"
+  fi
 } | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+# Annotations de la compilation : visibles sans ouvrir le résumé, jamais bloquantes.
+while IFS= read -r ligne; do
+  echo "::warning title=Banc de Feather::$ligne"
+done < "$alertes"
+rm -rf "$temp"

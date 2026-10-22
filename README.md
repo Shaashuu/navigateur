@@ -332,7 +332,8 @@ Pour lancer les tests : `cargo test`.
 | `src/import.rs` | Import des favoris (Chrome, Edge, Brave, fichier HTML). |
 | `src/capture.rs` | Capture de la page visible (WebView2, WebKit). |
 | `src/extensions.rs` | Extensions : téléchargement, décompression, manifeste, moteur (WebView2, WebKit), petite fenêtre. |
-| `outils/banc-memoire.*` | Banc de mesure de la mémoire (macOS et Windows). |
+| `outils/banc-memoire.*` | Banc de mesure (macOS et Windows) : mémoire, démarrage, extensions ; références dans `outils/banc-reference.txt`. |
+| `src/banc.rs` | Mode banc de Feather (`FEATHER_BANC`) : temps de démarrage, installation et vérification des extensions. |
 | `src/layers.rs` | Panneaux par-dessus la page : l'interface passe devant, découpée à leur forme. |
 | `assets/page.js` | Script injecté dans chaque page : raccourcis, son, recherche, menu des liens, autorisations. |
 | `assets/chrome.html` | L'interface (pastilles, barre, commandes, paramètres) en HTML/CSS. |
@@ -414,10 +415,22 @@ ouverts) et additionne la mémoire de Feather et des processus du moteur :
   ouverts, qui partagent les processus WebKit) ;
 - Windows : `outils\banc-memoire.ps1 -Programme target\release\feather.exe`.
 
-Le workflow GitHub le lance après chaque compilation et affiche le tableau dans
-le résumé de l'exécution, pour repérer une version qui consomme plus que la
-précédente. Les chiffres varient d'une exécution à l'autre selon le contenu des
-sites : comparez des ordres de grandeur, pas des mégaoctets près.
+Il relève aussi le temps de démarrage, écrit par Feather lui-même (variable
+`FEATHER_BANC`, voir `src/banc.rs`) : barre prête, puis accueil chargé.
+
+Le workflow GitHub le lance après chaque compilation avec `--extensions`
+(`-Extensions` sous Windows) : un troisième lancement installe Proton Pass et
+uBlock Origin Lite depuis le Chrome Web Store, puis ouvre la page de leur
+bouton et vérifie qu'elle s'affiche sans message d'erreur (« difficulties
+activating »…). Cette option est réservée aux machines de compilation : les
+extensions restent installées ensuite.
+
+Le tableau s'affiche dans le résumé de l'exécution. Chaque chiffre est comparé
+à `outils/banc-reference.txt` : au-delà de la marge (25 % pour la mémoire,
+50 % pour le démarrage), ou si une extension échoue, la compilation montre une
+alerte, sans jamais s'arrêter. Les chiffres varient d'une exécution à l'autre
+selon le contenu des sites : comparez des ordres de grandeur, pas des
+mégaoctets près, et mettez la référence à jour quand une baisse est confirmée.
 
 ## Télécharger sans installer Rust
 
