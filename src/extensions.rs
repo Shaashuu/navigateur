@@ -761,57 +761,113 @@ fn add_key(dir: &Path, key: &[u8]) -> Result<(), String> {
 /// Compléments chargés avant l'arrière-plan des extensions (voir le fichier).
 const COMPAT_JS: &str = include_str!("../assets/extension-compat.js");
 const COMPAT_FILE: &str = "feather-compat.js";
+/// Verrou de `browser` et `chrome` (voir le fichier) : en tête des
+/// compléments, et seul devant les scripts de contenu.
+const LOCK_JS: &str = include_str!("../assets/extension-lock.js");
+const LOCK_FILE: &str = "feather-lock.js";
 /// Arrière-plan de remplacement : les compléments, puis celui de l'extension.
 const WRAPPER_FILE: &str = "feather-background.js";
+
+/// Contenu de `feather-compat.js` : le verrou, puis les compléments.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn compat_js() -> String {
+    format!("{LOCK_JS}\n{COMPAT_JS}")
+}
 
 /// Sur Mac, fait passer l'arrière-plan de l'extension après les compléments de
 /// Feather. Le manifeste désigne alors `feather-background.js`, qui charge
 /// `feather-compat.js` puis le fichier d'origine. Ce fichier est réécrit à
 /// chaque chargement (une nouvelle version de Feather y met la sienne) ; le
-/// manifeste, lui, n'est modifié qu'une fois.
+/// manifeste, lui, n'est modifié que s'il lui manque quelque chose.
+///
+/// Chaque page de l'extension charge aussi les compléments en premier, et ses
+/// scripts de contenu le verrou (`feather-lock.js`) : Proton Pass remplace
+/// `browser` et `chrome` partout où il tourne.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn add_compat(dir: &Path) -> Result<(), String> {
     let path = dir.join("manifest.json");
     let Some(Value::Object(mut manifest)) = read_json(&path) else {
         return Err("manifest.json illisible".into());
     };
-    fs::write(dir.join(COMPAT_FILE), COMPAT_JS).map_err(|e| e.to_string())?;
-    // La fenêtre (popup) et la page d'options reçoivent aussi les compléments.
-    if let Ok(info) = read_manifest(dir) {
-        for page in [info.popup, info.options].into_iter().flatten() {
-            if let Some(file) = page.split(['?', '#']).next() {
-                compat_page(&dir.join(file))?;
+    fs::write(dir.join(COMPAT_FILE), compat_js()).map_err(|e| e.to_string())?;
+    fs::write(dir.join(LOCK_FILE), LOCK_JS).map_err(|e| e.to_string())?;
+    // Toutes les pages : fenêtre (popup), options, et les autres (Proton Pass
+    // en a sept, dont le menu affiché dans les champs des sites). Une page qui
+    // ne peut pas être modifiée reste telle quelle, le reste continue.
+    for page in html_pages(dir) {
+        if let Err(err) = compat_page(&page) {
+            eprintln!("compléments non ajoutés à {} : {err}", page.display());
+        }
+    }
+    let mut changed = false;
+    if let Some(Value::Object(background)) = manifest.get_mut("background") {
+        if let Some(worker) = background.get("service_worker").and_then(Value::as_str) {
+            let worker = worker.trim_start_matches(['.', '/']);
+            // Déjà enveloppé à un lancement précédent : l'original est relu dans l'enveloppe.
+            let wrapped = worker == WRAPPER_FILE;
+            let original = if wrapped {
+                let text = fs::read_to_string(dir.join(WRAPPER_FILE)).map_err(|e| e.to_string())?;
+                wrapped_original(&text).ok_or("arrière-plan d'origine introuvable dans feather-background.js")?
+            } else {
+                format!("/{worker}")
+            };
+            let module = background.get("type").and_then(Value::as_str) == Some("module");
+            fs::write(dir.join(WRAPPER_FILE), wrapper_js(&original, module)?).map_err(|e| e.to_string())?;
+            if !wrapped {
+                background.insert("service_worker".into(), Value::String(WRAPPER_FILE.into()));
+                changed = true;
+            }
+        } else if let Some(Value::Array(scripts)) = background.get_mut("scripts") {
+            // Manifeste v2 (ou arrière-plan de Firefox) : les compléments en premier.
+            if scripts.first().and_then(Value::as_str) != Some(COMPAT_FILE) {
+                scripts.insert(0, Value::String(COMPAT_FILE.into()));
+                changed = true;
             }
         }
     }
-    let Some(Value::Object(background)) = manifest.get_mut("background") else { return Ok(()) };
-    if let Some(worker) = background.get("service_worker").and_then(Value::as_str) {
-        let worker = worker.trim_start_matches(['.', '/']);
-        // Déjà enveloppé à un lancement précédent : l'original est relu dans l'enveloppe.
-        let wrapped = worker == WRAPPER_FILE;
-        let original = if wrapped {
-            let text = fs::read_to_string(dir.join(WRAPPER_FILE)).map_err(|e| e.to_string())?;
-            wrapped_original(&text).ok_or("arrière-plan d'origine introuvable dans feather-background.js")?
-        } else {
-            format!("/{worker}")
-        };
-        let module = background.get("type").and_then(Value::as_str) == Some("module");
-        fs::write(dir.join(WRAPPER_FILE), wrapper_js(&original, module)?).map_err(|e| e.to_string())?;
-        if wrapped {
-            return Ok(());
+    // Scripts de contenu : le verrou en premier, dans le monde isolé de
+    // l'extension (ceux qu'elle y injecte ensuite par `scripting` en profitent).
+    // Ceux du monde de la page (`MAIN`) n'ont ni `browser` ni `chrome`.
+    if let Some(Value::Array(entries)) = manifest.get_mut("content_scripts") {
+        for entry in entries.iter_mut().filter_map(Value::as_object_mut) {
+            if entry.get("world").and_then(Value::as_str).is_some_and(|w| w.eq_ignore_ascii_case("main")) {
+                continue;
+            }
+            let Some(Value::Array(js)) = entry.get_mut("js") else { continue };
+            if js.is_empty() || js.first().and_then(Value::as_str) == Some(LOCK_FILE) {
+                continue;
+            }
+            js.insert(0, Value::String(LOCK_FILE.into()));
+            changed = true;
         }
-        background.insert("service_worker".into(), Value::String(WRAPPER_FILE.into()));
-    } else if let Some(Value::Array(scripts)) = background.get_mut("scripts") {
-        // Manifeste v2 (ou arrière-plan de Firefox) : les compléments en premier.
-        if scripts.first().and_then(Value::as_str) == Some(COMPAT_FILE) {
-            return Ok(());
-        }
-        scripts.insert(0, Value::String(COMPAT_FILE.into()));
-    } else {
+    }
+    if !changed {
         return Ok(());
     }
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     fs::write(path, text).map_err(|e| e.to_string())
+}
+
+/// Les pages HTML de l'extension, sous-dossiers compris (sans suivre les liens).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn html_pages(dir: &Path) -> Vec<PathBuf> {
+    let mut pages = Vec::new();
+    let mut stack = vec![(dir.to_path_buf(), 0)];
+    while let Some((d, depth)) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&d) else { continue };
+        for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else { continue };
+            let path = entry.path();
+            if kind.is_dir() && depth < 8 {
+                stack.push((path, depth + 1));
+            } else if kind.is_file()
+                && path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("htm"))
+            {
+                pages.push(path);
+            }
+        }
+    }
+    pages
 }
 
 /// Contenu de `feather-background.js` : les compléments, puis l'arrière-plan
@@ -831,7 +887,7 @@ fn wrapper_js(original: &str, module: bool) -> Result<String, String> {
     // WebKit garde avec l'arrière-plan les fichiers qu'il charge : l'empreinte
     // des compléments change ce fichier-ci quand ils changent, et l'arrière-plan
     // est alors réinstallé avec les nouveaux.
-    let version = short_hash(COMPAT_JS);
+    let version = short_hash(&compat_js());
     Ok(if module {
         format!("// Compléments de Feather {version}\nimport '/{COMPAT_FILE}';\nimport {original};\n")
     } else {
@@ -860,8 +916,9 @@ fn wrapped_original(wrapper: &str) -> Option<String> {
 /// Balise qui charge les compléments en tête d'une page de l'extension.
 const COMPAT_TAG: &str = "<script src=\"/feather-compat.js\"></script>";
 
-/// Ajoute les compléments en premier script d'une page (juste après `<head>`,
-/// sinon au tout début). Sans effet la deuxième fois.
+/// Ajoute les compléments en premier script d'une page : juste après `<head>`,
+/// sinon après `<html>` ou `<!doctype>` (avant, la page passerait en mode de
+/// compatibilité), sinon au tout début. Sans effet la deuxième fois.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn compat_page(path: &Path) -> Result<(), String> {
     let html = fs::read_to_string(path).map_err(|e| e.to_string())?;
@@ -869,14 +926,18 @@ fn compat_page(path: &Path) -> Result<(), String> {
         return Ok(());
     }
     let lower = html.to_ascii_lowercase();
-    // `<head>` ou `<head …>`, pas `<header>`.
-    let at = lower
-        .match_indices("<head")
-        .find(|(i, _)| matches!(lower.as_bytes().get(i + 5), Some(b'>' | b' ' | b'\t' | b'\n' | b'\r')))
-        .and_then(|(i, _)| lower[i..].find('>').map(|end| i + end + 1))
-        .unwrap_or(0);
+    let at = ["<head", "<html", "<!doctype"].iter().find_map(|tag| after_tag(&lower, tag)).unwrap_or(0);
     let text = format!("{}{COMPAT_TAG}{}", &html[..at], &html[at..]);
     fs::write(path, text).map_err(|e| e.to_string())
+}
+
+/// Fin de la première balise `<nom>` ou `<nom …>` (pas `<header>` pour `<head`).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn after_tag(lower: &str, tag: &str) -> Option<usize> {
+    lower
+        .match_indices(tag)
+        .find(|(i, _)| matches!(lower.as_bytes().get(i + tag.len()), Some(b'>' | b' ' | b'\t' | b'\n' | b'\r')))
+        .and_then(|(i, _)| lower[i..].find('>').map(|end| i + end + 1))
 }
 
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -1116,6 +1177,16 @@ const BLOCKER_WARMUP: std::time::Duration = std::time::Duration::from_secs(45);
 
 /// Erreurs du moteur gardées par extension (voir `extension_errors`).
 const MAX_ERRORS: usize = 20;
+
+/// Une erreur du moteur pour le panneau : en français quand elle est connue.
+fn explain_error(error: &str) -> String {
+    // macOS 15 (Proton Pass) : l'arrière-plan d'une extension récente ne peut
+    // pas suivre les requêtes ; le reste de l'extension marche.
+    if error.contains("cannot listen to `webRequest`") {
+        return "WebKit ne laisse pas cette extension suivre les requêtes réseau (webRequest) : les fonctions qui en dépendent manquent sur ce Mac.".into();
+    }
+    error.to_string()
+}
 
 fn now_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default()
@@ -1645,6 +1716,11 @@ impl crate::App {
             Err(err) => self.extensions.set_problem(id, Some(err)),
         }
         self.sync_ad_blocker();
+        // Les erreurs notées par WebKit en lisant le manifeste, avant que le
+        // contexte existe, ne sont jamais annoncées : relues ici.
+        if cfg!(target_os = "macos") {
+            self.extension_errors();
+        }
     }
 
     /// Le moteur a noté de nouvelles erreurs (ou en a effacé) : le panneau
@@ -1657,7 +1733,7 @@ impl crate::App {
                 self.extensions.errors.remove(&id);
             } else {
                 // Quelques-unes suffisent au panneau, raccourcies.
-                let shown = errors.iter().take(MAX_ERRORS).map(|e| e.chars().take(300).collect()).collect();
+                let shown = errors.iter().take(MAX_ERRORS).map(|e| explain_error(e).chars().take(300).collect()).collect();
                 self.extensions.errors.insert(id, shown);
             }
         }
@@ -3146,11 +3222,14 @@ mod tests {
         add_compat(&dir).unwrap();
         assert_eq!(manifest()["background"]["service_worker"], WRAPPER_FILE);
         let classic = wrapper();
-        let version = format!("// Compléments de Feather {}\n", short_hash(COMPAT_JS));
+        let version = format!("// Compléments de Feather {}\n", short_hash(&compat_js()));
         assert!(classic.starts_with(&version));
         assert!(classic.contains("importScripts('/feather-compat.js');\ntry {\n  importScripts(\"/background.js\");\n} catch (e) {"));
         assert!(classic.contains("reportError(e)"));
-        assert_eq!(fs::read_to_string(dir.join(COMPAT_FILE)).unwrap(), COMPAT_JS);
+        // Le verrou de `browser` et `chrome` passe avant les compléments.
+        assert_eq!(fs::read_to_string(dir.join(COMPAT_FILE)).unwrap(), compat_js());
+        assert!(compat_js().starts_with(LOCK_JS) && compat_js().ends_with(COMPAT_JS));
+        assert_eq!(fs::read_to_string(dir.join(LOCK_FILE)).unwrap(), LOCK_JS);
         // Deuxième fois : rien ne change (l'original n'est pas perdu).
         add_compat(&dir).unwrap();
         assert_eq!(wrapper(), classic);
@@ -3192,6 +3271,59 @@ mod tests {
         add_compat(&dir).unwrap();
         assert_eq!(manifest(), serde_json::json!({"name": "d"}));
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn verrou_dans_les_pages_et_les_scripts_de_contenu() {
+        let dir = std::env::temp_dir().join(format!("feather-verrou-{}", stamp()));
+        fs::create_dir_all(dir.join("pages/menu")).unwrap();
+        // Installation d'une version précédente : arrière-plan déjà enveloppé,
+        // scripts de contenu sans le verrou.
+        let manifest = r#"{"name":"p","background":{"service_worker":"feather-background.js"},"content_scripts":[
+            {"matches":["https://*/*"],"js":["orchestrator.js"],"all_frames":true},
+            {"matches":["https://*/*"],"js":["webauthn.js"],"world":"MAIN"},
+            {"matches":["https://*/*"],"css":["a.css"]},
+            {"matches":["https://*/*"],"js":[]}]}"#;
+        fs::write(dir.join("manifest.json"), manifest).unwrap();
+        fs::write(dir.join(WRAPPER_FILE), wrapper_js("/background.js", false).unwrap()).unwrap();
+        let pages = [
+            ("dropdown.html", "<!doctype html><html><head><script src=\"d.js\"></script></head></html>"),
+            ("pages/menu/notification.HTM", "<!DOCTYPE html><p>x</p>"),
+            ("pages/onboarding.html", "<!doctype html>\n<html lang=\"fr\"><body></body></html>"),
+            ("pages/vide.html", "<p>x</p>"),
+        ];
+        for (file, html) in pages {
+            fs::write(dir.join(file), html).unwrap();
+        }
+        fs::write(dir.join("notes.txt"), "<head>").unwrap();
+        // Page illisible (pas en UTF-8) : laissée telle quelle, sans bloquer le reste.
+        fs::write(dir.join("pages/latin1.html"), [b'<', b'p', b'>', 0xe9, b'<']).unwrap();
+        add_compat(&dir).unwrap();
+        let after = read_json(&dir.join("manifest.json")).unwrap();
+        add_compat(&dir).unwrap();
+        assert_eq!(read_json(&dir.join("manifest.json")).unwrap(), after);
+        let scripts = &after["content_scripts"];
+        assert_eq!(scripts[0]["js"], serde_json::json!([LOCK_FILE, "orchestrator.js"]));
+        assert_eq!(scripts[0]["all_frames"], true);
+        assert_eq!(scripts[1]["js"], serde_json::json!(["webauthn.js"]));
+        assert!(scripts[2].get("js").is_none());
+        assert_eq!(scripts[3]["js"], serde_json::json!([]));
+        assert_eq!(after["background"]["service_worker"], WRAPPER_FILE);
+        let read = |file: &str| fs::read_to_string(dir.join(file)).unwrap();
+        assert_eq!(read("dropdown.html"), format!("<!doctype html><html><head>{COMPAT_TAG}<script src=\"d.js\"></script></head></html>"));
+        assert_eq!(read("pages/menu/notification.HTM"), format!("<!DOCTYPE html>{COMPAT_TAG}<p>x</p>"));
+        assert_eq!(read("pages/onboarding.html"), format!("<!doctype html>\n<html lang=\"fr\">{COMPAT_TAG}<body></body></html>"));
+        assert_eq!(read("pages/vide.html"), format!("{COMPAT_TAG}<p>x</p>"));
+        assert_eq!(read("notes.txt"), "<head>");
+        assert_eq!(fs::read(dir.join("pages/latin1.html")).unwrap(), [b'<', b'p', b'>', 0xe9, b'<']);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn erreurs_du_moteur_expliquees() {
+        let webrequest = "Non-persistent background content cannot listen to `webRequest` events.";
+        assert!(explain_error(webrequest).starts_with("WebKit ne laisse pas"));
+        assert_eq!(explain_error("Unable to parse manifest."), "Unable to parse manifest.");
     }
 
     #[test]

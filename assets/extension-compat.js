@@ -1,6 +1,7 @@
 // Compléments de Feather pour les extensions écrites pour Chrome, sur Mac.
-// Chargés avant leur arrière-plan, et en tête de leur fenêtre (popup) et de leur
-// page d'options. WebKit n'a pas certains évènements ou fonctions de Chrome, et
+// Chargés avant leur arrière-plan et en tête de chacune de leurs pages, après
+// le verrou de `browser` et `chrome` (extension-lock.js, ajouté devant ce
+// fichier). WebKit n'a pas certains évènements ou fonctions de Chrome, et
 // un arrière-plan qui y touche au démarrage s'arrête net : il ne répond plus à
 // rien, et Proton Pass affiche « Votre navigateur ne parvient pas à activer
 // Proton Pass » puis se relance en boucle.
