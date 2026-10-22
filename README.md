@@ -245,6 +245,18 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   est à 15 minutes par défaut. Un bouton d'accueil apparaît, l'utilisation de la
   mémoire s'affiche en direct, et la pastille à la loupe ouvre une recherche au
   milieu de la page (dans l'onglet actif ou un nouvel onglet, au choix).
+- **Nouveau en 0.5.9** : sous macOS, Proton Pass fonctionne. Sa fenêtre
+  affichait « difficulties activating » et se relançait en boucle, car
+  l'extension masquait les objets par lesquels le moteur du Mac lui parle.
+  La page de connexion de Proton reconnaît aussi l'extension, et le panneau
+  des extensions montre les erreurs signalées par le moteur. Un onglet mis
+  en veille retrouve sa position dans la page, et sous macOS son historique
+  (Précédent, Suivant) ; actualiser une page lourde garde aussi cet
+  historique. Sous macOS, un onglet caché s'allège avant la veille : ses
+  vidéos muettes s'arrêtent après 2 minutes, puis il est retiré de la
+  fenêtre après 10 minutes et revient dès qu'on y retourne (mêmes exceptions
+  que la veille). Avec des extensions installées, Feather s'ouvre plus vite
+  sous macOS : elles démarrent après la première page.
 - **Nouveau en 0.5.8** : les mises à jour sont signées, et Feather refuse
   celles dont la signature ne correspond pas. Les sites ne peuvent plus
   commander Feather à votre place (fermer l'onglet, ouvrir des onglets,
