@@ -14,7 +14,8 @@
 # écart au-delà de la marge donne une alerte dans la compilation, jamais un échec.
 #
 # Avec --extensions, un troisième lancement installe Proton Pass et uBlock
-# Origin Lite, puis vérifie que leur page s'affiche sans message d'erreur.
+# Origin Lite, puis vérifie que leur page s'affiche sans message d'erreur ; un
+# quatrième relance Feather avec ces extensions (mémoire et démarrage).
 # Réservé aux machines de compilation : elles restent installées ensuite.
 #
 # Utilisation : outils/banc-memoire.sh [--extensions] chemin/vers/feather [secondes d'attente]
@@ -145,8 +146,6 @@ scenario_extensions() {
     done
     [ "$fini" = 1 ] && break
   done
-  local memoire
-  memoire=$(mesurer "$pid" || echo "? | ? | ?")
   fermer "$pid"
   echo
   echo "| Extension | Installée | Chargée | Page | Texte de la page |"
@@ -175,8 +174,24 @@ scenario_extensions() {
       echo "Extension $nom (macOS) : installée $installee, chargée $chargee, page $page. ${texte}" >> "$alertes"
     fi
   done
+  # Relance avec les extensions déjà installées : c'est le démarrage de tous
+  # les jours pour qui en a (piste 8 : elles ne doivent pas le retarder).
+  if [ -n "$indispo" ]; then return; fi
+  local relance="$temp/relance.txt" memoire
+  FEATHER_BANC=$relance "$programme" >/dev/null 2>&1 &
+  pid=$!
+  sleep "$attente"
+  memoire=$(mesurer "$pid" || echo "? | ? | ?")
+  fermer "$pid"
   echo
-  echo "Mémoire avec les deux extensions (accueil) : ${memoire%% |*}."
+  echo "Relance avec les deux extensions installées : ${memoire%% |*} après ${attente} s ; $(etapes "$relance")."
+  comparer macos-relance "${memoire%% Mo*}" Mo "macOS, relance avec extensions"
+  comparer macos-demarrage-extensions "$(lu "$relance" demarrage)" ms "macOS, démarrage avec extensions"
+}
+
+# Les étapes du démarrage écrites par Feather, en une phrase.
+etapes() {
+  echo "Rust prêt en $(lu "$1" rust || true) ms, barre prête en $(lu "$1" interface) ms, accueil chargé en $(lu "$1" demarrage) ms" | sed 's/en  ms/en ? ms/g'
 }
 
 {
@@ -186,11 +201,9 @@ scenario_extensions() {
   echo "| --- | ---: | --- | ---: |"
   scenario "Accueil seul" accueil
   scenario "${#sites[@]} sites" sites "${sites[@]}"
-  interface=$(lu "$temp/accueil.txt" interface)
-  demarrage=$(lu "$temp/accueil.txt" demarrage)
   echo
-  echo "Démarrage : barre prête en ${interface:-?} ms, accueil chargé en ${demarrage:-?} ms."
-  comparer macos-demarrage "$demarrage" ms "macOS, démarrage"
+  echo "Démarrage : $(etapes "$temp/accueil.txt")."
+  comparer macos-demarrage "$(lu "$temp/accueil.txt" demarrage)" ms "macOS, démarrage"
   if [ "$extensions" = 1 ]; then scenario_extensions; fi
   if [ -s "$alertes" ]; then
     echo

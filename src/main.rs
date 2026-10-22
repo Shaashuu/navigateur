@@ -324,7 +324,7 @@ fn main() -> wry::Result<()> {
         adblock: adblock::Status::default(),
         extensions: extensions::Extensions::load(),
     };
-    extensions::start(&app.chrome, app.extensions.list(), &app.proxy);
+    // Les extensions sont confiées au moteur après la première page (voir `start_extensions`).
     adblock::set_replaced(app.extensions.ad_blocker().is_some());
     adblock::set_enabled(app.settings().blocks_ads());
     adblock::set_sites_off(app.sites.read().map(|s| s.ads_off()).unwrap_or_default());
@@ -377,6 +377,9 @@ fn main() -> wry::Result<()> {
     if check_update {
         app.start_check(false);
     }
+
+    // Fichiers lus, interface et premier onglet créés : le reste est l'affaire du moteur.
+    banc::etape("rust");
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -571,6 +574,10 @@ impl App {
                 }
                 self.apply_zoom(id);
                 self.apply_economy(id);
+                // Première page chargée : les extensions peuvent démarrer.
+                if !loading {
+                    self.start_extensions();
+                }
                 self.push_state();
             }
             UserEvent::LoadFailed { id, url, kind } => self.load_failed(id, url, kind),
@@ -598,6 +605,10 @@ impl App {
             }
             UserEvent::Tick => {
                 self.tick();
+                // Aucune page chargée après 5 s (hors ligne…) : les extensions démarrent quand même.
+                if self.ticks >= 5 {
+                    self.start_extensions();
+                }
                 self.banc_tick();
             }
             UserEvent::Media(id, state) => {
@@ -644,7 +655,7 @@ impl App {
         match message {
             // L'interface est prête : elle montre les fichiers abîmés mis de côté au lancement.
             ChromeMessage::Ready => {
-                banc::interface_prete();
+                banc::etape("interface");
                 let warnings = storage::take_warnings();
                 if !warnings.is_empty() {
                     let text = serde_json::to_string(&warnings.join(" ")).unwrap_or_default();

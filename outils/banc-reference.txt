@@ -5,10 +5,15 @@
 # en millisecondes (de l'ouverture du programme à l'accueil chargé, premier
 # lancement sur la machine de compilation, plus lente qu'un Mac ou un PC récent).
 # Démarrage relevé le 22/10 (compilation de la PR #52).
+# « relance » : accueil avec Proton Pass et uBlock Origin Lite installés.
 # clé                 valeur   marge (%)
 macos-accueil         87       25
 macos-sites           562      25
 macos-demarrage       10260    50
+macos-relance         -        25
+macos-demarrage-extensions  -  50
 windows-accueil       401      25
 windows-sites         1064     25
 windows-demarrage     13586    50
+windows-relance       -        25
+windows-demarrage-extensions  -  50
