@@ -1086,6 +1086,9 @@ impl App {
         if let Some(request) = message.cosmetic {
             self.hide_ads(id, request);
         }
+        if message.lighten {
+            self.lighten(id);
+        }
         // Seule la page d'accueil intégrée a le droit d'utiliser sa barre de recherche.
         let Some(tab) = self.tabs.get(id) else { return };
         if !network::is_home(tab.url()) {

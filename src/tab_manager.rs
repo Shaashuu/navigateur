@@ -92,6 +92,8 @@ pub struct Tab {
     /// Mode lecture demandé (clic sur le bouton livre) : l'article attendu peut
     /// arriver, une seule fois (voir `PageMessage::from_untrusted`).
     pub reader_asked: bool,
+    /// La bulle « Alléger » est affichée dans la page (voir `App::offer_lighten`).
+    pub lighten_offered: bool,
     /// Clé secrète de l'onglet, connue du seul script de Feather dans la page :
     /// elle distingue ses messages de ceux du site (voir `ui::split_key`).
     key: String,
@@ -272,6 +274,7 @@ impl TabManager {
             identity_retry: false,
             ads: None,
             reader_asked: false,
+            lighten_offered: false,
             key: new_key(),
             host: Arc::default(),
             souvenir: None,
