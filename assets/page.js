@@ -219,6 +219,34 @@
   });
   expose('__featherSetEconomy', (on) => { economy = on === true; });
 
+  // Position dans la page, envoyée quand l'onglet est caché : si la veille
+  // détruit la page, Feather la rend au réveil (__featherRestoreScroll). Sous
+  // macOS 12 ou plus, WebKit garde lui-même la position avec l'historique.
+  if (window.top === window) {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') post({ scroll: { x: window.scrollX, y: window.scrollY } });
+    });
+  }
+  // La page qui vient d'être recréée n'a pas toujours sa hauteur finale (images,
+  // contenu chargé ensuite) : on réessaie quelques secondes, sauf si
+  // l'utilisateur fait défiler lui-même entre-temps.
+  expose('__featherRestoreScroll', (x, y) => {
+    if (window.top !== window || !(x > 0 || y > 0)) return;
+    let tries = 0;
+    let stopped = false;
+    const stop = (e) => { if (e.isTrusted) stopped = true; };
+    for (const type of ['wheel', 'keydown', 'pointerdown', 'touchstart']) {
+      window.addEventListener(type, stop, { capture: true, once: true, passive: true });
+    }
+    const go = () => {
+      if (stopped) return;
+      window.scrollTo(x, y);
+      const there = Math.abs(window.scrollY - y) < 2 && Math.abs(window.scrollX - x) < 2;
+      if (!there && ++tries < 20) setTimeout(go, 150);
+    };
+    go();
+  });
+
   // Mode économie sur YouTube : la vidéo arrive en H.264 plutôt qu'en VP9 ou AV1.
   // Tous les Mac et PC décodent le H.264 avec la puce graphique ; le VP9 et l'AV1
   // sont souvent décodés par le processeur (Mac Intel, AV1 avant les puces M3).

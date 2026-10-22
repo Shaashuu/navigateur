@@ -365,9 +365,9 @@ impl App {
         changed
     }
 
-    /// Veille douce (Windows) : allège puis gèle les onglets cachés, sans
-    /// détruire leur page (voir `softsleep.rs`). Un onglet qui joue du son n'est
-    /// pas touché. Les onglets privés en profitent aussi : la vraie veille les
+    /// Veille douce (Windows, macOS 12 ou plus) : allège puis gèle les onglets
+    /// cachés, sans détruire leur page (voir `softsleep.rs`). Un onglet qui joue
+    /// du son n'est pas touché. Les onglets privés en profitent aussi : la vraie veille les
     /// épargne, puisqu'elle effacerait leur session.
     fn soft_sleep(&mut self) {
         let active = self.tabs.active_id();
@@ -376,9 +376,10 @@ impl App {
         let sites = sites.read().ok();
         for tab in self.tabs.iter_mut().filter(|t| Some(t.id) != active && !t.sounds()) {
             let mut vise = softsleep::palier(tab.last_active.elapsed());
-            // Une page qui travaille peut rendre de la mémoire, pas être gelée.
+            // Une page qui travaille peut au plus rendre de la mémoire (Windows),
+            // jamais être gelée.
             if keep_awake(tab, sites.as_deref(), downloading) {
-                vise = vise.min(softsleep::Repos::Allege);
+                vise = vise.min(softsleep::PLAFOND_OCCUPE);
             }
             let actuel = tab.repos;
             if let Some(w) = tab.webview() {
@@ -492,8 +493,10 @@ impl App {
     /// Une page lourde est recréée à neuf au lieu d'être rechargée : WebKit
     /// recharge dans le même processus, qui garde la mémoire de la page
     /// précédente (YouTube passait de 1 à 1,6 Go en quelques rechargements,
-    /// alors que la veille la rendait). En échange, l'onglet perd son historique
-    /// « Précédent ». Pas pour un onglet privé, qui perdrait sa session.
+    /// alors que la veille la rendait). Sous macOS 12 ou plus, la nouvelle page
+    /// reprend l'historique Précédent/Suivant et la position de l'ancienne (voir
+    /// `tab_manager::Souvenir`) ; ailleurs, l'historique est perdu. Pas pour un
+    /// onglet privé, qui perdrait sa session.
     pub(crate) fn reload(&mut self) {
         let Some(tab) = self.tabs.active() else { return };
         if let Some((_, url)) = &tab.failed {
