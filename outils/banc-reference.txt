@@ -2,11 +2,13 @@
 # marge, la compilation affiche une alerte, sans jamais s'arrêter. « - » : pas
 # encore de référence (le chiffre est affiché sans comparaison).
 # Mémoire en Mo (macOS : empreinte ; Windows : mémoire de travail), démarrage
-# en millisecondes (de l'ouverture du programme à l'accueil chargé).
+# en millisecondes (de l'ouverture du programme à l'accueil chargé, premier
+# lancement sur la machine de compilation, plus lente qu'un Mac ou un PC récent).
+# Démarrage relevé le 22/10 (compilation de la PR #52).
 # clé                 valeur   marge (%)
 macos-accueil         87       25
 macos-sites           562      25
-macos-demarrage       -        50
+macos-demarrage       10260    50
 windows-accueil       401      25
 windows-sites         1064     25
-windows-demarrage     -        50
+windows-demarrage     13586    50
