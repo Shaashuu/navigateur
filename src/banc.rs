@@ -10,12 +10,14 @@
 //!   message d'erreur (Proton Pass écrivait « difficulties activating » quand
 //!   son arrière-plan ne répondait pas). Lignes écrites :
 //!   `extension <id> preparee|chargee`, `extension <id> erreur <message>`,
-//!   `fenetre <id> ok|erreur|vide <début du texte>`, `extensions indisponibles <raison>`.
+//!   `fenetre <id> ok|erreur|vide <début du texte>`, `extensions indisponibles <raison>`,
+//!   et `moteur <id> <message>` pour chaque erreur notée par le moteur (macOS :
+//!   arrière-plan refusé, erreur de script…).
 //!
 //! Réservé aux machines de compilation : les extensions installées ainsi
 //! restent dans le profil, comme une installation normale.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
@@ -44,6 +46,8 @@ struct Etat {
     /// Pages d'extension à ouvrir (identifiant, moment), puis à lire (onglet).
     a_ouvrir: Vec<(String, Instant)>,
     a_lire: Vec<(String, TabId, Instant)>,
+    /// Erreurs du moteur déjà écrites (« id message »).
+    erreurs_vues: HashSet<String>,
 }
 
 static ETAT: OnceLock<Option<Mutex<Etat>>> = OnceLock::new();
@@ -68,6 +72,7 @@ pub fn init() {
             en_cours: None,
             a_ouvrir: Vec::new(),
             a_lire: Vec::new(),
+            erreurs_vues: HashSet::new(),
         }))
     });
 }
@@ -88,9 +93,14 @@ fn noter(ligne: &str) {
     avec(|e| ecrire(&e.fichier, ligne));
 }
 
+/// Texte sur une ligne, d'au plus `max` caractères.
+fn sur_une_ligne(texte: &str, max: usize) -> String {
+    texte.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(max).collect()
+}
+
 /// Texte sur une ligne, raccourci (pour le fichier du banc).
 fn resume(texte: &str) -> String {
-    texte.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(160).collect()
+    sur_une_ligne(texte, 160)
 }
 
 /// Une étape du démarrage (`rust`, `interface`) : le temps écoulé depuis `init`.
@@ -118,6 +128,19 @@ pub fn extension_chargee(id: &str, result: &Result<Option<String>, String>) {
             }
         }
         Err(err) => ecrire(&e.fichier, &format!("extension {id} erreur {}", resume(err))),
+    });
+}
+
+/// Erreurs notées par le moteur pour une extension : chacune écrite une fois.
+pub fn erreurs_moteur(id: &str, erreurs: &[String]) {
+    avec(|e| {
+        for erreur in erreurs {
+            // Plus long que les autres lignes : le fichier et la ligne fautive sont à la fin.
+            let ligne = format!("moteur {id} {}", sur_une_ligne(erreur, 400));
+            if e.erreurs_vues.insert(ligne.clone()) {
+                ecrire(&e.fichier, &ligne);
+            }
+        }
     });
 }
 

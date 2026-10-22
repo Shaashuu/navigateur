@@ -120,6 +120,8 @@ pub enum UserEvent {
     Media(TabId, media::MediaState),
     /// Le moteur a chargé une extension (avec son identifiant WebView2), ou l'a refusée.
     ExtensionLoaded { id: String, result: Result<Option<String>, String> },
+    /// Le moteur a noté de nouvelles erreurs d'extension (macOS).
+    ExtensionErrors,
     /// Message de la petite fenêtre d'une extension (Windows).
     ExtensionPopup(String),
     /// Lien ouvert depuis la fenêtre d'une extension (Windows), ou onglet
@@ -641,6 +643,7 @@ impl App {
                 self.extension_loaded(&id, result);
                 self.push_state();
             }
+            UserEvent::ExtensionErrors => self.extension_errors(),
             UserEvent::ExtensionPopup(raw) => self.extension_popup_message(&raw),
             UserEvent::ExtensionOpen(url) => self.extension_open(&url),
         }

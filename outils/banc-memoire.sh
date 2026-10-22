@@ -148,14 +148,14 @@ scenario_extensions() {
   done
   fermer "$pid"
   echo
-  echo "| Extension | Installée | Chargée | Page | Texte de la page |"
-  echo "| --- | :---: | :---: | :---: | --- |"
+  echo "| Extension | Installée | Chargée | Page | Texte de la page | Erreurs du moteur |"
+  echo "| --- | :---: | :---: | :---: | --- | --- |"
   local indispo
   indispo=$(sed -n 's/^extensions indisponibles //p' "$banc" 2>/dev/null | head -1)
   for e in "${extensions_testees[@]}"; do
     local id=${e%% *} nom=${e#* }
     if [ -n "$indispo" ]; then
-      echo "| $nom | — | — | — | non testée : $indispo |"
+      echo "| $nom | — | — | — | non testée : $indispo | — |"
       continue
     fi
     local installee=non chargee=non page="?" texte="" erreur
@@ -169,9 +169,15 @@ scenario_extensions() {
       texte=$(echo "$ligne" | cut -d' ' -f4- | tr '|' '/' | cut -c1-100)
     fi
     [ -n "$erreur" ] && texte="erreur : $(echo "$erreur" | tr '|' '/')"
-    echo "| $nom | $installee | $chargee | $page | $texte |"
+    # Erreurs notées par WebKit (lignes « moteur … ») : leur nombre et la première.
+    local moteur=aucune nombre
+    nombre=$(grep -c "^moteur $id " "$banc" 2>/dev/null || true)
+    if [ "${nombre:-0}" -gt 0 ]; then
+      moteur="$nombre : $(sed -n "s/^moteur $id //p" "$banc" | head -1 | tr '|' '/' | cut -c1-200)"
+    fi
+    echo "| $nom | $installee | $chargee | $page | $texte | $moteur |"
     if [ "$chargee" != oui ] || [ "$page" != ok ]; then
-      echo "Extension $nom (macOS) : installée $installee, chargée $chargee, page $page. ${texte}" >> "$alertes"
+      echo "Extension $nom (macOS) : installée $installee, chargée $chargee, page $page. ${texte} Erreurs du moteur : $moteur." >> "$alertes"
     fi
   done
   # Relance avec les extensions déjà installées : c'est le démarrage de tous
