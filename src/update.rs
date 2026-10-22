@@ -1,6 +1,6 @@
 //! Mise à jour intégrée : on regarde la dernière version publiée sur GitHub
 //! (dépôt public `feather-releases`), on télécharge le fichier de notre système,
-//! on vérifie son empreinte, puis on remplace le programme. Le remplacement ne
+//! on vérifie son empreinte et sa signature, puis on remplace le programme. Le remplacement ne
 //! prend effet qu'au redémarrage, quand l'utilisateur clique sur « Redémarrer ».
 //!
 //! Le réseau passe par `curl`, présent d'origine sous Windows 10/11 et macOS :
@@ -22,6 +22,14 @@ pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
 const REPO: &str = "Shaashuu/feather-releases";
 const DOWNLOAD_PREFIX: &str = "https://github.com/Shaashuu/feather-releases/releases/download/";
 
+/// Clé publique Ed25519 (base64) qui signe les fichiers publiés : la clé secrète
+/// n'existe que dans le secret GitHub `FEATHER_SIGNATURE` (voir
+/// `outils/cle-signature.py` et build.yml). L'empreinte annoncée par GitHub
+/// prouve seulement que le fichier n'est pas abîmé ; la signature prouve qu'il
+/// vient bien de nous, même si le compte GitHub ou un jeton était volé.
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+const PUBLIC_KEY: &str = "WOIfoSPOb+EFKvrVFylv+Hfa8i+31x62yhvXatPi7Gc=";
+
 /// Une version plus récente, prête à être téléchargée.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Available {
@@ -32,6 +40,8 @@ pub struct Available {
     pub size: u64,
     /// Empreinte SHA-256 annoncée par GitHub, en hexadécimal.
     pub sha256: Option<String>,
+    /// Adresse de la signature du fichier (`<fichier>.sig`), vide s'il n'y en a pas.
+    pub signature_url: String,
     /// Page de la release, pour la lire ou télécharger à la main.
     pub page: String,
 }
@@ -102,13 +112,23 @@ pub fn pick_release(release: &Value, current: &str, suffix: Option<&str>) -> Opt
             .get("assets")?
             .as_array()?
             .iter()
-            .find(|a| {
-                let name = a.get("name").and_then(Value::as_str).unwrap_or("");
-                name.ends_with(suffix) && name.starts_with("Feather-")
-            })
+            // Le nom porte la version : un fichier signé d'une ancienne version ne
+            // peut pas passer pour la nouvelle.
+            .find(|a| a.get("name").and_then(Value::as_str) == Some(&format!("Feather-{version}{suffix}")))
     });
     let text = |key| asset.and_then(|a| a.get(key)).and_then(Value::as_str);
     let url = text("browser_download_url")
+        .filter(|u| u.starts_with(DOWNLOAD_PREFIX))
+        .unwrap_or("")
+        .to_string();
+    // La signature est publiée à côté du fichier, sous le même nom suivi de « .sig ».
+    let signature_url = text("name")
+        .and_then(|name| {
+            release.get("assets")?.as_array()?.iter().find(|a| {
+                a.get("name").and_then(Value::as_str) == Some(&format!("{name}.sig"))
+            })
+        })
+        .and_then(|a| a.get("browser_download_url")?.as_str())
         .filter(|u| u.starts_with(DOWNLOAD_PREFIX))
         .unwrap_or("")
         .to_string();
@@ -125,6 +145,7 @@ pub fn pick_release(release: &Value, current: &str, suffix: Option<&str>) -> Opt
             .unwrap_or(0),
         url,
         sha256,
+        signature_url,
         page,
     })
 }
@@ -190,6 +211,9 @@ pub fn install(update: &Available) -> Result<Restart, String> {
     let Some(sha256) = update.sha256.as_deref() else {
         return Err("Cette version n'annonce pas d'empreinte : installez-la depuis la page de la version.".into());
     };
+    if update.signature_url.is_empty() {
+        return Err("Cette version n'est pas signée : installez-la depuis la page de la version.".into());
+    }
     let exe = std::env::current_exe().map_err(|e| format!("programme introuvable : {e}"))?;
     install_for_os(update, sha256, &exe)
 }
@@ -215,7 +239,7 @@ fn work_dir() -> PathBuf {
 fn install_for_os(update: &Available, sha256: &str, exe: &Path) -> Result<Restart, String> {
     let new = download_path().ok_or("dossier introuvable")?;
     let result = (|| {
-        download(&update.url, &new, sha256)?;
+        download(update, &new, sha256)?;
         swap_executable(exe, &new).map_err(|e| {
             format!("impossible de remplacer le programme ({e}). Téléchargez-le depuis la page de la version.")
         })
@@ -246,7 +270,7 @@ fn install_for_os(update: &Available, sha256: &str, exe: &Path) -> Result<Restar
     let mount = work.join("volume");
     let new_bundle = parent.join("Feather.app.new");
     let result = (|| {
-        download(&update.url, &dmg, sha256)?;
+        download(update, &dmg, sha256)?;
         fs::create_dir_all(&mount).map_err(|e| e.to_string())?;
         let mut attach = Command::new("hdiutil");
         attach
@@ -336,8 +360,30 @@ pub fn clean_leftovers() {
 
 // --- Téléchargement -------------------------------------------------------
 
+/// Le texte signé pour un fichier publié : son nom (qui porte la version), puis
+/// son empreinte SHA-256 en hexadécimal. build.yml signe exactement ce texte.
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+fn signed_message(name: &str, sha256: &str) -> String {
+    format!("{name}\n{sha256}")
+}
+
+/// Vérifie la signature (base64) du fichier `name` d'empreinte `sha256` avec la
+/// clé publique `key` (base64).
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+pub fn verify_signature(name: &str, sha256: &str, signature: &str, key: &str) -> Result<(), String> {
+    let bad = || "la signature du fichier ne correspond pas : mise à jour refusée".to_string();
+    let key = crate::extensions::base64_decode(key.trim())
+        .and_then(|k| ed25519_compact::PublicKey::from_slice(&k).ok())
+        .ok_or("clé de vérification absente : installez la version depuis sa page")?;
+    let signature = crate::extensions::base64_decode(signature.trim())
+        .and_then(|s| ed25519_compact::Signature::from_slice(&s).ok())
+        .ok_or_else(bad)?;
+    key.verify(signed_message(name, sha256), &signature).map_err(|_| bad())
+}
+
 #[cfg(any(windows, target_os = "macos"))]
-fn download(url: &str, dest: &Path, sha256: &str) -> Result<(), String> {
+fn download(update: &Available, dest: &Path, sha256: &str) -> Result<(), String> {
+    let url = &update.url;
     let mut cmd = Command::new("curl");
     cmd.args([
         "-sSL",
@@ -357,10 +403,16 @@ fn download(url: &str, dest: &Path, sha256: &str) -> Result<(), String> {
     if size < 100_000 {
         return Err("le fichier téléchargé est trop petit".into());
     }
-    if file_sha256(dest).map_err(|e| e.to_string())? != sha256 {
+    let actual = file_sha256(dest).map_err(|e| e.to_string())?;
+    if actual != sha256 {
         return Err("le fichier téléchargé est corrompu (empreinte différente)".into());
     }
-    Ok(())
+    // La signature, quelques dizaines d'octets, lue directement.
+    let mut sig = Command::new("curl");
+    sig.args(["-sSL", "--fail", "--max-time", "30", "--max-filesize", "4096", "--proto", "=https", "--proto-redir", "=https"])
+        .arg(&update.signature_url);
+    let signature = run(sig, "le téléchargement de la signature")?;
+    verify_signature(&update.name, &actual, &String::from_utf8_lossy(&signature.stdout), PUBLIC_KEY)
 }
 
 #[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
@@ -436,6 +488,8 @@ mod tests {
                 { "name": "Feather-0.1.5-macos.dmg", "size": 1000,
                   "browser_download_url": format!("{base}/Feather-0.1.5-macos.dmg"),
                   "digest": format!("sha256:{}", "ab".repeat(32)) },
+                { "name": "Feather-0.1.5-macos.dmg.sig", "size": 88,
+                  "browser_download_url": format!("{base}/Feather-0.1.5-macos.dmg.sig") },
                 { "name": "Feather-0.1.5-windows.exe", "size": 2000,
                   "browser_download_url": format!("{base}/Feather-0.1.5-windows.exe"),
                   "digest": null }
@@ -453,6 +507,8 @@ mod tests {
         let win = pick_release(&release(), "0.1.4", Some("-windows.exe")).unwrap();
         assert!(win.url.ends_with("Feather-0.1.5-windows.exe"));
         assert_eq!(win.sha256, None);
+        assert!(mac.signature_url.ends_with("Feather-0.1.5-macos.dmg.sig"));
+        assert_eq!(win.signature_url, "");
         // Pas de système pris en charge : on connaît la version mais pas de fichier.
         assert_eq!(pick_release(&release(), "0.1.4", None).unwrap().url, "");
         // À jour.
@@ -466,6 +522,46 @@ mod tests {
         let err = install(&win).unwrap_err();
         // Sur Linux, l'installation n'existe pas du tout ; ailleurs, c'est l'empreinte qui manque.
         assert!(err.contains("empreinte") || err.contains("n'existe pas"), "{err}");
+    }
+
+    #[test]
+    fn fichier_d_une_autre_version() {
+        // Un ancien fichier (signé) mis dans une release plus récente n'est pas pris.
+        let mut release = release();
+        release["assets"][0]["name"] = json!("Feather-0.1.2-macos.dmg");
+        let found = pick_release(&release, "0.1.4", Some("-macos.dmg")).unwrap();
+        assert_eq!(found.url, "");
+    }
+
+    // Signature produite par les commandes de build.yml (openssl), avec la graine
+    // 00 01 02 … 1f : vérifie que la signature de la publication et celle que
+    // Feather contrôle parlent bien du même texte.
+    const TEST_KEY: &str = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
+    const TEST_SHA: &str = "91e3faafd322bcdf160f3f0ce886acb092b9b9e2a1e8526b40f21a8898a8700b";
+    const TEST_SIG: &str = "gQd3p7OCtIL+Pq1xvD4aAilTPHQ1YlyZ5yncuv/7rXrv7RB4fNikDi1KS4HidpI3MW0xKIh7tVIgNAtbNiXLCw==\n";
+
+    #[test]
+    fn cle_publique_valide() {
+        // La clé de Feather doit être un point Ed25519 valide, sinon aucune mise
+        // à jour ne pourrait être vérifiée.
+        let key = crate::extensions::base64_decode(PUBLIC_KEY).expect("base64");
+        assert!(ed25519_compact::PublicKey::from_slice(&key).is_ok());
+    }
+
+    #[test]
+    fn signature() {
+        let name = "Feather-0.1.5-macos.dmg";
+        assert_eq!(verify_signature(name, TEST_SHA, TEST_SIG, TEST_KEY), Ok(()));
+        // Autre fichier, autre nom (donc autre version), signature abîmée, autre clé.
+        let other = TEST_SHA.replace('9', "8");
+        assert!(verify_signature(name, &other, TEST_SIG, TEST_KEY).is_err());
+        assert!(verify_signature("Feather-0.1.4-macos.dmg", TEST_SHA, TEST_SIG, TEST_KEY).is_err());
+        assert!(verify_signature(name, TEST_SHA, &TEST_SIG.replace('g', "h"), TEST_KEY).is_err());
+        assert!(verify_signature(name, TEST_SHA, "pas une signature", TEST_KEY).is_err());
+        let other_key = "O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik=";
+        assert!(verify_signature(name, TEST_SHA, TEST_SIG, other_key).is_err());
+        // Sans clé publique, rien ne s'installe.
+        assert!(verify_signature(name, TEST_SHA, TEST_SIG, "").is_err());
     }
 
     #[test]

@@ -92,6 +92,31 @@ jobs:
         with:
           path: fichiers
           merge-multiple: true
+      # Signature de chaque fichier avec la clé du secret FEATHER_SIGNATURE (voir
+      # outils/cle-signature.py) : Feather refuse une mise à jour sans signature
+      # valide. Le texte signé est le nom du fichier (qui porte la version), un
+      # saut de ligne, puis son empreinte SHA-256 (voir `signed_message` dans
+      # src/update.rs). Sans le secret, rien n'est publié.
+      - name: Signer les fichiers
+        env:
+          FEATHER_SIGNATURE: ${{ secrets.FEATHER_SIGNATURE }}
+        run: |
+          if [ -z "$FEATHER_SIGNATURE" ]; then
+            echo "::error::Le secret FEATHER_SIGNATURE manque : publication refusée sans signature."
+            exit 1
+          fi
+          umask 077
+          # Graine de 32 octets → clé PEM pour openssl (en-tête PKCS#8 d'une clé Ed25519).
+          { printf 'MC4CAQAwBQYDK2VwBCIEIA==' | base64 -d; printf '%s' "$FEATHER_SIGNATURE" | base64 -d; } > "$RUNNER_TEMP/cle.der"
+          openssl pkey -inform DER -in "$RUNNER_TEMP/cle.der" -out "$RUNNER_TEMP/cle.pem"
+          rm -f "$RUNNER_TEMP/cle.der"
+          for f in fichiers/Feather-*; do
+            printf '%s\n%s' "$(basename "$f")" "$(openssl dgst -sha256 -r "$f" | cut -d' ' -f1)" > "$RUNNER_TEMP/message"
+            openssl pkeyutl -sign -inkey "$RUNNER_TEMP/cle.pem" -rawin -in "$RUNNER_TEMP/message" -out "$RUNNER_TEMP/sig"
+            base64 -w0 "$RUNNER_TEMP/sig" > "$f.sig"
+            echo "signé : $(basename "$f")"
+          done
+          rm -f "$RUNNER_TEMP/cle.pem" "$RUNNER_TEMP/message" "$RUNNER_TEMP/sig"
       # Notes de version : le paragraphe « Nouveau en x.y.z » du README.
       - name: Préparer les notes de version
         run: |
