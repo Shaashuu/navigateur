@@ -352,6 +352,18 @@ pub struct PageMessage {
     pub store_install: Option<String>,
 }
 
+impl PageMessage {
+    /// Ce qu'on garde d'un message venu d'un cadre d'un autre site que la page
+    /// (publicité, lecteur intégré) : le clic de molette ou le menu d'un lien
+    /// (ouvertures limitées comme celles des pages) et le clic qui ferme un
+    /// panneau. Le reste (raccourcis, mode lecture, images, son, autorisations…)
+    /// n'appartient qu'à la page : avant, un cadre pouvait fermer l'onglet ou
+    /// faire télécharger une adresse du réseau local.
+    pub fn from_other_frame(self) -> Self {
+        Self { open_tab: self.open_tab, link: self.link, pressed: self.pressed, ..Self::default() }
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct CosmeticRequest {
@@ -712,6 +724,19 @@ mod tests {
             serde_json::from_str::<ChromeMessage>(r#"{"type":"watch_memory","on":true}"#).unwrap(),
             ChromeMessage::WatchMemory { on: true }
         ));
+    }
+
+    #[test]
+    fn message_d_un_autre_cadre() {
+        let m: PageMessage = serde_json::from_str(
+            r#"{"shortcut":"close_tab","image":{"url":"http://192.168.1.1/","how":"save"},"audible":true,
+                "open_tab":"https://exemple.fr/","pressed":true,"reader_failed":true}"#,
+        )
+        .unwrap();
+        let m = m.from_other_frame();
+        assert!(m.shortcut.is_none() && m.image.is_none() && m.audible.is_none() && !m.reader_failed);
+        assert_eq!(m.open_tab.as_deref(), Some("https://exemple.fr/"));
+        assert!(m.pressed);
     }
 
     #[test]

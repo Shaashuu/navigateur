@@ -78,8 +78,9 @@ const POINTER_POLL: Duration = Duration::from_millis(60);
 pub enum UserEvent {
     /// Message JSON venant de l'interface.
     Chrome(String),
-    /// Message JSON venant d'une page (raccourci clavier, barre de l'accueil).
-    Page(TabId, String),
+    /// Message JSON venant d'une page (raccourci clavier, barre de l'accueil),
+    /// avec l'adresse du cadre qui l'envoie.
+    Page(TabId, String, String),
     Title(TabId, String),
     /// Des changements de titre retenus (voir `TITLE_PAUSE`) partent vers l'interface.
     TitlesDue,
@@ -234,6 +235,7 @@ fn main() -> wry::Result<()> {
 
     // L'interface est créée en premier pour rester sous les pages.
     let chrome_proxy = proxy.clone();
+    let nav_proxy = proxy.clone();
     // Sous Windows, toutes les webviews ont le même réglage des extensions (voir extensions.rs).
     let chrome = surface.attach(
         extensions::prepare_builder(WebViewBuilder::new()
@@ -244,6 +246,18 @@ fn main() -> wry::Result<()> {
             .with_devtools(cfg!(debug_assertions))
             .with_ipc_handler(move |request| {
                 let _ = chrome_proxy.send_event(UserEvent::Chrome(request.into_body()));
+            })
+            // L'interface ne quitte jamais sa page : un lien glissé sur la barre la
+            // remplaçait par le site, qui recevait alors tous ses droits (réglages,
+            // extensions…). Un lien web déposé s'ouvre plutôt dans un nouvel onglet.
+            .with_navigation_handler(move |url| {
+                if !network::leaves_chrome(&url) {
+                    return true;
+                }
+                if network::is_web(&url) {
+                    let _ = nav_proxy.send_event(UserEvent::OpenInNewTab { url, private: false });
+                }
+                false
             }), false, ""),
         &window,
     )?;
@@ -314,7 +328,10 @@ fn main() -> wry::Result<()> {
     // Adresses données au lancement (« Ouvrir avec Feather », banc de mesure de la
     // mémoire `outils/banc-memoire`) : une par onglet, la première affichée.
     let launch = network::launch_urls(std::env::args().skip(1));
-    let full_restore = restore && !session.urls.is_empty() && launch.is_empty();
+    // La session revient même quand Feather est lancé avec une adresse : avant,
+    // seuls les épinglés revenaient, et l'enregistrement suivant écrasait tous
+    // les autres onglets de la session.
+    let full_restore = restore && !session.urls.is_empty();
     // Les onglets épinglés reviennent à chaque démarrage (en veille, en haut de la colonne).
     if !full_restore {
         for (url, _) in session.urls.iter().zip(&session.pinned).filter(|(_, p)| **p) {
@@ -322,12 +339,7 @@ fn main() -> wry::Result<()> {
             app.tabs.set_pinned(id, true);
         }
     }
-    if let Some((first, others)) = launch.split_first() {
-        app.open_tab(first, false);
-        for url in others {
-            app.open_tab_in_background(url);
-        }
-    } else if full_restore {
+    if full_restore {
         // Les onglets restaurés restent en veille : seul celui affiché est chargé.
         for (i, url) in session.urls.iter().enumerate() {
             let id = app.tabs.add_asleep(url, "", false);
@@ -343,6 +355,15 @@ fn main() -> wry::Result<()> {
             Some(id) => app.tabs.activate(id, true),
             None => app.tabs.activate_index(0, true),
         }
+    }
+    if let Some((first, others)) = launch.split_first() {
+        // Par-dessus la session : l'adresse demandée est affichée, l'ancien onglet
+        // affiché reste en veille.
+        app.open_tab(first, false);
+        for url in others {
+            app.open_tab_in_background(url);
+        }
+    } else if full_restore {
         app.wake_active();
         app.push_state();
     } else {
@@ -410,8 +431,16 @@ impl App {
                 Ok(message) => self.handle_chrome(message),
                 Err(err) => eprintln!("message de l'interface ignoré : {err}"),
             },
-            UserEvent::Page(id, raw) => {
+            UserEvent::Page(id, frame, raw) => {
                 if let Ok(message) = serde_json::from_str::<PageMessage>(&raw) {
+                    // Sous macOS, tout cadre de la page (publicité comprise) peut écrire à
+                    // Feather : seul un message du site affiché garde tous ses droits.
+                    let page = self.tabs.get(id).and_then(|t| t.webview()).and_then(|w| w.url().ok());
+                    let message = if page.is_some_and(|p| network::same_origin(&frame, &p)) {
+                        message
+                    } else {
+                        message.from_other_frame()
+                    };
                     self.handle_page(id, message);
                 }
             }

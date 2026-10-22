@@ -220,7 +220,9 @@ mod platform {
                 let page = page_host.read().map(|h| h.clone()).unwrap_or_default();
                 // Traqueurs (liste courte de Feather), puis publicités (voir adblock.rs).
                 let blocked = (ENABLED.load(Ordering::Relaxed) && super::should_block(&uri, &page))
-                    || crate::adblock::should_block(super::host_of(&uri), &page, private);
+                    // L'adresse complète : les exceptions d'EasyList visent souvent un chemin
+                    // (`@@||cdn.regie.com/lecteur/`), qui restait vide quand on ne passait que l'hôte.
+                    || crate::adblock::should_block(&uri, &page, private);
                 if blocked {
                     let response = env.CreateWebResourceResponse(
                         None,

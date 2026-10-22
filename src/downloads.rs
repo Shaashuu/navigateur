@@ -172,6 +172,35 @@ pub fn open(path: &Path) {
     let _ = Command::new("xdg-open").arg(path).spawn();
 }
 
+/// macOS : marque un fichier téléchargé « venu d'Internet » (attribut de
+/// quarantaine), comme le fait Safari. Sans lui, une application ou un .dmg
+/// téléchargé avec Feather s'ouvrait sans le contrôle de Gatekeeper.
+#[cfg(target_os = "macos")]
+pub fn quarantine(path: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    // 0083 : téléchargé, à vérifier par Gatekeeper ; puis la date et l'application.
+    let value = format!("0083;{secs:x};Feather;");
+    let Ok(file) = std::ffi::CString::new(path.as_os_str().as_bytes()) else { return };
+    // SAFETY : chaînes C valides, terminées par un zéro, pour la durée de l'appel.
+    unsafe {
+        libc::setxattr(
+            file.as_ptr(),
+            c"com.apple.quarantine".as_ptr(),
+            value.as_ptr().cast(),
+            value.len(),
+            0,
+            0,
+        );
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn quarantine(_path: &Path) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
