@@ -416,14 +416,17 @@ ouverts) et additionne la mémoire de Feather et des processus du moteur :
 - Windows : `outils\banc-memoire.ps1 -Programme target\release\feather.exe`.
 
 Il relève aussi le temps de démarrage, écrit par Feather lui-même (variable
-`FEATHER_BANC`, voir `src/banc.rs`) : barre prête, puis accueil chargé.
+`FEATHER_BANC`, voir `src/banc.rs`) : Rust prêt (fichiers lus, premier onglet
+créé), barre prête, puis accueil chargé. Les extensions ne sont confiées au
+moteur qu'après la première page chargée, pour ne pas retarder l'ouverture.
 
 Le workflow GitHub le lance après chaque compilation avec `--extensions`
 (`-Extensions` sous Windows) : un troisième lancement installe Proton Pass et
 uBlock Origin Lite depuis le Chrome Web Store, puis ouvre la page de leur
 bouton et vérifie qu'elle s'affiche sans message d'erreur (« difficulties
-activating »…). Cette option est réservée aux machines de compilation : les
-extensions restent installées ensuite.
+activating »…), puis relance Feather avec ces extensions installées (mémoire
+et démarrage de tous les jours). Cette option est réservée aux machines de
+compilation : les extensions restent installées ensuite.
 
 Le tableau s'affiche dans le résumé de l'exécution. Chaque chiffre est comparé
 à `outils/banc-reference.txt` : au-delà de la marge (25 % pour la mémoire,

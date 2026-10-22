@@ -1044,6 +1044,8 @@ pub struct Extensions {
     pub error: Option<String>,
     /// Petite fenêtre ouverte : l'extension et (Windows) sa webview.
     pub popup: Option<Popup>,
+    /// Déjà confiées au moteur (voir `start_extensions`).
+    started: bool,
 }
 
 pub struct Popup {
@@ -1343,11 +1345,27 @@ impl crate::App {
         }
     }
 
+    /// Confie au moteur les extensions installées, une seule fois : après la
+    /// première page chargée (ou 5 s après le lancement), et non plus avant de
+    /// l'ouvrir. L'arrière-plan des extensions (Proton Pass…) ne retarde plus
+    /// l'affichage ; le bloqueur intégré agit en attendant (voir `ad_blocker`).
+    pub(crate) fn start_extensions(&mut self) {
+        if self.extensions.started {
+            return;
+        }
+        self.extensions.started = true;
+        start(&self.chrome, self.extensions.list(), &self.proxy);
+        // Les onglets déjà ouverts sont décrits aux extensions (macOS).
+        self.push_state();
+    }
+
     fn start_prepare(&mut self, request: Request, busy: &str) {
         if let Err(reason) = support() {
             self.extensions.error = Some(reason.into());
             return;
         }
+        // Installation avant la première page : le moteur doit être prêt.
+        self.start_extensions();
         if self.extensions.busy.is_some() {
             return;
         }

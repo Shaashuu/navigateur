@@ -324,7 +324,7 @@ fn main() -> wry::Result<()> {
         adblock: adblock::Status::default(),
         extensions: extensions::Extensions::load(),
     };
-    extensions::start(&app.chrome, app.extensions.list(), &app.proxy);
+    // Les extensions sont confiées au moteur après la première page (voir `start_extensions`).
     adblock::set_replaced(app.extensions.ad_blocker().is_some());
     adblock::set_enabled(app.settings().blocks_ads());
     adblock::set_sites_off(app.sites.read().map(|s| s.ads_off()).unwrap_or_default());
@@ -574,6 +574,10 @@ impl App {
                 }
                 self.apply_zoom(id);
                 self.apply_economy(id);
+                // Première page chargée : les extensions peuvent démarrer.
+                if !loading {
+                    self.start_extensions();
+                }
                 self.push_state();
             }
             UserEvent::LoadFailed { id, url, kind } => self.load_failed(id, url, kind),
@@ -601,6 +605,10 @@ impl App {
             }
             UserEvent::Tick => {
                 self.tick();
+                // Aucune page chargée après 5 s (hors ligne…) : les extensions démarrent quand même.
+                if self.ticks >= 5 {
+                    self.start_extensions();
+                }
                 self.banc_tick();
             }
             UserEvent::Media(id, state) => {
