@@ -496,8 +496,8 @@ impl App {
                         tab.dirty = false;
                         tab.capturing = false;
                     }
-                    // macOS : identité Safari sur Google seulement (la page est
-                    // rechargée si l'onglet entre sur Google ou en sort). À la fin du
+                    // macOS : identité Safari sur Google et les sites des extensions
+                    // (la page est rechargée si l'onglet y entre ou en sort). À la fin du
                     // chargement, pour les redirections ; un seul rechargement de suite,
                     // au cas où deux adresses se renverraient l'une à l'autre.
                     if let Some(webview) = tab.webview() {
