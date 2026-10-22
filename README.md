@@ -245,6 +245,21 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   est à 15 minutes par défaut. Un bouton d'accueil apparaît, l'utilisation de la
   mémoire s'affiche en direct, et la pastille à la loupe ouvre une recherche au
   milieu de la page (dans l'onglet actif ou un nouvel onglet, au choix).
+- **Nouveau en 0.5.8** : les mises à jour sont signées, et Feather refuse
+  celles dont la signature ne correspond pas. Les sites ne peuvent plus
+  commander Feather à votre place (fermer l'onglet, ouvrir des onglets,
+  imprimer, enregistrer des images) : seuls vos vrais clics comptent. Avant
+  d'installer une extension, une fiche montre ce qu'elle pourra lire et
+  faire ; les extensions se mettent à jour chaque semaine. La veille épargne
+  les onglets qui jouent du son (lecteurs en cadre compris), qui filment ou
+  enregistrent, ceux où vous écrivez, et les sites marqués « Toujours actif »
+  dans leur fiche. Les fichiers de Feather sont écrits sans figer
+  l'interface, avec une copie de secours ; un fichier abîmé est mis de côté
+  au lieu d'être effacé. La recherche dans le texte des pages ignore les
+  pages avec un mot de passe, les banques, la santé et les messageries, et
+  une liste de sites à exclure s'ajoute dans les paramètres. Lancer Feather
+  avec une adresse n'efface plus la session, et les fichiers téléchargés sur
+  macOS sont vérifiés par Gatekeeper à l'ouverture.
 - **Nouveau en 0.5.7** : actualiser une page lourde (YouTube…) la recrée à
   neuf et rend toute sa mémoire : avant, chaque rechargement gardait celle de
   la page précédente. L'utilisation de la mémoire affiche le même chiffre que
