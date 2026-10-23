@@ -2948,34 +2948,18 @@
     clearTimeout(savedTimer);
     savedTimer = setTimeout(() => tag.classList.remove('show'), 1200);
   }
-  const KEYS = [
-    ['Rechercher ou aller à une adresse', 'Ctrl+L'], ['Nouvel onglet', 'Ctrl+T'], ['Fermer l\'onglet', 'Ctrl+W'],
-    ['Rouvrir l\'onglet fermé', 'Ctrl+Maj+T'], ['Onglet privé', 'Ctrl+Maj+N'], ['Onglet suivant / précédent', 'Ctrl+Tab · Ctrl+Maj+Tab'],
-    ['Page précédente / suivante', 'Alt+← · Alt+→'], ['Actualiser', 'F5 · Ctrl+R'], ['Chercher dans la page', 'Ctrl+F'],
-    ['Ajouter aux favoris', 'Ctrl+D'], ['Couper le son de l\'onglet', 'Ctrl+M'], ['Imprimer', 'Ctrl+P'],
-    ['Zoom', 'Ctrl++ · Ctrl+- · Ctrl+0'], ['Capture de la page', 'Ctrl+Maj+S'], ['Utilisation de la mémoire', 'Maj+Échap'],
-    ['Mode concentration', 'Ctrl+Maj+F'], ['Paramètres', 'Ctrl+,'],
-    ['Aller à l\'onglet 1 à 8 · au dernier', 'Ctrl+1…8 · Ctrl+9'],
-    ...(isMac ? [
-      ['Onglet précédent / suivant', '⌥⌘← · ⌥⌘→'], ['Historique', '⌘Y'], ['Téléchargements', '⌥⌘L'], ['Favoris', '⌥⌘B'],
-      ['Copier · Couper · Coller', '⌘C · ⌘X · ⌘V'], ['Tout sélectionner · Annuler', '⌘A · ⌘Z'],
-      ['Plein écran', '⌃⌘F'], ['Réduire · Masquer · Quitter', '⌘M · ⌘H · ⌘Q'],
-    ] : [
-      ['Onglet précédent / suivant', 'Ctrl+Pg préc · Ctrl+Pg suiv'], ['Historique', 'Ctrl+H'], ['Téléchargements', 'Ctrl+J'], ['Favoris', 'Ctrl+Maj+O'],
-      ['Copier · Couper · Coller', 'Ctrl+C · Ctrl+X · Ctrl+V'], ['Tout sélectionner · Annuler', 'Ctrl+A · Ctrl+Z'],
-      ['Plein écran', 'F11'],
-    ]),
-  ];
+  // Aide des raccourcis : les lignes de ce système, écrites par Rust d'après la
+  // table des raccourcis (voir src/shortcuts.rs).
+  const KEYS = __FEATHER_SHORTCUT_HELP__;
   for (const [what, keys] of KEYS) {
     const row = document.createElement('div');
     row.className = 'key';
     const t = document.createElement('span');
     t.textContent = what;
     row.appendChild(t);
-    for (const k of keys.split(' · ')) {
+    for (const k of keys) {
       const kbd = document.createElement('kbd');
-      // Sous macOS, Ctrl s'écrit ⌘ (sauf Ctrl+M et Ctrl+Tab, qui restent Ctrl).
-      kbd.textContent = isMac && !/^Ctrl\+(M|Tab|Maj\+Tab)$/.test(k) ? k.replace(/^Ctrl\+/, '⌘') : k;
+      kbd.textContent = k;
       row.appendChild(kbd);
     }
     $('s-keys').appendChild(row);
@@ -4412,74 +4396,24 @@
   $('u-restart').addEventListener('click', () => send({ type: 'restart_update' }));
   $('u-page').addEventListener('click', () => { send({ type: 'open_release_page' }); closeSettings(); });
 
-  // Raccourcis ajoutés en 0.6 : même calcul que dans les pages (page.js).
-  function extraShortcut(e) {
-    const k = e.key.toLowerCase(), code = e.code;
-    const ctrl = (e.ctrlKey || e.metaKey) && !e.altKey;
-    if (ctrl && !e.shiftKey && /^Digit[1-9]$/.test(code)) return 'tab' + code.slice(5);
-    if (e.ctrlKey && !e.metaKey && !e.altKey && (k === 'pageup' || k === 'pagedown')) return k === 'pageup' ? 'previous_tab' : 'next_tab';
-    if (k === 'f11' && !isMac) return 'fullscreen';
-    if (isMac) {
-      if (e.metaKey && e.altKey && !e.ctrlKey && (k === 'arrowleft' || k === 'arrowright')) return k === 'arrowleft' ? 'previous_tab' : 'next_tab';
-      if (e.metaKey && e.shiftKey && !e.altKey && (code === 'BracketLeft' || code === 'BracketRight')) return code === 'BracketLeft' ? 'previous_tab' : 'next_tab';
-      if (e.metaKey && !e.altKey && !e.shiftKey && code === 'KeyY') return 'history';
-      if (e.metaKey && e.altKey && !e.shiftKey && code === 'KeyL') return 'downloads';
-      if (e.metaKey && e.altKey && !e.shiftKey && code === 'KeyB') return 'bookmarks';
-      if (e.metaKey && e.shiftKey && !e.altKey && code === 'KeyR') return 'reader';
-      if (e.metaKey && e.shiftKey && !e.altKey && code === 'KeyD') return 'bookmark_all';
-      if (e.metaKey && e.shiftKey && !e.altKey && code === 'KeyH') return 'home';
-      return null;
-    }
-    if (ctrl && !e.shiftKey && k === 'h') return 'history';
-    if (ctrl && !e.shiftKey && k === 'j') return 'downloads';
-    if (ctrl && e.shiftKey && k === 'o') return 'bookmarks';
-    return null;
-  }
-
   // --- Raccourcis quand l'interface a le focus ---
+  // La table et le calcul viennent de src/shortcuts.rs, les mêmes que dans les pages.
+  const shortcutOf = __FEATHER_SHORTCUTS__;
+  // Ceux qui s'ouvrent ici même ; les autres passent par Rust, comme depuis une page.
+  const LOCAL_SHORTCUTS = { find: () => openFind(), settings: () => openSettings(), task_manager: () => openLibrary('memory') };
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) { openLibrary('memory'); e.preventDefault(); return; }
-    if (e.key === 'Escape') closeTabMenu();
-    if (e.key === 'Escape' && mode === 'site') { closeSite(); return; }
-    if (e.key === 'Escape' && (mode === 'group' || mode === 'import' || mode === 'extensions')) { closeSheet(); return; }
-    if (e.key === 'Escape' && mode === 'settings') { closeSettings(); return; }
-    if (e.key === 'Escape' && mode === 'library') { closeLibrary(); return; }
-    const k = e.key.toLowerCase();
-    if (e.altKey && !e.ctrlKey && !e.metaKey && (k === 'arrowleft' || k === 'arrowright')) {
-      if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
-      send({ type: k === 'arrowleft' ? 'back' : 'forward' });
+    const a = shortcutOf(e);
+    if (a) {
       e.preventDefault();
+      if (LOCAL_SHORTCUTS[a]) LOCAL_SHORTCUTS[a](); else shortcut(a);
       return;
     }
-    if (e.metaKey && !e.ctrlKey && !e.altKey && (k === '[' || k === ']')) {
-      send({ type: k === '[' ? 'back' : 'forward' });
-      e.preventDefault();
-      return;
-    }
-    if (k === 'f5') { send({ type: 'reload' }); e.preventDefault(); return; }
-    const extra = extraShortcut(e);
-    if (extra) { shortcut(extra); e.preventDefault(); return; }
-    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-    if (e.shiftKey && k === 't') shortcut('reopen_tab');
-    else if (e.shiftKey && k === 's') shortcut('capture');
-    else if (e.shiftKey && k === 'n') shortcut('new_private_tab');
-    else if (e.shiftKey && k === 'f') shortcut('focus');
-    else if (k === 'f' && !e.shiftKey) openFind();
-    else if (k === 'p' && !e.shiftKey) shortcut('print');
-    else if (k === '+' || k === '=') shortcut('zoom_in');
-    else if (k === '-' || k === '_') shortcut('zoom_out');
-    else if (k === '0') shortcut('zoom_reset');
-    else if (k === 'm' && e.ctrlKey && !e.metaKey) { const t = activeTab(); if (t) send({ type: 'toggle_mute', id: t.id }); }
-    else if (k === 'l' || k === 'k') send({ type: 'focus_bar' });
-    else if (k === 'r') send({ type: 'reload' });
-    else if (k === 'd') send({ type: 'toggle_bookmark', id: null });
-    else if (k === 't') send({ type: 'new_tab' });
-    else if (k === 'w') send({ type: 'close_tab', id: null });
-    else if (k === ',') openSettings();
-    // Même calcul que pour une page : c'est Rust qui choisit l'onglet suivant.
-    else if (k === 'tab') send({ type: 'shortcut', shortcut: e.shiftKey ? 'previous_tab' : 'next_tab' });
-    else return;
-    e.preventDefault();
+    if (e.key !== 'Escape') return;
+    closeTabMenu();
+    if (mode === 'site') closeSite();
+    else if (mode === 'group' || mode === 'import' || mode === 'extensions') closeSheet();
+    else if (mode === 'settings') closeSettings();
+    else if (mode === 'library') closeLibrary();
   });
 
   // Ce que montrent les réglages : la page se remplit à nouveau quand l'une de ces parties change.

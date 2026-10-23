@@ -7,10 +7,11 @@
 //! Les menus Fichier, Présentation, Historique, Favoris, Onglet, Fenêtre et
 //! Aide lancent les actions de Feather : chaque entrée passe par la même
 //! file que les raccourcis des pages (`Shortcut`), donc fait exactement la même
-//! chose. Les touches affichées sont celles que page.js et l'interface lisent
-//! déjà : quand une page a le focus, page.js traite la touche (et l'arrête),
-//! le menu ne la reçoit pas en double. Le menu prend le relais là où page.js
-//! ne tourne pas (fenêtre d'une extension, page qui n'a pas encore chargé).
+//! chose. Leurs touches viennent de la table des raccourcis (`shortcuts.rs`),
+//! la même que celle de page.js et de l'interface : quand une page a le focus,
+//! page.js traite la touche (et l'arrête), le menu ne la reçoit pas en double.
+//! Le menu prend le relais là où page.js ne tourne pas (fenêtre d'une
+//! extension, page qui n'a pas encore chargé).
 //!
 //! Comme dans Safari, Historique liste les dernières pages et les onglets
 //! fermés, Favoris les favoris : ces entrées sont refaites à chaque ouverture
@@ -30,6 +31,7 @@ use tao::event_loop::EventLoopProxy;
 
 use crate::UserEvent;
 use crate::library::Library;
+use crate::shortcuts::{self, Held};
 
 /// Pages récentes dans le menu Historique, favoris dans le menu Favoris.
 const RECENT: usize = 15;
@@ -54,7 +56,7 @@ enum Action {
 
 /// Une entrée : titre, action, touche (vide : pas de raccourci) et touches de
 /// modification. `None` dans une liste : un séparateur.
-type Entry = (&'static str, Action, &'static str, NSEventModifierFlags);
+type Entry = (&'static str, Action, String, NSEventModifierFlags);
 
 /// Pas un raccourci : l'historique s'efface après une confirmation (voir `confirm`).
 const CLEAR_HISTORY: &str = "clear_history";
@@ -252,117 +254,121 @@ fn confirm(mtm: MainThreadMarker, title: &str, text: &str, action: &str) -> bool
 }
 
 /// Les menus, dans l'ordre de la barre ; « Fenêtre » reçoit la liste des
-/// fenêtres, « Aide » la recherche dans les menus.
+/// fenêtres, « Aide » la recherche dans les menus. Les touches des entrées de
+/// Feather viennent de la table des raccourcis (`shortcuts.rs`).
 fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
     let cmd = NSEventModifierFlags::Command;
     let shift = NSEventModifierFlags::Shift;
     let alt = NSEventModifierFlags::Option;
     let ctrl = NSEventModifierFlags::Control;
     let none = NSEventModifierFlags::empty();
-    use Action::{App, Std};
+    // Action standard d'AppKit, avec sa touche.
+    let standard = |label, sel, key: &str, mods| Some((label, Action::Std(sel), key.to_string(), mods));
+    // Action de Feather, avec la touche de la table.
+    let feather = |label, name| {
+        let (key, mods) = shortcuts::menu_key(name).map_or((String::new(), none), |(key, held)| (key, modifiers(held)));
+        Some((label, Action::App(name), key, mods))
+    };
 
     let app = vec![
-        Some(("À propos de Feather", Std(sel!(orderFrontStandardAboutPanel:)), "", none)),
+        standard("À propos de Feather", sel!(orderFrontStandardAboutPanel:), "", none),
         None,
-        Some(("Paramètres…", App("settings"), ",", cmd)),
-        Some(("Extensions…", App("extensions"), "", none)),
+        feather("Paramètres…", "settings"),
+        feather("Extensions…", "extensions"),
         None,
-        Some(("Effacer l'historique…", App(CLEAR_HISTORY), "", none)),
+        feather("Effacer l'historique…", CLEAR_HISTORY),
         None,
-        Some(("Masquer Feather", Std(sel!(hide:)), "h", cmd)),
-        Some(("Masquer les autres", Std(sel!(hideOtherApplications:)), "h", cmd | alt)),
-        Some(("Tout afficher", Std(sel!(unhideAllApplications:)), "", none)),
+        standard("Masquer Feather", sel!(hide:), "h", cmd),
+        standard("Masquer les autres", sel!(hideOtherApplications:), "h", cmd | alt),
+        standard("Tout afficher", sel!(unhideAllApplications:), "", none),
         None,
         // Passe par la fermeture de l'application : tao envoie alors
         // `LoopDestroyed`, et Feather enregistre tout (voir main.rs).
-        Some(("Quitter Feather", Std(sel!(terminate:)), "q", cmd)),
+        standard("Quitter Feather", sel!(terminate:), "q", cmd),
     ];
     let file = vec![
-        Some(("Nouvel onglet", App("new_tab"), "t", cmd)),
-        Some(("Nouvel onglet privé", App("new_private_tab"), "n", cmd | shift)),
-        Some(("Ouvrir une adresse…", App("focus_bar"), "l", cmd)),
-        Some(("Ouvrir un fichier…", App("open_file"), "o", cmd)),
+        feather("Nouvel onglet", "new_tab"),
+        feather("Nouvel onglet privé", "new_private_tab"),
+        feather("Ouvrir une adresse…", "focus_bar"),
+        feather("Ouvrir un fichier…", "open_file"),
         None,
-        Some(("Fermer l'onglet", App("close_tab"), "w", cmd)),
+        feather("Fermer l'onglet", "close_tab"),
         None,
-        Some(("Enregistrer la page", App("save_page"), "s", cmd)),
-        Some(("Exporter en PDF", App("export_pdf"), "", none)),
-        Some(("Partager…", App("share"), "", none)),
+        feather("Enregistrer la page", "save_page"),
+        feather("Exporter en PDF", "export_pdf"),
+        feather("Partager…", "share"),
         None,
-        Some(("Importer des favoris…", App("import"), "", none)),
+        feather("Importer des favoris…", "import"),
         None,
-        Some(("Capturer la page", App("capture"), "s", cmd | shift)),
-        Some(("Imprimer…", App("print"), "p", cmd)),
+        feather("Capturer la page", "capture"),
+        feather("Imprimer…", "print"),
     ];
     let edit = vec![
-        Some(("Annuler", Std(sel!(undo:)), "z", cmd)),
-        Some(("Rétablir", Std(sel!(redo:)), "z", cmd | shift)),
+        standard("Annuler", sel!(undo:), "z", cmd),
+        standard("Rétablir", sel!(redo:), "z", cmd | shift),
         None,
-        Some(("Couper", Std(sel!(cut:)), "x", cmd)),
-        Some(("Copier", Std(sel!(copy:)), "c", cmd)),
-        Some(("Coller", Std(sel!(paste:)), "v", cmd)),
-        Some(("Coller sans la mise en forme", Std(sel!(pasteAsPlainText:)), "v", cmd | shift | alt)),
-        Some(("Supprimer", Std(sel!(delete:)), "", none)),
-        Some(("Tout sélectionner", Std(sel!(selectAll:)), "a", cmd)),
+        standard("Couper", sel!(cut:), "x", cmd),
+        standard("Copier", sel!(copy:), "c", cmd),
+        standard("Coller", sel!(paste:), "v", cmd),
+        standard("Coller sans la mise en forme", sel!(pasteAsPlainText:), "v", cmd | shift | alt),
+        standard("Supprimer", sel!(delete:), "", none),
+        standard("Tout sélectionner", sel!(selectAll:), "a", cmd),
         None,
-        Some(("Rechercher dans la page…", App("find"), "f", cmd)),
-        Some(("Occurrence suivante", App("find_next"), "g", cmd)),
-        Some(("Occurrence précédente", App("find_previous"), "g", cmd | shift)),
+        feather("Rechercher dans la page…", "find"),
+        feather("Occurrence suivante", "find_next"),
+        feather("Occurrence précédente", "find_previous"),
     ];
     let view = vec![
-        Some(("Actualiser la page", App("reload"), "r", cmd)),
-        Some(("Mode lecture", App("reader"), "r", cmd | shift)),
+        feather("Actualiser la page", "reload"),
+        feather("Mode lecture", "reader"),
         None,
-        Some(("Zoom avant", App("zoom_in"), "+", cmd)),
-        Some(("Zoom arrière", App("zoom_out"), "-", cmd)),
-        Some(("Taille réelle", App("zoom_reset"), "0", cmd)),
+        feather("Zoom avant", "zoom_in"),
+        feather("Zoom arrière", "zoom_out"),
+        feather("Taille réelle", "zoom_reset"),
         None,
-        Some(("Mode concentration", App("focus"), "f", cmd | shift)),
-        Some(("Plein écran", Std(sel!(toggleFullScreen:)), "f", cmd | ctrl)),
+        feather("Mode concentration", "focus"),
+        standard("Plein écran", sel!(toggleFullScreen:), "f", cmd | ctrl),
         None,
         // Comme Safari : pas de menu Téléchargements, la liste est ici.
-        Some(("Afficher les téléchargements", App("downloads"), "l", cmd | alt)),
+        feather("Afficher les téléchargements", "downloads"),
     ];
     let history = vec![
-        Some(("Accueil", App("home"), "h", cmd | shift)),
-        Some(("Précédent", App("back"), "[", cmd)),
-        Some(("Suivant", App("forward"), "]", cmd)),
+        feather("Accueil", "home"),
+        feather("Précédent", "back"),
+        feather("Suivant", "forward"),
         None,
-        Some(("Rouvrir le dernier onglet fermé", App("reopen_tab"), "t", cmd | shift)),
+        feather("Rouvrir le dernier onglet fermé", "reopen_tab"),
         None,
-        Some(("Afficher l'historique", App("history"), "y", cmd)),
+        feather("Afficher l'historique", "history"),
     ];
     let bookmarks = vec![
-        Some(("Ajouter aux favoris", App("toggle_bookmark"), "d", cmd)),
-        Some(("Ajouter tous les onglets aux favoris", App("bookmark_all"), "d", cmd | shift)),
+        feather("Ajouter aux favoris", "toggle_bookmark"),
+        feather("Ajouter tous les onglets aux favoris", "bookmark_all"),
         None,
-        Some(("Afficher les favoris", App("bookmarks"), "b", cmd | alt)),
-        Some(("Importer des favoris…", App("import"), "", none)),
+        feather("Afficher les favoris", "bookmarks"),
+        feather("Importer des favoris…", "import"),
     ];
     // Comme le menu Onglet de Chrome.
     let tab = vec![
-        Some(("Épingler ou détacher l'onglet", App("pin_tab"), "", none)),
-        Some(("Dupliquer l'onglet", App("duplicate_tab"), "", none)),
-        Some(("Ranger dans un groupe…", App("group_tab"), "", none)),
+        feather("Épingler ou détacher l'onglet", "pin_tab"),
+        feather("Dupliquer l'onglet", "duplicate_tab"),
+        feather("Ranger dans un groupe…", "group_tab"),
         None,
-        Some(("Couper le son de l'onglet", App("toggle_mute"), "m", ctrl)),
+        feather("Couper le son de l'onglet", "toggle_mute"),
         None,
-        Some(("Fermer les autres onglets", App("close_other_tabs"), "", none)),
+        feather("Fermer les autres onglets", "close_other_tabs"),
     ];
     let window = vec![
-        Some(("Réduire", Std(sel!(performMiniaturize:)), "m", cmd)),
-        Some(("Agrandir", Std(sel!(performZoom:)), "", none)),
+        standard("Réduire", sel!(performMiniaturize:), "m", cmd),
+        standard("Agrandir", sel!(performZoom:), "", none),
         None,
-        // ⇧⌘] et ⇧⌘[ : AppKit les écrit avec l'accolade.
-        Some(("Onglet suivant", App("next_tab"), "}", cmd)),
-        Some(("Onglet précédent", App("previous_tab"), "{", cmd)),
+        feather("Onglet suivant", "next_tab"),
+        feather("Onglet précédent", "previous_tab"),
         None,
-        Some(("Utilisation de la mémoire", App("task_manager"), "\u{1b}", shift)),
+        feather("Utilisation de la mémoire", "task_manager"),
     ];
     // macOS ajoute seul, en tête, la recherche dans tous les menus.
-    let help = vec![
-        Some(("Signaler un problème…", App("report_issue"), "", none)),
-    ];
+    let help = vec![feather("Signaler un problème…", "report_issue")];
 
     vec![
         // Le premier menu porte toujours le nom de l'application, quel que soit son titre.
@@ -376,6 +382,19 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
         ("Fenêtre", window),
         ("Aide", help),
     ]
+}
+
+/// Touches de modification d'une entrée, d'après la table des raccourcis.
+fn modifiers(held: Held) -> NSEventModifierFlags {
+    [
+        (held.control, NSEventModifierFlags::Control),
+        (held.alt, NSEventModifierFlags::Option),
+        (held.shift, NSEventModifierFlags::Shift),
+        (held.cmd, NSEventModifierFlags::Command),
+    ]
+    .into_iter()
+    .filter(|(on, _)| *on)
+    .fold(NSEventModifierFlags::empty(), |mods, (_, flag)| mods | flag)
 }
 
 /// À appeler depuis le fil principal, avant la boucle des événements.
