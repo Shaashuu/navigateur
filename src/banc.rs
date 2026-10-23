@@ -14,6 +14,14 @@
 //!   et `moteur <id> <message>` pour chaque erreur notée par le moteur (macOS :
 //!   arrière-plan refusé, erreur de script…).
 //!
+//! - `FEATHER_BANC_CONNEXION=adresse,adresse` (avec les extensions) : une fois
+//!   la page de Proton Pass lue, ouvre l'une après l'autre ces pages de
+//!   connexion, clique dans le champ de l'identifiant et regarde si Proton Pass
+//!   y a posé son icône et son menu. Lignes écrites : `connexion <n> champ …`
+//!   (le champ cliqué), `connexion <n> page {…}` (ce que Proton a ajouté à la
+//!   page), puis `journal <id> …`, les lignes du journal de Proton Pass qui
+//!   parlent des scripts de la page.
+//!
 //! - `FEATHER_BANC_ONGLETS=1` (avec `FEATHER_BANC`) : après le démarrage, ouvre
 //!   l'un après l'autre un onglet d'accueil puis deux onglets Netflix, comme un
 //!   clic sur un favori, et écrit pour chacun `onglet-<nom>-creation <ms>` (le
@@ -61,6 +69,60 @@ struct Mesure {
     debut_note: bool,
 }
 
+/// Proton Pass, dont le menu dans les champs des sites est essayé.
+const PROTON: &str = "ghmbeldphafepmbegfdlkpapadhbakde";
+
+/// Attente après l'ouverture d'une page de connexion (chargement, analyse de la
+/// page par l'extension), puis entre le clic dans le champ et la lecture.
+const AVANT_CLIC: Duration = Duration::from_secs(15);
+const APRES_CLIC: Duration = Duration::from_secs(5);
+
+/// Clique dans le champ de l'identifiant (le premier trouvé) et le décrit.
+const CLIC: &str = r#"(() => {
+  const f = document.querySelector('input[type=email], input[autocomplete~=username], input[name=login], input[name=username], input[type=text]');
+  if (!f) return 'aucun';
+  f.focus();
+  f.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  f.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  f.click();
+  return `${f.name || f.id || f.type} visible=${document.visibilityState} focus=${document.hasFocus()}`;
+})()"#;
+
+/// Ce que Proton Pass a ajouté à la page : ses balises (icône, menu), leurs
+/// rôles, les attributs posés sur les formulaires, les cadres de l'extension.
+const LECTURE: &str = r#"(() => {
+  const tous = [...document.querySelectorAll('*')];
+  const balises = tous.map((e) => e.tagName.toLowerCase()).filter((t) => t.startsWith('protonpass'));
+  const roles = [...document.querySelectorAll('[data-protonpass-role]')].map((e) => e.getAttribute('data-protonpass-role'));
+  const attributs = new Set();
+  for (const e of tous) for (const a of e.getAttributeNames()) if (a.includes('protonpass')) attributs.add(a);
+  const cadres = [...document.querySelectorAll('iframe')].filter((f) => (f.src || '').startsWith('webkit-extension')).length;
+  return JSON.stringify({ balises, roles, attributs: [...attributs], cadres, visible: document.visibilityState });
+})()"#;
+
+/// Demande le journal de l'extension (depuis l'une de ses pages) ; relu ensuite
+/// par `JOURNAL_LU`, le stockage ne répondant qu'après coup.
+const JOURNAL: &str = r#"(() => {
+  globalThis.featherJournal = 'attente';
+  chrome.storage.local.get('logs').then((r) => {
+    let lignes = [];
+    try { lignes = JSON.parse(r.logs || '[]'); } catch (e) { lignes = [String(r.logs)]; }
+    globalThis.featherJournal = `${lignes.length} lignes : ` + lignes
+      .filter((l) => /content|inject|client|orchestr|frame|register|element|error|erreur/i.test(l))
+      .slice(0, 40).join(' ¶ ');
+  }, (e) => { globalThis.featherJournal = 'refus ' + e; });
+  return 'demande';
+})()"#;
+const JOURNAL_LU: &str = "String(globalThis.featherJournal)";
+
+/// Une action prévue de l'essai des pages de connexion.
+enum Action {
+    Ouvrir(String),
+    /// Script dans le dernier onglet ouvert, ou dans un onglet donné ; son
+    /// résultat est écrit sous ce nom (rien si le nom est vide).
+    Executer { onglet: Option<TabId>, nom: String, script: &'static str },
+}
+
 const ERREURS: [&str; 6] = ["difficult", "went wrong", "try again", "réessay", "erreur", "failed"];
 
 struct Etat {
@@ -79,6 +141,10 @@ struct Etat {
     onglets: VecDeque<(&'static str, &'static str)>,
     onglet_prochain: Option<Instant>,
     mesure: Option<Mesure>,
+    /// Pages de connexion à essayer, les actions prévues et le dernier onglet ouvert.
+    connexions: Vec<String>,
+    actions: Vec<(Instant, Action)>,
+    dernier: Option<TabId>,
 }
 
 static ETAT: OnceLock<Option<Mutex<Etat>>> = OnceLock::new();
@@ -96,6 +162,13 @@ pub fn init() {
             .map(String::from)
             .collect();
         let onglets = if std::env::var_os("FEATHER_BANC_ONGLETS").is_some() { ONGLETS.into() } else { VecDeque::new() };
+        let connexions = std::env::var("FEATHER_BANC_CONNEXION")
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+            .map(String::from)
+            .collect();
         Some(Mutex::new(Etat {
             fichier,
             debut,
@@ -108,6 +181,9 @@ pub fn init() {
             onglets,
             onglet_prochain: None,
             mesure: None,
+            connexions,
+            actions: Vec::new(),
+            dernier: None,
         }))
     });
 }
@@ -215,13 +291,36 @@ fn verdict(brut: &str) -> (&'static str, String) {
     (etat, texte)
 }
 
+/// Prévoit l'essai des pages de connexion, puis la lecture du journal de
+/// Proton Pass dans `page` (sa page, déjà ouverte par le banc).
+fn prevoir_connexions(e: &mut Etat, page: TabId) {
+    if e.connexions.is_empty() {
+        return;
+    }
+    let mut t = Instant::now() + Duration::from_secs(2);
+    for (n, url) in e.connexions.iter().enumerate() {
+        let n = n + 1;
+        e.actions.push((t, Action::Ouvrir(url.clone())));
+        t += AVANT_CLIC;
+        e.actions.push((t, Action::Executer { onglet: None, nom: format!("connexion {n} champ"), script: CLIC }));
+        t += APRES_CLIC;
+        e.actions.push((t, Action::Executer { onglet: None, nom: format!("connexion {n} page"), script: LECTURE }));
+        t += Duration::from_secs(2);
+    }
+    // Proton Pass écrit son journal toutes les 5 s.
+    t += Duration::from_secs(5);
+    e.actions.push((t, Action::Executer { onglet: Some(page), nom: String::new(), script: JOURNAL }));
+    t += Duration::from_secs(3);
+    e.actions.push((t, Action::Executer { onglet: Some(page), nom: format!("journal {PROTON}"), script: JOURNAL_LU }));
+}
+
 impl App {
     /// Chaque seconde, en mode banc : installe la prochaine extension demandée,
     /// ouvre et lit les pages d'extension dont c'est le moment.
     pub(crate) fn banc_tick(&mut self) {
         let Some(etat) = ETAT.get().and_then(Option::as_ref) else { return };
         let maintenant = Instant::now();
-        let (suivante, a_ouvrir, a_lire, onglet) = {
+        let (suivante, a_ouvrir, a_lire, onglet, actions) = {
             let Ok(mut e) = etat.lock() else { return };
             if !e.a_installer.is_empty()
                 && let Err(raison) = support()
@@ -252,7 +351,9 @@ impl App {
             } else {
                 None
             };
-            (suivante, dues, lues, onglet)
+            let (actions, autres): (Vec<_>, Vec<_>) = e.actions.drain(..).partition(|(t, _)| *t <= maintenant);
+            e.actions = autres;
+            (suivante, dues, lues, onglet, actions)
         };
         if let Some((nom, url)) = onglet {
             self.banc_onglet(nom, url);
@@ -281,6 +382,43 @@ impl App {
             });
             if let Err(err) = lu {
                 noter(&format!("fenetre {id} vide {}", resume(&err.to_string())));
+            }
+            if id == PROTON {
+                avec(|e| prevoir_connexions(e, tab));
+            }
+        }
+        for (_, action) in actions {
+            self.banc_action(action);
+        }
+    }
+
+    /// Une action de l'essai des pages de connexion.
+    fn banc_action(&mut self, action: Action) {
+        match action {
+            Action::Ouvrir(url) => {
+                let avant: Vec<TabId> = self.tabs.iter().map(|t| t.id).collect();
+                self.open_tab(&url, false);
+                let nouveau = self.tabs.iter().map(|t| t.id).find(|t| !avant.contains(t));
+                avec(|e| e.dernier = nouveau);
+            }
+            Action::Executer { onglet, nom, script } => {
+                let onglet = onglet.or_else(|| avec(|e| e.dernier).flatten());
+                let Some(webview) = onglet.and_then(|t| self.tabs.get(t)).and_then(|t| t.webview()) else {
+                    if !nom.is_empty() {
+                        noter(&format!("{nom} onglet fermé"));
+                    }
+                    return;
+                };
+                let lu = webview.evaluate_script_with_callback(script, move |brut| {
+                    if nom.is_empty() {
+                        return;
+                    }
+                    let texte = serde_json::from_str::<String>(&brut).unwrap_or(brut);
+                    noter(&format!("{nom} {}", sur_une_ligne(&texte, 4000)));
+                });
+                if let Err(err) = lu {
+                    noter(&format!("script refusé {}", resume(&err.to_string())));
+                }
             }
         }
     }
