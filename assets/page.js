@@ -74,12 +74,15 @@
   }, true);
 
   // Boutons latéraux de la souris : précédent et suivant (aussi dans les cadres).
-  for (const type of ['mousedown', 'mouseup', 'auxclick']) {
-    window.addEventListener(type, (e) => {
-      if (!e.isTrusted || (e.button !== 3 && e.button !== 4)) return;
-      e.preventDefault();
-      if (type === 'mouseup') send(e.button === 3 ? 'back' : 'forward');
-    }, true);
+  // Pas sous macOS : WebKit ne les donne pas aux pages, mac_mouse.rs s'en charge.
+  if (__FEATHER_SIDE_BUTTONS__) {
+    for (const type of ['mousedown', 'mouseup', 'auxclick']) {
+      window.addEventListener(type, (e) => {
+        if (!e.isTrusted || (e.button !== 3 && e.button !== 4)) return;
+        e.preventDefault();
+        if (type === 'mouseup') send(e.button === 3 ? 'back' : 'forward');
+      }, true);
+    }
   }
 
   // Clic de molette sur un lien : ouvre la page dans un nouvel onglet (aussi dans les cadres).

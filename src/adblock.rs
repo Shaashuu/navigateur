@@ -13,10 +13,6 @@
 //! Les règles plus fines (chemins, expressions, options par site) sont ignorées :
 //! le but est de bloquer l'essentiel sans casser de site ni peser en mémoire.
 
-// Le filtrage requête par requête ne sert que sous Windows (WebKit applique ses
-// propres règles) ; ailleurs, il n'est utilisé que par les tests.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -394,7 +390,8 @@ static REPLACED: AtomicBool = AtomicBool::new(false);
 static SITES_OFF: RwLock<Vec<String>> = RwLock::new(Vec::new());
 /// Règles des encarts.
 static COSMETIC: RwLock<Option<Arc<Cosmetic>>> = RwLock::new(None);
-/// Domaines bloqués (Windows : lus à chaque requête ; macOS : compilés par WebKit).
+/// Domaines bloqués, lus à chaque requête (sous macOS, WebKit compile ses propres listes).
+#[cfg(not(target_os = "macos"))]
 static NETWORK: RwLock<Option<Arc<NetworkRules>>> = RwLock::new(None);
 
 pub fn set_enabled(on: bool) {
@@ -422,6 +419,8 @@ pub fn active_on(page_host: &str, private: bool) -> bool {
 }
 
 /// Vrai si la requête vers `url` doit être refusée pour une page de `page_host`.
+/// Windows seulement : sous macOS, WebKit applique ses propres règles.
+#[cfg(windows)]
 pub fn should_block(url: &str, page_host: &str, private: bool) -> bool {
     if !active_on(page_host, private) {
         return false;
@@ -608,9 +607,11 @@ mod platform {
 
 /// Nombre de règles par liste WebKit (le moteur en accepte 150 000 par liste,
 /// mais compile bien plus vite des listes moyennes).
+#[cfg(any(target_os = "macos", test))]
 const WEBKIT_CHUNK: usize = 40_000;
 
 /// Échappe un texte pour les expressions de WebKit.
+#[cfg(any(target_os = "macos", test))]
 fn regex_escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
@@ -626,7 +627,7 @@ fn regex_escape(text: &str) -> String {
 /// `WEBKIT_CHUNK` domaines : un blocage par domaine (requêtes vers un autre site
 /// seulement), puis dans chaque morceau les exceptions (`ignore-previous-rules`
 /// ne vaut que pour les règles de sa propre liste).
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg(any(target_os = "macos", test))]
 fn webkit_chunks(rules: &NetworkRules) -> Vec<String> {
     use serde_json::{Value, json};
     let host_filter = |d: &str| format!("^[a-z]+://([^/:]*\\.)?{}", regex_escape(d));
@@ -683,7 +684,7 @@ fn webkit_chunks(rules: &NetworkRules) -> Vec<String> {
 
 /// Empreinte d'une liste (FNV-1a) : nomme les listes compilées par WebKit, qui
 /// les garde sur le disque ; les mêmes listes ne sont pas recompilées au lancement suivant.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg(any(target_os = "macos", test))]
 fn fingerprint(text: &str) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in text.bytes() {

@@ -313,7 +313,7 @@ impl Library {
     }
 
     /// Titre gardé pour cette adresse (la visite la plus récente).
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg(target_os = "macos")]
     pub fn title_of(&self, url: &str) -> Option<&str> {
         self.history.iter().rev().find(|v| v.url == url).map(|v| v.title.as_str())
     }

@@ -111,22 +111,20 @@ pub enum UserEvent {
     /// `window.open` ; `private` : la page qui l'a demandé est privée.
     OpenInNewTab { url: String, private: bool },
     /// Menu Historique du Mac : rouvrir cet onglet fermé.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg(target_os = "macos")]
     ReopenClosed(String),
     /// Suggestions du moteur de recherche pour ce texte de la barre (voir `suggest`).
     EngineSuggestions { query: String, items: Vec<String> },
     Update(UpdateEvent),
     /// Un téléchargement commence, rangé à cet endroit.
-    DownloadStarted { url: String, path: PathBuf, private: bool },
+    DownloadStarted { url: String, path: PathBuf },
     DownloadDone { url: String, path: Option<PathBuf>, success: bool },
-    /// Taille annoncée par le serveur pour un téléchargement.
-    DownloadSize { id: u32, total: u64 },
     /// Image ajoutée à Photos (ou la raison de l'échec).
     ImageSaved(Result<(), String>),
     /// Fin d'une capture de page : le fichier écrit (`None` : copiée), ou l'erreur.
     Captured(Result<Option<PathBuf>, String>),
     /// Menu Fichier du Mac : la page enregistrée ou exportée en PDF (ou l'erreur).
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg(target_os = "macos")]
     Exported(Result<PathBuf, String>),
     /// Listes du bloqueur lues (ou leur état seul : téléchargement, erreur).
     AdFilters(Option<Box<adblock::Filters>>, adblock::Status),
@@ -669,6 +667,7 @@ impl App {
                     self.open_tab(&url, private);
                 }
             }
+            #[cfg(target_os = "macos")]
             UserEvent::ReopenClosed(url) => {
                 if network::is_web(&url) {
                     self.tabs.take_closed(&url);
@@ -681,15 +680,9 @@ impl App {
                 self.chrome_call(&format!("navigateur.setEngineSuggestions({data})"));
             }
             UserEvent::Update(event) => self.handle_update(event),
-            UserEvent::DownloadStarted { url, path, private } => self.download_started(url, path, private),
+            UserEvent::DownloadStarted { url, path } => self.download_started(url, path),
             UserEvent::DownloadDone { url, path, success } => self.download_done(&url, path, success),
             UserEvent::ImageSaved(result) => self.image_saved(result),
-            UserEvent::DownloadSize { id, total } => {
-                if let Some(d) = self.downloads.iter_mut().find(|d| d.id == id) {
-                    d.total = Some(total);
-                }
-                self.push_state();
-            }
             UserEvent::Media(id, state) => {
                 if let Some(tab) = self.tabs.get_mut(id)
                     && tab.engine != state
@@ -699,6 +692,7 @@ impl App {
                 }
             }
             UserEvent::Captured(result) => self.captured(result),
+            #[cfg(target_os = "macos")]
             UserEvent::Exported(result) => self.exported(result),
             UserEvent::AdFilters(filters, status) => self.ad_filters(filters, status),
             UserEvent::AdRulesReady => {

@@ -8,13 +8,12 @@
 
 use std::ffi::OsString;
 use std::fs;
-use std::io::{self, Read};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use serde::Serialize;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 /// Version de ce programme.
 pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
@@ -27,7 +26,7 @@ const DOWNLOAD_PREFIX: &str = "https://github.com/Shaashuu/feather-releases/rele
 /// `outils/cle-signature.py` et build.yml). L'empreinte annoncée par GitHub
 /// prouve seulement que le fichier n'est pas abîmé ; la signature prouve qu'il
 /// vient bien de nous, même si le compte GitHub ou un jeton était volé.
-#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+#[cfg(any(windows, target_os = "macos", test))]
 const PUBLIC_KEY: &str = "WOIfoSPOb+EFKvrVFylv+Hfa8i+31x62yhvXatPi7Gc=";
 
 /// Une version plus récente, prête à être téléchargée.
@@ -316,7 +315,7 @@ fn install_for_os(_update: &Available, _sha256: &str, _exe: &Path) -> Result<Res
 
 /// Met `new` à la place de `current` : l'ancien est mis de côté (`.old`), car un
 /// programme en cours d'exécution peut être renommé mais pas supprimé.
-#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+#[cfg(any(windows, target_os = "macos", test))]
 pub fn swap_executable(current: &Path, new: &Path) -> io::Result<()> {
     let old = old_path(current);
     remove_any(&old)?;
@@ -365,14 +364,14 @@ pub fn clean_leftovers() {
 
 /// Le texte signé pour un fichier publié : son nom (qui porte la version), puis
 /// son empreinte SHA-256 en hexadécimal. build.yml signe exactement ce texte.
-#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+#[cfg(any(windows, target_os = "macos", test))]
 fn signed_message(name: &str, sha256: &str) -> String {
     format!("{name}\n{sha256}")
 }
 
 /// Vérifie la signature (base64) du fichier `name` d'empreinte `sha256` avec la
 /// clé publique `key` (base64).
-#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+#[cfg(any(windows, target_os = "macos", test))]
 pub fn verify_signature(name: &str, sha256: &str, signature: &str, key: &str) -> Result<(), String> {
     let bad = || "la signature du fichier ne correspond pas : mise à jour refusée".to_string();
     let key = crate::extensions::base64_decode(key.trim())
@@ -418,8 +417,10 @@ fn download(update: &Available, dest: &Path, sha256: &str) -> Result<(), String>
     verify_signature(&update.name, &actual, &String::from_utf8_lossy(&signature.stdout), PUBLIC_KEY)
 }
 
-#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
+#[cfg(any(windows, target_os = "macos", test))]
 pub fn file_sha256(path: &Path) -> io::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
     let mut file = fs::File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 64 * 1024];

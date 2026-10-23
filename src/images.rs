@@ -39,33 +39,13 @@ pub fn file_name(url: &str) -> String {
         .ok()
         .and_then(|u| u.path_segments().and_then(|mut s| s.next_back().map(str::to_string)))
         .unwrap_or_default();
-    let decoded = percent_decode(&last);
+    let decoded = percent_encoding::percent_decode_str(&last).decode_utf8_lossy();
     let clean: String = decoded
         .chars()
         .map(|c| if c.is_control() || "\\/:*?\"<>|".contains(c) { '_' } else { c })
         .collect();
     let clean = clean.trim().trim_matches('.').to_string();
     if clean.is_empty() { "image".to_string() } else { clean.chars().take(120).collect() }
-}
-
-fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let hex = |b: u8| (b as char).to_digit(16);
-        if bytes[i] == b'%'
-            && i + 2 < bytes.len()
-            && let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2]))
-        {
-            out.push((h * 16 + l) as u8);
-            i += 3;
-            continue;
-        }
-        out.push(bytes[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// Télécharge l'image dans `dest`.

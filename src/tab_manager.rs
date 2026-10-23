@@ -425,6 +425,7 @@ impl TabManager {
     }
 
     /// Cet onglet fermé (menu Historique du Mac) : retiré de la liste s'il y est.
+    #[cfg(target_os = "macos")]
     pub fn take_closed(&mut self, url: &str) -> bool {
         let before = self.closed.len();
         self.closed.retain(|u| u != url);
@@ -432,7 +433,7 @@ impl TabManager {
     }
 
     /// Les onglets fermés, le plus ancien d'abord.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg(target_os = "macos")]
     pub fn closed(&self) -> &[String] {
         &self.closed
     }
@@ -1028,7 +1029,7 @@ fn build_page(
         .with_download_started_handler(move |url, path| {
             let dir = download_settings.read().map(|s| s.download_dir.clone()).unwrap_or_default();
             *path = downloads::destination(path, &dir);
-            let _ = on_download.send_event(UserEvent::DownloadStarted { url, path: path.clone(), private });
+            let _ = on_download.send_event(UserEvent::DownloadStarted { url, path: path.clone() });
             true
         })
         .with_download_completed_handler(move |url, path, success| {
