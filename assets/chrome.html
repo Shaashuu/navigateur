@@ -3686,6 +3686,8 @@
     // Raccourcis Ctrl+H, Ctrl+J et Ctrl+Maj+O (voir `Shortcut` côté Rust).
     openLibrary(kind) { if (['history', 'downloads', 'bookmarks'].includes(kind)) openLibrary(kind); },
     openExtensions() { if (mode !== 'extensions') openExtensions(); },
+    // Menu Fichier → Importer des favoris (macOS).
+    openImport() { if (mode !== 'import') openImport(); },
     closePanel,
     // Position de la souris lue par Rust pendant qu'un panneau est ouvert.
     pointer: nativePointer,

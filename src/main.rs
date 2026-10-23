@@ -244,7 +244,7 @@ fn main() -> wry::Result<()> {
     #[cfg(target_os = "macos")]
     {
         mac_mouse::install(proxy.clone());
-        mac_menu::install();
+        mac_menu::install(proxy.clone());
     }
 
     let surface = Surface::new(&window);
@@ -1144,6 +1144,8 @@ impl App {
             Shortcut::History => self.focus_chrome("navigateur.openLibrary('history')"),
             Shortcut::Downloads => self.focus_chrome("navigateur.openLibrary('downloads')"),
             Shortcut::Bookmarks => self.focus_chrome("navigateur.openLibrary('bookmarks')"),
+            Shortcut::Import => self.focus_chrome("navigateur.openImport()"),
+            Shortcut::Extensions => self.focus_chrome("navigateur.openExtensions()"),
             Shortcut::Fullscreen => {
                 let full = self.window.fullscreen().is_some();
                 self.window.set_fullscreen((!full).then_some(tao::window::Fullscreen::Borderless(None)));
