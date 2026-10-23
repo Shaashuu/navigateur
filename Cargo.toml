@@ -10,6 +10,8 @@ serde = { version = "1.0.229", features = ["derive"] }
 sha2 = "0.10"
 # Vérification des signatures des mises à jour (Ed25519, sans autre dépendance).
 ed25519-compact = { version = "2", default-features = false }
+# Décompression des extensions (.crx, .xpi) en Rust, sans outil du système.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 serde_json = "1.0.154"
 tao = "0.37.1"
 url = "2.5.8"

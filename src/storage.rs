@@ -45,16 +45,22 @@ fn backup_of(path: &Path) -> PathBuf {
 /// Lit un fichier JSON ; `None` s'il manque ou s'il est illisible (la copie
 /// `.bak` est alors essayée).
 pub fn read_json<T: DeserializeOwned>(name: &str) -> Option<T> {
+    read_json_checked(name).map(|(value, _)| value)
+}
+
+/// Comme `read_json`, en disant si la valeur vient du fichier lui-même (vrai)
+/// ou de sa copie `.bak` (faux : fichier absent, abîmé ou illisible).
+pub fn read_json_checked<T: DeserializeOwned>(name: &str) -> Option<(T, bool)> {
     read_at(&path(name)?, name)
 }
 
-fn read_at<T: DeserializeOwned>(path: &Path, name: &str) -> Option<T> {
+fn read_at<T: DeserializeOwned>(path: &Path, name: &str) -> Option<(T, bool)> {
     // Une écriture en cours (fil d'écriture) doit être finie avant de relire.
     flush();
     let backup = backup_of(path);
     match fs::read_to_string(path) {
         Ok(text) => match serde_json::from_str(&text) {
-            Ok(value) => return Some(value),
+            Ok(value) => return Some((value, true)),
             Err(err) => {
                 // Fichier abîmé (coupure de courant, format inconnu) : mis de côté,
                 // jamais effacé, pour pouvoir le récupérer à la main.
@@ -81,7 +87,7 @@ fn read_at<T: DeserializeOwned>(path: &Path, name: &str) -> Option<T> {
         Err(_) => return None,
     }
     let text = fs::read_to_string(&backup).ok()?;
-    serde_json::from_str(&text).ok()
+    serde_json::from_str(&text).ok().map(|value| (value, false))
 }
 
 /// Met la valeur en forme puis la confie au fil d'écriture (voir le module).
@@ -180,16 +186,16 @@ mod tests {
         write_now(&file, "[3]").unwrap();
         // L'ancienne version est gardée.
         assert_eq!(fs::read_to_string(backup_of(&file)).unwrap(), "[1,2]");
-        assert_eq!(read_at::<Vec<u32>>(&file, "essai.json"), Some(vec![3]));
+        assert_eq!(read_at::<Vec<u32>>(&file, "essai.json"), Some((vec![3], true)));
         // Fichier abîmé : mis de côté, la copie reprend le relais, un avertissement attend.
         fs::write(&file, "[3,").unwrap();
-        assert_eq!(read_at::<Vec<u32>>(&file, "essai.json"), Some(vec![1, 2]));
+        assert_eq!(read_at::<Vec<u32>>(&file, "essai.json"), Some((vec![1, 2], false)));
         assert!(!file.exists());
         let aside = fs::read_dir(&dir).unwrap().flatten().any(|e| e.file_name().to_string_lossy().contains(".corrompu-"));
         assert!(aside);
         assert!(take_warnings().iter().any(|w| w.contains("essai.json")));
         // Fichier absent (arrêt entre deux renommages) : la copie sert aussi.
-        assert_eq!(read_at::<Vec<u32>>(&file, "essai.json"), Some(vec![1, 2]));
+        assert_eq!(read_at::<Vec<u32>>(&file, "essai.json"), Some((vec![1, 2], false)));
         fs::remove_dir_all(&dir).unwrap();
     }
 }

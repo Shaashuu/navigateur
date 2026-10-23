@@ -15,9 +15,9 @@
 //! Aucun des deux moteurs n'affiche la petite fenêtre d'une extension (celle
 //! de son bouton) : Feather l'ouvre lui-même par-dessus la page.
 //!
-//! Le téléchargement passe par `curl` (https seulement) et la décompression
-//! par les outils du système (`tar` de Windows, `ditto` de macOS), comme la
-//! mise à jour : aucune dépendance ajoutée.
+//! Le téléchargement passe par `curl` (https seulement), comme la mise à
+//! jour ; la décompression par `archive`, qui vérifie toute l'archive avant
+//! d'écrire quoi que ce soit.
 
 use std::collections::HashMap;
 use std::fs;
@@ -36,6 +36,10 @@ use crate::storage;
 
 /// Fichier qui liste les extensions installées.
 const FILE: &str = "extensions.json";
+/// Dossiers d'extensions qui ne servent plus : gardés une semaine dans
+/// `extensions/.corbeille` avant d'être effacés, au cas où la liste se tromperait.
+const TRASH: &str = ".corbeille";
+const TRASH_KEPT: u64 = 7 * 24 * 3600;
 /// Taille maximale d'une extension téléchargée ou choisie (octets).
 pub const MAX_ARCHIVE: usize = 100 * 1024 * 1024;
 /// Taille maximale d'une extension décompressée, et nombre de fichiers.
@@ -270,7 +274,6 @@ pub fn prepare(request: Request) -> Result<Extension, String> {
     let tmp = root.join(format!(".nouvelle-{}", stamp()));
     let result = prepare_in(request, &root, &tmp);
     let _ = fs::remove_dir_all(&tmp);
-    let _ = fs::remove_file(tmp.with_extension("zip"));
     let _ = fs::remove_file(tmp.with_extension("telechargement"));
     result
 }
@@ -458,47 +461,17 @@ fn crx3_key(header: &[u8]) -> Option<Vec<u8>> {
     Some(key.to_vec())
 }
 
-/// Écrit le zip à côté, le décompresse dans `dest` et renvoie la clé du `.crx`.
+/// Décompresse l'extension dans `dest` et renvoie la clé du `.crx`.
 fn unpack(bytes: &[u8], dest: &Path) -> Result<Option<Vec<u8>>, String> {
     let (zip, key) = crx_zip(bytes)?;
-    let zip_path = dest.with_extension("zip");
-    fs::write(&zip_path, zip).map_err(|e| e.to_string())?;
     fs::create_dir_all(dest).map_err(|e| e.to_string())?;
-    let result = extract(&zip_path, dest);
-    let _ = fs::remove_file(&zip_path);
-    result.map(|()| key)
-}
-
-/// Décompresse avec l'outil du système. `tar` (bsdtar) refuse les chemins
-/// absolus et les « .. » ; `check_tree` vérifie ensuite ce qui est sorti.
-fn extract(zip: &Path, dest: &Path) -> Result<(), String> {
-    #[cfg(windows)]
-    let mut cmd = {
-        let mut cmd = crate::network::command("tar");
-        cmd.arg("-xf").arg(zip).arg("-C").arg(dest);
-        cmd
-    };
-    #[cfg(target_os = "macos")]
-    let mut cmd = {
-        let mut cmd = crate::network::command("ditto");
-        cmd.args(["-x", "-k"]).arg(zip).arg(dest);
-        cmd
-    };
-    #[cfg(not(any(windows, target_os = "macos")))]
-    let mut cmd = {
-        let mut cmd = crate::network::command("unzip");
-        cmd.args(["-q", "-o"]).arg(zip).arg("-d").arg(dest);
-        cmd
-    };
-    let out = cmd.output().map_err(|e| format!("décompression impossible : {e}"))?;
-    if !out.status.success() {
-        return Err(format!("archive illisible ({})", String::from_utf8_lossy(&out.stderr).trim()));
-    }
-    Ok(())
+    crate::archive::extract(zip, dest, MAX_UNPACKED, MAX_FILES)?;
+    Ok(key)
 }
 
 /// Refuse les liens symboliques (ils pourraient viser hors du dossier) et les
-/// archives démesurées.
+/// extensions démesurées : seconde vérification après `archive::extract`, et
+/// la seule pour un dossier choisi (`copy_dir`).
 fn check_tree(dir: &Path) -> Result<(), String> {
     let mut total = 0u64;
     let mut count = 0usize;
@@ -1246,7 +1219,11 @@ struct Saved {
 
 impl Extensions {
     pub fn load() -> Self {
-        let mut saved: Saved = storage::read_json(FILE).unwrap_or_default();
+        // La liste ne fait foi que lue dans le fichier lui-même. Reprise de la
+        // copie `.bak`, ou illisible, elle peut oublier des extensions
+        // installées : leurs dossiers ne sont alors pas rangés (avant, un
+        // fichier illisible effaçait toutes les extensions).
+        let (mut saved, complete): (Saved, bool) = storage::read_json_checked(FILE).unwrap_or_default();
         saved.list.retain(|e| e.path().is_some_and(|p| p.join("manifest.json").is_file()));
         // Installées avant 0.5.8 : leurs autorisations sont relues dans le manifeste,
         // pour qu'une mise à jour ne demande que ce qui est vraiment nouveau.
@@ -1267,7 +1244,9 @@ impl Extensions {
                 me.icons.insert(ext.id.clone(), icon);
             }
         }
-        me.sweep();
+        if complete {
+            me.sweep();
+        }
         me.sync_declared();
         me
     }
@@ -1279,16 +1258,10 @@ impl Extensions {
         }
     }
 
-    /// Efface les dossiers qui ne servent plus (anciennes versions, essais ratés).
+    /// Range les dossiers qui ne servent plus (anciennes versions, essais ratés).
     fn sweep(&self) {
-        let Some(root) = root() else { return };
-        let Ok(entries) = fs::read_dir(&root) else { return };
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            let used = self.list.iter().any(|e| e.dir.split('/').next() == Some(name.as_str()));
-            if !used {
-                let _ = if entry.path().is_dir() { fs::remove_dir_all(entry.path()) } else { fs::remove_file(entry.path()) };
-            }
+        if let Some(root) = root() {
+            sweep_in(&root, &self.list, now_secs());
         }
     }
 
@@ -1896,8 +1869,40 @@ impl crate::App {
     }
 }
 
+/// Voir `Extensions::sweep` : les dossiers que `list` n'utilise pas vont à la
+/// corbeille (une installation interrompue est effacée tout de suite), et ce
+/// qui y attend depuis une semaine est effacé.
+fn sweep_in(root: &Path, list: &[Extension], now: u64) {
+    let remove = |path: &Path| {
+        let _ = if path.is_dir() { fs::remove_dir_all(path) } else { fs::remove_file(path) };
+    };
+    let trash = root.join(TRASH);
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == TRASH || list.iter().any(|e| e.dir.split('/').next() == Some(name.as_str())) {
+                continue;
+            }
+            let path = entry.path();
+            if !path.is_dir() || name.starts_with(".nouvelle-") {
+                remove(&path);
+            } else if fs::create_dir_all(&trash).is_ok() {
+                let _ = fs::rename(&path, trash.join(format!("{now}-{name}")));
+            }
+        }
+    }
+    let Ok(waiting) = fs::read_dir(&trash) else { return };
+    for entry in waiting.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let since = name.split('-').next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+        if now.saturating_sub(since) >= TRASH_KEPT {
+            remove(&entry.path());
+        }
+    }
+}
+
 /// Efface le dossier d'une extension remplacée ou retirée, quand le moteur l'a lâché.
-/// Un dossier encore pris sera effacé au prochain démarrage (voir `sweep`).
+/// Un dossier encore pris sera rangé au prochain démarrage (voir `sweep`).
 fn remove_folder_later(ext: &Extension) {
     let Some(root) = root() else { return };
     let Some(folder) = ext.dir.split('/').next().filter(|f| !f.is_empty() && *f != "." && *f != "..") else { return };
@@ -3078,6 +3083,49 @@ mod tests {
     }
 
     #[test]
+    fn dossiers_ranges_a_la_corbeille() {
+        let root = std::env::temp_dir().join(format!("feather-corbeille-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let now = 1_000_000_000;
+        for dir in ["utilisee-1/sous-dossier", "ancienne-2", ".nouvelle-3", ".corbeille/10-tres-ancienne-4"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        let recent = format!(".corbeille/{}-recente-5", now - 3600);
+        fs::create_dir_all(root.join(&recent)).unwrap();
+        fs::write(root.join(".nouvelle-3.telechargement"), b"x").unwrap();
+        let used = Extension {
+            id: ID.into(),
+            name: "x".into(),
+            description: String::new(),
+            version: "1".into(),
+            source: Source::Chrome,
+            enabled: true,
+            dir: "utilisee-1/sous-dossier".into(),
+            popup: None,
+            options: None,
+            icon: None,
+            all_sites: false,
+            firefox: false,
+            engine_id: None,
+            origin: None,
+            permissions: Vec::new(),
+            hosts: Vec::new(),
+            optional: Vec::new(),
+        };
+        sweep_in(&root, &[used], now);
+        // L'extension de la liste reste ; l'ancienne version attend à la corbeille.
+        assert!(root.join("utilisee-1/sous-dossier").is_dir());
+        assert!(!root.join("ancienne-2").exists());
+        assert!(root.join(format!(".corbeille/{now}-ancienne-2")).is_dir());
+        // Installation interrompue : effacée tout de suite.
+        assert!(!root.join(".nouvelle-3").exists() && !root.join(".nouvelle-3.telechargement").exists());
+        // Une semaine à la corbeille, puis effacé.
+        assert!(!root.join(".corbeille/10-tres-ancienne-4").exists());
+        assert!(root.join(&recent).is_dir());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn bouton_du_store() {
         assert_eq!(store_page(&format!("https://chromewebstore.google.com/detail/proton-pass/{ID}?hl=fr")), Some(ID.into()));
         assert_eq!(store_page("https://chromewebstore.google.com/"), None);
@@ -3380,7 +3428,7 @@ mod tests {
         !crc
     }
 
-    /// Un zip sans compression, assez pour `tar` (Windows), `ditto` (macOS) et `unzip`.
+    /// Un zip sans compression (les cas difficiles sont dans les tests d'`archive`).
     fn zip(files: &[(&str, &[u8])]) -> Vec<u8> {
         let mut out = Vec::new();
         let mut central = Vec::new();
@@ -3426,8 +3474,8 @@ mod tests {
         out
     }
 
-    /// De bout en bout : un `.crx` (version 3) choisi comme fichier est décompressé
-    /// par l'outil du système, rangé, et reçoit sa clé.
+    /// De bout en bout : un `.crx` (version 3) choisi comme fichier est décompressé,
+    /// rangé, et reçoit sa clé.
     #[test]
     fn fichier_crx_installe() {
         let key = b"cle publique de test".to_vec();
