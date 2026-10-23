@@ -22,54 +22,14 @@
     try { Object.defineProperty(window, name, { value: fn, writable: false, configurable: false }); } catch (_) {}
   };
   const send = (shortcut) => post({ shortcut });
+  // Raccourcis clavier : la table et le calcul viennent de src/shortcuts.rs, les
+  // mêmes que dans l'interface et le menu du Mac.
+  const shortcutOf = __FEATHER_SHORTCUTS__;
   // Seuls les vrais gestes (`isTrusted`) comptent : un événement fabriqué par le
   // site ne ferme pas l'onglet et n'ouvre rien.
   window.addEventListener('keydown', (e) => {
     if (!e.isTrusted) return;
-    const k = e.key.toLowerCase();
-    const ctrl = (e.ctrlKey || e.metaKey) && !e.altKey;
-    const code = e.code;
-    const mac = /Mac/.test(navigator.platform);
-    let a = null;
-    // Ctrl+1 à Ctrl+9, onglet précédent ou suivant, historique, téléchargements,
-    // favoris et plein écran : même calcul que dans l'interface (chrome.html).
-    if (ctrl && !e.shiftKey && /^Digit[1-9]$/.test(code)) a = 'tab' + code.slice(5);
-    else if (e.ctrlKey && !e.metaKey && !e.altKey && (k === 'pageup' || k === 'pagedown')) a = k === 'pageup' ? 'previous_tab' : 'next_tab';
-    else if (k === 'f11' && !mac) a = 'fullscreen';
-    else if (mac && e.metaKey && e.altKey && !e.ctrlKey && (k === 'arrowleft' || k === 'arrowright')) a = k === 'arrowleft' ? 'previous_tab' : 'next_tab';
-    else if (mac && e.metaKey && e.shiftKey && !e.altKey && (code === 'BracketLeft' || code === 'BracketRight')) a = code === 'BracketLeft' ? 'previous_tab' : 'next_tab';
-    else if (mac && e.metaKey && !e.altKey && !e.shiftKey && code === 'KeyY') a = 'history';
-    else if (mac && e.metaKey && e.altKey && !e.shiftKey && code === 'KeyL') a = 'downloads';
-    else if (mac && e.metaKey && e.altKey && !e.shiftKey && code === 'KeyB') a = 'bookmarks';
-    // Menus du Mac : mode lecture, tous les onglets en favoris, accueil.
-    else if (mac && e.metaKey && e.shiftKey && !e.altKey && code === 'KeyR') a = 'reader';
-    else if (mac && e.metaKey && e.shiftKey && !e.altKey && code === 'KeyD') a = 'bookmark_all';
-    else if (mac && e.metaKey && e.shiftKey && !e.altKey && code === 'KeyH') a = 'home';
-    else if (!mac && ctrl && !e.shiftKey && k === 'h') a = 'history';
-    else if (!mac && ctrl && !e.shiftKey && k === 'j') a = 'downloads';
-    else if (!mac && ctrl && e.shiftKey && k === 'o') a = 'bookmarks';
-    // Ctrl+Maj+T et Ctrl+Maj+N passent avant Ctrl+T (même touche).
-    else if (ctrl && e.shiftKey && k === 't') a = 'reopen_tab';
-    else if (ctrl && e.shiftKey && k === 's') a = 'capture';
-    else if (ctrl && e.shiftKey && k === 'n') a = 'new_private_tab';
-    else if (ctrl && e.shiftKey && k === 'f') a = 'focus';
-    else if (ctrl && !e.shiftKey && k === 'f') a = 'find';
-    else if (ctrl && !e.shiftKey && k === 'p') a = 'print';
-    else if (ctrl && (k === '+' || k === '=')) a = 'zoom_in';
-    else if (ctrl && (k === '-' || k === '_')) a = 'zoom_out';
-    else if (ctrl && k === '0') a = 'zoom_reset';
-    else if (e.altKey && !e.ctrlKey && !e.metaKey && k === 'arrowleft') a = 'back';
-    else if (e.altKey && !e.ctrlKey && !e.metaKey && k === 'arrowright') a = 'forward';
-    else if (e.metaKey && !e.ctrlKey && !e.altKey && (k === '[' || k === ']')) a = k === '[' ? 'back' : 'forward';
-    else if (k === 'f5' || (ctrl && k === 'r')) a = 'reload';
-    else if (ctrl && (k === 'l' || k === 'k')) a = 'focus_bar';
-    else if (ctrl && k === 't') a = 'new_tab';
-    else if (ctrl && k === 'w') a = 'close_tab';
-    else if (e.ctrlKey && !e.metaKey && !e.altKey && k === 'm') a = 'toggle_mute';
-    else if (ctrl && k === 'tab') a = e.shiftKey ? 'previous_tab' : 'next_tab';
-    else if (ctrl && k === ',') a = 'settings';
-    else if (ctrl && k === 'd') a = 'toggle_bookmark';
-    else if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && k === 'escape') a = 'task_manager';
+    const a = shortcutOf(e);
     if (a) { e.preventDefault(); e.stopPropagation(); send(a); }
   }, true);
 

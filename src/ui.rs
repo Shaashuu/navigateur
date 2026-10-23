@@ -11,6 +11,7 @@ use wry::{Rect, WebView, WebViewBuilder};
 use crate::library::Bookmark;
 use crate::library::Visit;
 use crate::settings::{BarPosition, Settings, SidebarStyle, Theme};
+use crate::shortcuts;
 use crate::sitedata::Permission;
 use crate::tab_manager::TabId;
 
@@ -31,18 +32,29 @@ pub const FOCUS_RAIL: f64 = 14.0;
 /// Menu Aide (macOS) : où signaler un problème.
 pub const ISSUES_URL: &str = "https://github.com/Shaashuu/feather-releases/issues";
 
-pub const CHROME_HTML: &str = include_str!("../assets/chrome.html");
+const CHROME_HTML: &str = include_str!("../assets/chrome.html");
 const HOME_HTML: &str = include_str!("../assets/home.html");
 
 /// Injecté dans chaque page : raccourcis clavier, son, icône du site, recherche
 /// dans la page, menu des liens, mesures, autorisations (voir le fichier).
 const PAGE_SCRIPT: &str = include_str!("../assets/page.js");
 
-/// Le script des pages, avec la clé de l'onglet (voir `split_key`). Sous macOS,
-/// les boutons latéraux de la souris passent par `mac_mouse.rs`, pas par la page.
+/// L'interface, avec les raccourcis clavier et leur aide (voir `shortcuts.rs`).
+pub fn chrome_html() -> String {
+    CHROME_HTML
+        .replacen("__FEATHER_SHORTCUTS__", shortcuts::script(), 1)
+        .replacen("__FEATHER_SHORTCUT_HELP__", &shortcuts::help_json(), 1)
+}
+
+/// Le script des pages, avec la clé de l'onglet (voir `split_key`) et les
+/// raccourcis clavier. Sous macOS, les boutons latéraux de la souris passent
+/// par `mac_mouse.rs`, pas par la page.
 pub fn page_script(key: &str) -> String {
     let side_buttons = if cfg!(target_os = "macos") { "false" } else { "true" };
-    PAGE_SCRIPT.replacen("__FEATHER_KEY__", key, 1).replacen("__FEATHER_SIDE_BUTTONS__", side_buttons, 1)
+    PAGE_SCRIPT
+        .replacen("__FEATHER_KEY__", key, 1)
+        .replacen("__FEATHER_SIDE_BUTTONS__", side_buttons, 1)
+        .replacen("__FEATHER_SHORTCUTS__", shortcuts::script(), 1)
 }
 
 /// Sépare la clé de l'onglet du message d'une page. `true` : le message vient
@@ -882,7 +894,9 @@ mod tests {
         let key = "0123456789abcdef0123456789abcdef";
         let script = page_script(key);
         assert!(script.contains(&format!("const KEY = '{key}';")) && !script.contains("__FEATHER_KEY__"));
-        assert!(!script.contains("__FEATHER_SIDE_BUTTONS__"));
+        assert!(!script.contains("__FEATHER_SIDE_BUTTONS__") && !script.contains("__FEATHER_SHORTCUTS__"));
+        let chrome = chrome_html();
+        assert!(!chrome.contains("__FEATHER_SHORTCUTS__") && !chrome.contains("__FEATHER_SHORTCUT_HELP__"));
         assert_eq!(split_key(&format!("{key}{{\"pressed\":true}}"), key), (true, "{\"pressed\":true}"));
         // Message du site : pas de clé, ou une autre.
         assert_eq!(split_key("{\"pressed\":true}", key), (false, "{\"pressed\":true}"));

@@ -37,6 +37,7 @@ mod placement;
 mod reader;
 mod rsa;
 mod settings;
+mod shortcuts;
 mod siteclear;
 mod sitedata;
 mod softsleep;
@@ -309,7 +310,7 @@ fn main() -> wry::Result<()> {
     let chrome = surface.attach(
         extensions::prepare_builder(WebViewBuilder::new()
             .with_bounds(ui::chrome_bounds(&window))
-            .with_html(ui::CHROME_HTML)
+            .with_html(ui::chrome_html())
             // Transparente là où les panneaux laissent voir la page (voir `layers.rs`).
             .with_transparent(layers::SUPPORTED)
             .with_devtools(cfg!(debug_assertions))
