@@ -35,6 +35,7 @@ mod siteclear;
 mod sitedata;
 mod softsleep;
 mod storage;
+mod suggest;
 mod tab_manager;
 mod trackers;
 mod ui;
@@ -91,6 +92,8 @@ pub enum UserEvent {
     LoadFailed { id: TabId, url: String, kind: errorpage::ErrorKind },
     /// `window.open` ; `private` : la page qui l'a demandé est privée.
     OpenInNewTab { url: String, private: bool },
+    /// Suggestions du moteur de recherche pour ce texte de la barre (voir `suggest`).
+    EngineSuggestions { query: String, items: Vec<String> },
     Update(UpdateEvent),
     /// Les onglets fermés peuvent être détruits.
     Reap,
@@ -620,6 +623,10 @@ impl App {
                     self.open_tab(&url, private);
                 }
             }
+            UserEvent::EngineSuggestions { query, items } => {
+                let data = serde_json::json!({ "query": query, "items": items });
+                self.chrome_call(&format!("navigateur.setEngineSuggestions({data})"));
+            }
             UserEvent::Update(event) => self.handle_update(event),
             UserEvent::Reap => self.tabs.reap(),
             UserEvent::DownloadStarted { url, path, private } => self.download_started(url, path, private),
@@ -1101,8 +1108,11 @@ impl App {
             }
         }
         if let Some(text) = message.open_bar {
+            // « / » ouvre les commandes ; un autre texte passe dans la barre,
+            // qui propose alors les suggestions pendant la frappe.
+            let call = if text.starts_with('/') { "openBar" } else { "typeInBar" };
             let text = serde_json::to_string(&text).unwrap_or_default();
-            self.focus_chrome(&format!("navigateur.openBar({text})"));
+            self.focus_chrome(&format!("navigateur.{call}({text})"));
         }
     }
 
