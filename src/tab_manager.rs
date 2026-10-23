@@ -12,7 +12,7 @@
 
 use std::borrow::Cow;
 use std::sync::{Arc, RwLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tao::event_loop::EventLoopProxy;
@@ -40,6 +40,12 @@ pub type TabId = u32;
 
 /// Nombre d'onglets fermés que `Ctrl+Maj+T` peut rouvrir.
 const CLOSED_MEMORY: usize = 10;
+
+/// Souvenirs gardés au plus, les plus récents (voir `Souvenir`) : celui d'un
+/// site lourd peut peser plusieurs Mo. Au-delà, ou après `GARDE_SOUVENIR`,
+/// l'onglet se réveille avec sa position seulement (voir `Tab::scroll`).
+const MAX_SOUVENIRS: usize = 20;
+const GARDE_SOUVENIR: Duration = Duration::from_secs(3600);
 
 /// Couleurs proposées aux groupes, l'une après l'autre.
 const GROUP_COLORS: [&str; 6] = ["#5b5bd6", "#2f9e5b", "#e8a317", "#e5484d", "#0e9fb5", "#c2489b"];
@@ -100,8 +106,9 @@ pub struct Tab {
     key: String,
     /// Hôte de la page, partagé avec les rappels de la webview (autorisations, traqueurs).
     host: Arc<RwLock<String>>,
-    /// Historique et position de la page détruite, rendus au réveil (macOS 12 ou plus).
-    souvenir: Option<Souvenir>,
+    /// Historique et position de la page détruite, rendus au réveil (macOS 12
+    /// ou plus), avec l'heure où ils ont été pris (voir `forget_souvenirs`).
+    souvenir: Option<(Instant, Souvenir)>,
     /// Dernière position dans la page, envoyée par la page quand l'onglet est
     /// caché (voir `assets/page.js`) : sert au réveil là où `Souvenir` manque.
     pub scroll: Option<Scroll>,
@@ -298,7 +305,7 @@ impl TabManager {
         }
         // Avec un souvenir, la page ne charge rien elle-même : WebKit rend
         // l'historique, puis rouvre la page au même endroit.
-        let souvenir = tab.souvenir.take();
+        let souvenir = tab.souvenir.take().map(|(_, s)| s);
         let webview = build_page(id, &tab.url, &tab.key, ctx, tab.private, Arc::clone(&tab.host), souvenir.is_none())?;
         match souvenir {
             Some(s) => {
@@ -436,6 +443,21 @@ impl TabManager {
     #[cfg(target_os = "macos")]
     pub fn closed(&self) -> &[String] {
         &self.closed
+    }
+
+    /// Oublie les souvenirs des onglets en veille depuis plus d'une heure, puis
+    /// les plus anciens au-delà de `MAX_SOUVENIRS`. Appelé toutes les cinq
+    /// secondes (voir `App::survey`) ; sans effet hors de macOS, qui seul en garde.
+    pub fn forget_souvenirs(&mut self, now: Instant) {
+        let held: Vec<(usize, Instant)> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, t)| t.souvenir.as_ref().map(|(at, _)| (i, *at)))
+            .collect();
+        for i in to_forget(held, now) {
+            self.tabs[i].souvenir = None;
+        }
     }
 
     /// Détruit les pages fermées depuis un moment.
@@ -739,13 +761,26 @@ fn new_key() -> String {
         .collect()
 }
 
-/// Souvenir d'une page qu'on va détruire, sauf pour une page Feather (erreur,
-/// lecture) : elle se recrée autrement (voir `App::load_failed`, `App::open_reader`).
-fn remember(tab: &Tab, webview: &WebView) -> Option<Souvenir> {
+/// Souvenir d'une page qu'on va détruire, daté, sauf pour une page Feather
+/// (erreur, lecture) : elle se recrée autrement (voir `App::load_failed`, `App::open_reader`).
+fn remember(tab: &Tab, webview: &WebView) -> Option<(Instant, Souvenir)> {
     if tab.on_internal_page() {
         return None;
     }
-    souvenir::garder(webview)
+    souvenir::garder(webview).map(|s| (Instant::now(), s))
+}
+
+/// Parmi les souvenirs gardés (place de l'onglet, heure du souvenir), ceux à
+/// oublier : plus d'une heure, ou au-delà des `MAX_SOUVENIRS` plus récents.
+fn to_forget(held: Vec<(usize, Instant)>, now: Instant) -> Vec<usize> {
+    let (old, mut recent): (Vec<_>, Vec<_>) =
+        held.into_iter().partition(|(_, at)| now.saturating_duration_since(*at) >= GARDE_SOUVENIR);
+    let mut out: Vec<usize> = old.into_iter().map(|(i, _)| i).collect();
+    if recent.len() > MAX_SOUVENIRS {
+        recent.sort_unstable_by_key(|(_, at)| std::cmp::Reverse(*at));
+        out.extend(recent[MAX_SOUVENIRS..].iter().map(|(i, _)| *i));
+    }
+    out
 }
 
 /// Position dans une page, en pixels CSS, et l'adresse où elle a été relevée.
@@ -758,9 +793,11 @@ pub struct Scroll {
 
 /// Historique Précédent/Suivant d'une page et sa position, tels que WebKit les
 /// garde (`WKWebView.interactionState`, macOS 12 ou plus). Opaque : on le prend
-/// à la page avant de la détruire, on le rend à la nouvelle. Ailleurs, il n'y
-/// en a jamais : WebView2 ne sait pas rendre un historique, et seule la
-/// position est gardée, par la page elle-même (voir `Tab::scroll`).
+/// à la page avant de la détruire, on le rend à la nouvelle ; gardé une heure
+/// au plus, pour les `MAX_SOUVENIRS` onglets endormis le plus récemment (voir
+/// `TabManager::forget_souvenirs`). Ailleurs, il n'y en a jamais : WebView2 ne
+/// sait pas rendre un historique, et seule la position est gardée, par la page
+/// elle-même (voir `Tab::scroll`).
 #[cfg(target_os = "macos")]
 pub struct Souvenir(objc2::rc::Retained<objc2::runtime::AnyObject>);
 
@@ -1072,6 +1109,20 @@ mod tests {
 
     fn order(m: &TabManager) -> Vec<TabId> {
         m.tabs.iter().map(|t| t.id).collect()
+    }
+
+    #[test]
+    fn souvenirs_bornes() {
+        let now = Instant::now() + Duration::from_secs(7200);
+        let ago = |secs| now - Duration::from_secs(secs);
+        // Une heure passée : oublié, même s'il est seul.
+        assert_eq!(to_forget(vec![(0, ago(10)), (1, ago(3600)), (2, ago(3599))], now), [1]);
+        // Vingt-cinq souvenirs récents : les cinq plus anciens partent.
+        let held: Vec<(usize, Instant)> = (0..25).map(|i| (i, ago(100 + i as u64))).collect();
+        let mut out = to_forget(held, now);
+        out.sort_unstable();
+        assert_eq!(out, [20, 21, 22, 23, 24]);
+        assert!(to_forget(Vec::new(), now).is_empty());
     }
 
     #[test]

@@ -9,6 +9,7 @@
 //! rappelle aussitôt nos objets, qui le relisent.
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::ptr::{self, NonNull};
 
 use block2::{DynBlock, RcBlock};
@@ -457,6 +458,15 @@ pub fn support() -> Result<(), &'static str> {
     } else {
         Err("Les extensions demandent macOS 15.4 ou plus récent.")
     }
+}
+
+/// « Choisir un fichier » : la fenêtre « Ouvrir » de macOS, en feuille.
+pub fn choose_archive(chrome: &WebView, chosen: impl Fn(PathBuf) + 'static) {
+    crate::mac_file::choose(chrome, move |file| {
+        if let Some(path) = file.path() {
+            chosen(PathBuf::from(path.to_string()));
+        }
+    });
 }
 
 fn controller(mtm: MainThreadMarker) -> Option<Retained<WKWebExtensionController>> {

@@ -126,10 +126,15 @@ pub enum UserEvent {
     /// Menu Fichier du Mac : la page enregistrée ou exportée en PDF (ou l'erreur).
     #[cfg(target_os = "macos")]
     Exported(Result<PathBuf, String>),
+    /// Menu Fichier du Mac : le fichier choisi dans « Ouvrir un fichier » (`file://`).
+    #[cfg(target_os = "macos")]
+    FileChosen(String),
     /// Listes du bloqueur lues (ou leur état seul : téléchargement, erreur).
     AdFilters(Option<Box<adblock::Filters>>, adblock::Status),
     /// macOS : les listes compilées par WebKit sont prêtes à être posées sur les pages.
     AdRulesReady,
+    /// Fichier d'extension choisi dans la fenêtre « Ouvrir » du système.
+    ExtensionFileChosen(PathBuf),
     /// Une extension est téléchargée et décompressée (ou la raison de l'échec).
     ExtensionPrepared(Result<Box<extensions::Extension>, String>),
     /// Nouvelle version d'une extension, trouvée par la recherche hebdomadaire.
@@ -695,10 +700,21 @@ impl App {
             UserEvent::Captured(result) => self.captured(result),
             #[cfg(target_os = "macos")]
             UserEvent::Exported(result) => self.exported(result),
+            #[cfg(target_os = "macos")]
+            UserEvent::FileChosen(url) => {
+                self.open_tab(&url, false);
+                if let Some(w) = self.tabs.active().and_then(|t| t.webview()) {
+                    mac_file::load_file(w, &url);
+                }
+            }
             UserEvent::AdFilters(filters, status) => self.ad_filters(filters, status),
             UserEvent::AdRulesReady => {
                 self.reapply_ads();
                 adblock::applied_everywhere();
+            }
+            UserEvent::ExtensionFileChosen(path) => {
+                self.extension_file_chosen(path);
+                self.push_state();
             }
             UserEvent::ExtensionPrepared(result) => {
                 self.extension_prepared(result);
@@ -1040,7 +1056,7 @@ impl App {
             ChromeMessage::ImportSources => self.send_import_sources(),
             ChromeMessage::Import { sources, files } => self.import(&sources, &files),
             ChromeMessage::InstallExtension { input } => self.install_extension(&input),
-            ChromeMessage::InstallExtensionFile { name, data } => self.install_extension_file(&name, &data),
+            ChromeMessage::PickExtensionFile => self.pick_extension_file(),
             ChromeMessage::SetExtension { id, enabled } => self.set_extension(&id, enabled),
             ChromeMessage::RemoveExtension { id } => self.remove_extension(&id),
             ChromeMessage::ExtensionOptions { id } => self.extension_options(&id),
@@ -1324,12 +1340,12 @@ impl App {
             Shortcut::ExportPdf => self.export_page(mac_file::Export::Pdf),
             #[cfg(target_os = "macos")]
             Shortcut::OpenFile => {
-                if let Some(url) = mac_file::choose_file() {
-                    self.open_tab(&url, false);
-                    if let Some(w) = self.tabs.active().and_then(|t| t.webview()) {
-                        mac_file::load_file(w, &url);
+                let proxy = self.proxy.clone();
+                mac_file::choose(&self.chrome, move |file| {
+                    if let Some(url) = file.absoluteString() {
+                        let _ = proxy.send_event(UserEvent::FileChosen(url.to_string()));
                     }
-                }
+                });
             }
             #[cfg(target_os = "macos")]
             Shortcut::Share => {

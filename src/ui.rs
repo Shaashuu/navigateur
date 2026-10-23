@@ -295,11 +295,9 @@ pub enum ChromeMessage {
     InstallExtension {
         input: String,
     },
-    /// Installe une extension depuis un fichier choisi (`data:` URL).
-    InstallExtensionFile {
-        name: String,
-        data: String,
-    },
+    /// Installe une extension depuis un fichier, choisi dans la fenêtre
+    /// « Ouvrir » du système.
+    PickExtensionFile,
     /// Active ou désactive une extension.
     SetExtension {
         id: String,
