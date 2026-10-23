@@ -1220,6 +1220,8 @@ pub struct Pending {
     pub ext: Extension,
     /// Mise à jour d'une extension déjà installée (qui demande plus qu'avant).
     pub update: bool,
+    /// Son icône, lue une fois (avant, relue sur le disque à chaque envoi de l'état).
+    pub icon: Option<String>,
 }
 
 /// Demande d'autorisation d'une extension qui attend la réponse de
@@ -1235,7 +1237,10 @@ pub struct Ask {
 #[derive(Default)]
 pub struct Extensions {
     list: Vec<Extension>,
+    /// Icônes en `data:` URL, envoyées à l'interface à part de l'état, et
+    /// seulement quand elles changent : `icons_version` change avec elles.
     icons: HashMap<String, String>,
+    icons_version: u64,
     /// Ce que le moteur a refusé, par extension.
     problems: HashMap<String, String>,
     /// Erreurs notées par le moteur pendant que l'extension tourne (macOS :
@@ -1346,6 +1351,7 @@ impl Extensions {
             Some(icon) => self.icons.insert(ext.id.clone(), icon),
             None => self.icons.remove(&ext.id),
         };
+        self.icons_version += 1;
         let old = match self.list.iter().position(|e| e.id == ext.id) {
             Some(i) => Some(std::mem::replace(&mut self.list[i], ext)),
             None => {
@@ -1360,7 +1366,9 @@ impl Extensions {
 
     pub fn remove(&mut self, id: &str) -> Option<Extension> {
         let i = self.list.iter().position(|e| e.id == id)?;
-        self.icons.remove(id);
+        if self.icons.remove(id).is_some() {
+            self.icons_version += 1;
+        }
         self.problems.remove(id);
         self.errors.remove(id);
         let ext = self.list.remove(i);
@@ -1430,6 +1438,16 @@ impl Extensions {
         self.popup.as_ref().map(|p| p.id.as_str())
     }
 
+    /// Change à chaque installation ou retrait d'une icône (voir `icons_json`).
+    pub fn icons_version(&self) -> u64 {
+        self.icons_version
+    }
+
+    /// Les icônes, par identifiant d'extension, pour `navigateur.setExtensionIcons`.
+    pub fn icons_json(&self) -> Value {
+        json!(self.icons)
+    }
+
     /// Ce que l'interface reçoit : le panneau et les boutons de la colonne.
     pub fn snapshot(&self) -> Value {
         let list: Vec<Value> = self
@@ -1445,7 +1463,6 @@ impl Extensions {
                     "enabled": e.enabled,
                     "popup": e.popup.is_some(),
                     "options": e.options.is_some(),
-                    "icon": self.icons.get(&e.id),
                     "all_sites": e.all_sites,
                     "firefox": e.firefox,
                     "problem": self.problems.get(&e.id),
@@ -1473,7 +1490,7 @@ impl Extensions {
                     "name": e.name,
                     "version": e.version,
                     "update": p.update,
-                    "icon": icon_data(e),
+                    "icon": p.icon,
                     "all_sites": e.all_sites,
                     "sites": if e.all_sites { Vec::new() } else { site_labels(&e.hosts) },
                     "permissions": labels(&e.permissions),
@@ -1660,7 +1677,8 @@ impl crate::App {
             remove_folder_later(&previous.ext);
         }
         let name = ext.name.clone();
-        self.extensions.pending = Some(Pending { ext, update: old.is_some() });
+        let icon = icon_data(&ext);
+        self.extensions.pending = Some(Pending { ext, update: old.is_some(), icon });
         if automatic {
             let text = serde_json::to_string(&format!(
                 "La mise à jour de {name} demande de nouvelles autorisations : ouvrez Extensions pour l'accepter."

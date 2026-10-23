@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
@@ -28,8 +29,11 @@ pub struct Download {
     pub received: Option<u64>,
     /// Taille annoncée par le serveur, si on la connaît.
     pub total: Option<u64>,
-    /// Vitesse moyenne sur la dernière seconde, en octets par seconde.
+    /// Vitesse moyenne depuis la mesure précédente, en octets par seconde.
     pub speed: Option<u64>,
+    /// Moment de la dernière mesure.
+    #[serde(skip)]
+    probed: Option<Instant>,
 }
 
 impl Download {
@@ -38,15 +42,27 @@ impl Download {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| url.clone());
-        Self { id, url, name, path, state: State::Progress, received: None, total: None, speed: None }
+        Self { id, url, name, path, state: State::Progress, received: None, total: None, speed: None, probed: None }
     }
 
-    /// Mesure la taille du fichier en cours d'écriture (appelé chaque seconde).
-    pub fn probe(&mut self) {
+    /// Mesure la taille du fichier en cours d'écriture (chaque seconde, à
+    /// l'heure `now`) et la vitesse depuis la mesure précédente.
+    pub fn probe(&mut self, now: Instant) {
         let Some(size) = written_size(&self.path) else { return };
-        self.speed = self.received.map(|before| size.saturating_sub(before));
+        if let (Some(before), Some(at)) = (self.received, self.probed) {
+            self.speed = Some(rate(before, size, now.saturating_duration_since(at)));
+        }
         self.received = Some(size);
+        self.probed = Some(now);
     }
+}
+
+/// Octets par seconde, de `before` à `after` en `elapsed` : une mesure en
+/// retard (programme occupé, ordinateur en veille) ne gonfle pas la vitesse.
+pub fn rate(before: u64, after: u64, elapsed: Duration) -> u64 {
+    let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX).max(1);
+    let bytes = u128::from(after.saturating_sub(before)) * 1000 / u128::from(ms);
+    u64::try_from(bytes).unwrap_or(u64::MAX)
 }
 
 /// Taille du fichier en cours d'écriture. Selon le moteur, il est écrit sous
@@ -227,15 +243,20 @@ mod tests {
         let path = dir.join("film.mp4");
         let mut d = Download::new(1, "https://a.fr/film.mp4".into(), path.clone());
         assert_eq!(d.name, "film.mp4");
-        d.probe();
+        let t = Instant::now();
+        d.probe(t);
         assert_eq!(d.received, None);
         // Nom provisoire de WebView2.
         std::fs::write(dir.join("film.mp4.crdownload"), vec![0u8; 1000]).unwrap();
-        d.probe();
+        d.probe(t + Duration::from_secs(1));
         assert_eq!((d.received, d.speed), (Some(1000), None));
         std::fs::write(dir.join("film.mp4.crdownload"), vec![0u8; 3000]).unwrap();
-        d.probe();
+        d.probe(t + Duration::from_secs(2));
         assert_eq!((d.received, d.speed), (Some(3000), Some(2000)));
+        // Mesure en retard : la vitesse reste comptée par seconde.
+        std::fs::write(dir.join("film.mp4.crdownload"), vec![0u8; 7000]).unwrap();
+        d.probe(t + Duration::from_secs(4));
+        assert_eq!((d.received, d.speed), (Some(7000), Some(2000)));
         remove(&path);
         assert!(!dir.join("film.mp4.crdownload").exists());
         std::fs::remove_dir_all(dir).unwrap();

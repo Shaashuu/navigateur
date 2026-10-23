@@ -3543,6 +3543,9 @@
   const SOURCES = { chrome: 'Chrome Web Store', firefox: 'Firefox Add-ons', fichier: 'Fichier', dossier: 'Dossier' };
   let extRemoving = null;   // extension dont « Retirer » attend la confirmation
   let extButtonsKey = '';
+  // Icônes des extensions (data: URL) par identifiant, reçues à part de l'état :
+  // elles ne changent qu'à l'installation ou au retrait (voir `send_state`).
+  let extIcons = {};
   const extState = () => state.extensions || { supported: false, list: [] };
   function openExtensions() {
     if (mode === 'extensions') { closeSheet(); return; }
@@ -3553,9 +3556,11 @@
     if (extState().supported) $('ext-input').focus();
   }
   function extIcon(e, box) {
-    if (e.icon) {
+    // La fiche d'installation garde la sienne ; les extensions installées, dans `extIcons`.
+    const src = e.icon || extIcons[e.id];
+    if (src) {
       const img = document.createElement('img');
-      img.src = e.icon;
+      img.src = src;
       img.alt = '';
       box.appendChild(img);
     } else {
@@ -3658,7 +3663,7 @@
   function renderExtButtons() {
     const x = extState();
     const list = x.supported ? x.list.filter((e) => e.enabled) : [];
-    const key = JSON.stringify(list.map((e) => [e.id, e.name, e.icon ? e.icon.length : 0])) + '|' + (x.popup || '');
+    const key = JSON.stringify(list.map((e) => [e.id, e.name, extIcons[e.id] ? extIcons[e.id].length : 0])) + '|' + (x.popup || '');
     if (key === extButtonsKey) return;
     extButtonsKey = key;
     const box = $('ext-btns');
@@ -4537,6 +4542,11 @@
     setState(next) { applyState(next, null); },
     // Seulement les parties qui ont changé (voir `send_state` côté Rust).
     patchState(part) { applyState(Object.assign({}, state, part), Object.keys(part)); },
+    setExtensionIcons(icons) {
+      extIcons = icons || {};
+      renderExtButtons();
+      if (mode === 'extensions') renderExtensions();
+    },
     setImportSources(list) { if (mode === 'import') setImportSources(list || []); },
     setLibrary(data) {
       if (mode !== 'library' || data.kind !== libKind) return;

@@ -42,6 +42,9 @@ use crate::App;
 use crate::extensions::{self, support};
 use crate::tab_manager::TabId;
 
+/// Le banc avance d'un pas chaque seconde (voir `banc_tick`).
+pub const TOUR: Duration = Duration::from_secs(1);
+
 /// Attente entre le chargement d'une extension et l'ouverture de sa page
 /// (son arrière-plan démarre), puis avant de lire cette page.
 const AVANT_OUVERTURE: Duration = Duration::from_secs(20);
@@ -184,6 +187,11 @@ pub fn init() {
             dernier: None,
         }))
     });
+}
+
+/// Le mode banc est allumé (`FEATHER_BANC`).
+pub fn actif() -> bool {
+    ETAT.get().is_some_and(Option::is_some)
 }
 
 fn avec<R>(f: impl FnOnce(&mut Etat) -> R) -> Option<R> {
