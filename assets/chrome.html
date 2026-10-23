@@ -956,6 +956,71 @@
   .fx-file span { overflow: hidden; text-overflow: ellipsis; }
   #lib-bookmarks.gold, .star.gold { color: #e8a317; }
   #lib-bookmarks.gold svg, .star.gold svg { fill: currentColor; }
+  /* --- Paramètres en pleine page : ils prennent exactement la place de la page,
+     comme un site (même zone et mêmes coins, voir ui::page_area et
+     layers::PAGE_RADIUS), et non plus une fenêtre posée par-dessus. Tout y est
+     plus grand pour être lisible de loin. Les autres menus restent des fenêtres. --- */
+  #settings { padding: 0; left: var(--side); right: 8px; top: 8px; bottom: 8px; }
+  body[data-pos="right"] #settings { left: 8px; right: var(--side); }
+  body[data-pos="top"] #settings { left: 8px; right: 8px; top: 44px; }
+  body[data-style="banner"]:not([data-pos="top"]):not(.focus) #settings { top: 44px; }
+  body.focus #settings { left: 14px; right: 4px; top: 4px; bottom: 4px; }
+  body.focus[data-pos="right"] #settings { left: 4px; right: 14px; }
+  body.strip #settings { bottom: 48px; }
+  #settings-form { width: 100%; height: 100%; border-radius: 11px; box-shadow: none; }
+  .set-nav { width: 300px; padding: 30px 18px; gap: 4px; }
+  .set-nav > * { flex: none; }
+  .set-nav h2 { font-size: 28px; margin: 0 10px 20px; }
+  .set-search { height: 46px; border-radius: 23px; padding: 0 16px; margin-bottom: 14px; }
+  .set-search svg { width: 16px; height: 16px; }
+  .set-search input { font-size: 16px; }
+  .navbtn { gap: 14px; padding: 13px 14px; font-size: 16.5px; border-radius: 12px; }
+  .navbtn svg { width: 20px; height: 20px; }
+  .bubble.navb { border-radius: 12px; }
+  /* Le contenu reste en colonne lisible au milieu de la page, même très large */
+  .set-body { padding: 40px max(48px, calc((100% - 960px) / 2)) 48px; }
+  .set-close { top: 18px; right: 18px; width: 42px; height: 42px; border-radius: 21px; font-size: 24px; }
+  .set-body h3 { font-size: 30px; margin-bottom: 6px; }
+  .set-body .desc { font-size: 16px; margin-bottom: 20px; }
+  .set-none { font-size: 16px; }
+  .srow { gap: 18px; padding: 15px 0; min-height: 68px; }
+  .srow .lab { font-size: 17px; gap: 3px; }
+  .srow .lab small { font-size: 14.5px; }
+  #settings .srow input[type=text], #settings .srow select { width: 300px; height: 42px; padding: 0 14px; border-radius: 11px; font-size: 15.5px; }
+  #settings .choices { gap: 6px; }
+  #settings .choices button { height: 38px; padding: 0 16px; border-radius: 11px; font-size: 15px; }
+  #settings .choices.cards { gap: 16px; }
+  #settings .choices.cards button { padding: 10px; border-radius: 14px; font-size: 16px; }
+  #settings .choices.cards button small { font-size: 13.5px; }
+  .th { height: 96px; }
+  .tg { width: 46px; height: 28px; border-radius: 14px; }
+  .tg::after { top: 4px; left: 4px; width: 20px; height: 20px; border-radius: 10px; }
+  .tg:checked::after { left: 22px; }
+  #settings .plain, #settings .danger { height: 40px; padding: 0 20px; border-radius: 20px; font-size: 15px; }
+  #settings .check { gap: 10px; margin-top: 16px; font-size: 15.5px; }
+  #settings .hint { margin-left: 30px; font-size: 14px; }
+  #settings h3.sec { margin-top: 30px; font-size: 18px; }
+  #settings .about { font-size: 14px; }
+  #settings .update { padding: 20px; border-radius: 14px; }
+  #settings .update h3 { font-size: 17px; margin-bottom: 10px; }
+  #settings .update .row { font-size: 15.5px; padding: 4px 0; }
+  #settings .update .status { font-size: 15px; }
+  #settings .update button { height: 40px; padding: 0 20px; border-radius: 20px; font-size: 15px; }
+  #settings .update .check { font-size: 15px; }
+  .key { padding: 11px 0; font-size: 16px; }
+  .key kbd { font-size: 14px; padding: 3px 9px; }
+  #s-perms .perm { padding: 8px 0; font-size: 15px; }
+  #s-width-v { width: 70px; font-size: 15.5px; }
+  #ov-tiles { gap: 18px; margin-bottom: 28px; }
+  #ov-tiles button { min-height: 168px; padding: 20px; border-radius: 16px; gap: 8px; }
+  #ov-tiles .k { font-size: 13px; }
+  #ov-tiles .ic { width: 50px; height: 50px; border-radius: 14px; font-size: 21px; }
+  #ov-tiles .t { font-size: 18px; }
+  #ov-tiles .s { font-size: 15px; }
+  #ov-quick { column-gap: 36px; }
+  .saved { right: 24px; bottom: 22px; padding: 8px 16px; border-radius: 18px; font-size: 14px; }
+  @media (max-width: 900px) { .set-nav { width: 240px; } #ov-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } #ov-quick { grid-template-columns: 1fr; } }
+  @media (max-width: 700px) { .set-nav { width: 72px; padding: 24px 10px; } .set-nav h2, .set-nav .navbtn span, .set-search { display: none; } .set-body { padding: 32px 28px 40px; } }
 </style>
 </head>
 <body data-pos="left">
