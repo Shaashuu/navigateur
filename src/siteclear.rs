@@ -6,13 +6,12 @@
 //!   domaine du site) correspond, retirés un par un ;
 //! - Linux : pas encore pris en charge (Feather n'y est pas distribué).
 
-// La comparaison des domaines ne sert que sous macOS ; ailleurs, aux tests.
-#![cfg_attr(not(target_os = "macos"), allow(dead_code))]
-
 use wry::WebView;
 
 /// Vrai si un enregistrement WebKit nommé `name` (« exemple.fr ») concerne `host`
 /// (« www.exemple.fr »). Un autre site qui finit pareil (« monexemple.fr ») non.
+/// Ne sert que sous macOS ; ailleurs, aux tests.
+#[cfg(any(target_os = "macos", test))]
 pub fn record_matches(host: &str, name: &str) -> bool {
     let host = host.trim_end_matches('.').to_ascii_lowercase();
     let name = name.trim_end_matches('.').to_ascii_lowercase();

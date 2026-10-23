@@ -38,9 +38,11 @@ const HOME_HTML: &str = include_str!("../assets/home.html");
 /// dans la page, menu des liens, mesures, autorisations (voir le fichier).
 const PAGE_SCRIPT: &str = include_str!("../assets/page.js");
 
-/// Le script des pages, avec la clé de l'onglet (voir `split_key`).
+/// Le script des pages, avec la clé de l'onglet (voir `split_key`). Sous macOS,
+/// les boutons latéraux de la souris passent par `mac_mouse.rs`, pas par la page.
 pub fn page_script(key: &str) -> String {
-    PAGE_SCRIPT.replacen("__FEATHER_KEY__", key, 1)
+    let side_buttons = if cfg!(target_os = "macos") { "false" } else { "true" };
+    PAGE_SCRIPT.replacen("__FEATHER_KEY__", key, 1).replacen("__FEATHER_SIDE_BUTTONS__", side_buttons, 1)
 }
 
 /// Sépare la clé de l'onglet du message d'une page. `true` : le message vient
@@ -880,6 +882,7 @@ mod tests {
         let key = "0123456789abcdef0123456789abcdef";
         let script = page_script(key);
         assert!(script.contains(&format!("const KEY = '{key}';")) && !script.contains("__FEATHER_KEY__"));
+        assert!(!script.contains("__FEATHER_SIDE_BUTTONS__"));
         assert_eq!(split_key(&format!("{key}{{\"pressed\":true}}"), key), (true, "{\"pressed\":true}"));
         // Message du site : pas de clé, ou une autre.
         assert_eq!(split_key("{\"pressed\":true}", key), (false, "{\"pressed\":true}"));

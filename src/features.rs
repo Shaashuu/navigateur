@@ -712,6 +712,7 @@ impl App {
     }
 
     /// La page est enregistrée (ou l'erreur).
+    #[cfg(target_os = "macos")]
     pub(crate) fn exported(&mut self, result: Result<PathBuf, String>) {
         let text = match result {
             Ok(path) => format!("Page enregistrée : {}", self.add_made_file(path)),
@@ -869,20 +870,9 @@ impl App {
 
     // --- Téléchargements ------------------------------------------------------
 
-    pub(crate) fn download_started(&mut self, url: String, path: PathBuf, private: bool) {
+    pub(crate) fn download_started(&mut self, url: String, path: PathBuf) {
         let id = self.next_download_id;
         self.next_download_id += 1;
-        // La taille est demandée au serveur à part ; pas pour un onglet privé,
-        // qui ne doit pas refaire de requête en dehors de sa session.
-        if !private {
-            let proxy = self.proxy.clone();
-            let probe_url = url.clone();
-            std::thread::spawn(move || {
-                if let Some(total) = downloads::content_length(&probe_url) {
-                    let _ = proxy.send_event(UserEvent::DownloadSize { id, total });
-                }
-            });
-        }
         self.downloads.push(Download::new(id, url, path));
         self.watch_progress();
         self.push_state();
@@ -892,7 +882,7 @@ impl App {
     /// (avec sa progression) ; « Enregistrer dans Photos » (macOS) l'ajoute
     /// directement à la photothèque.
     pub(crate) fn save_image(&mut self, tab: TabId, url: String, how: ImageHow) {
-        let (referer, private) = self.tabs.get(tab).map(|t| (t.url().to_string(), t.private)).unwrap_or_default();
+        let referer = self.tabs.get(tab).map(|t| t.url().to_string()).unwrap_or_default();
         let proxy = self.proxy.clone();
         if how == ImageHow::Photos {
             #[cfg(target_os = "macos")]
@@ -905,7 +895,7 @@ impl App {
         let dest = downloads::destination(Path::new(&images::file_name(&url)), &dir);
         // Fichier vide réservé tout de suite : deux images du même nom ne se marchent pas dessus.
         let _ = std::fs::File::create(&dest);
-        self.download_started(url.clone(), dest.clone(), private);
+        self.download_started(url.clone(), dest.clone());
         std::thread::spawn(move || {
             let result = images::fetch(&url, &referer, &dest).and_then(|()| images::checked_name(&dest));
             let success = result.is_ok();

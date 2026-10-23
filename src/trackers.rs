@@ -8,10 +8,6 @@
 //!
 //! Sous Windows, le même événement sert au bloqueur de publicités (`adblock.rs`).
 
-// Le filtrage requête par requête ne sert que sous Windows (WebKit applique
-// ses propres règles) ; ailleurs, il n'est utilisé que par les tests.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::sync::{Arc, RwLock};
 
 use wry::WebView;
@@ -19,6 +15,7 @@ use wry::WebView;
 /// Domaines bloqués (et tous leurs sous-domaines). Liste courte, choisie pour
 /// ne casser aucun site courant : mesure d'audience, régies publicitaires,
 /// pixels de suivi.
+#[cfg(any(windows, target_os = "macos", test))]
 pub const DOMAINES: &[&str] = &[
     "2mdn.net", "adform.net", "adnxs.com", "adsrvr.org", "adservice.google.com",
     "advertising.com", "amazon-adsystem.com", "amplitude.com", "app-measurement.com",
@@ -35,12 +32,16 @@ pub const DOMAINES: &[&str] = &[
 ];
 
 /// Vrai si l'hôte est un domaine de la liste ou l'un de ses sous-domaines.
+/// Le filtrage requête par requête ne sert que sous Windows (WebKit applique
+/// ses propres règles, voir `webkit_rules`) ; ailleurs, aux tests.
+#[cfg(any(windows, test))]
 pub fn is_tracker(host: &str) -> bool {
     let host = host.trim_end_matches('.').to_ascii_lowercase();
     DOMAINES.iter().any(|d| host == *d || host.ends_with(&format!(".{d}")))
 }
 
 /// Hôte d'une adresse, sans analyser toute l'URL (appelé pour chaque requête).
+#[cfg(any(windows, test))]
 fn host_of(url: &str) -> &str {
     let rest = url.split_once("://").map_or(url, |(_, r)| r);
     let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
@@ -51,6 +52,7 @@ fn host_of(url: &str) -> &str {
 
 /// Vrai si la requête vers `url` doit être bloquée pour une page de `page_host`.
 /// Un site visité directement (par exemple hotjar.com) n'est jamais bloqué.
+#[cfg(any(windows, test))]
 pub fn should_block(url: &str, page_host: &str) -> bool {
     let host = host_of(url);
     is_tracker(host) && !is_tracker(page_host)
@@ -58,7 +60,7 @@ pub fn should_block(url: &str, page_host: &str) -> bool {
 
 /// Règles WebKit (format JSON des « content blockers ») : une règle par domaine,
 /// limitée aux requêtes venant d'un autre site.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg(any(target_os = "macos", test))]
 pub fn webkit_rules() -> String {
     let rules: Vec<serde_json::Value> = DOMAINES
         .iter()

@@ -298,9 +298,8 @@
   #lib-btns .round.on { background: var(--accent-soft); color: var(--accent); }
   #lib-downloads { position: relative; }
   #lib-downloads.busy { color: var(--accent); animation: pulse 1s ease-in-out infinite; }
-  /* Anneau de progression autour du bouton (téléchargements, mise à jour). */
+  /* Anneau de progression autour du bouton de la mise à jour. */
   .ring { --p: 0; }
-  #lib-downloads.busy.ring { animation: none; }
   .ring::before {
     content: ''; position: absolute; inset: 1px; border-radius: 50%; pointer-events: none;
     background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line) 0);
@@ -441,10 +440,9 @@
   #strip .x:hover { background: var(--accent-soft); color: var(--text); }
   #strip label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); flex: none; }
 
-  /* Téléchargement en cours : barre de progression */
+  /* Téléchargement en cours : barre animée (la taille totale n'est pas connue) */
   .row .bar { height: 4px; margin-top: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
-  .row .bar i { display: block; height: 100%; background: var(--accent); }
-  .row .bar.unknown i { width: 30%; animation: slide 1.2s ease-in-out infinite; }
+  .row .bar i { display: block; width: 30%; height: 100%; background: var(--accent); animation: slide 1.2s ease-in-out infinite; }
   @keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
   .row .snip { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -3895,10 +3893,8 @@
     txt.lastChild.classList.toggle('failed', d.state === 'failed');
     if (d.state === 'progress') {
       const bar = document.createElement('span');
-      const known = d.total && d.received != null;
-      bar.className = 'bar' + (known ? '' : ' unknown');
+      bar.className = 'bar';
       bar.innerHTML = '<i></i>';
-      if (known) bar.firstChild.style.width = Math.min(100, (d.received / d.total) * 100).toFixed(1) + '%';
       txt.appendChild(bar);
     }
     row.appendChild(txt);
@@ -3911,15 +3907,16 @@
     if (d.state === 'done') row.addEventListener('dblclick', () => send({ type: 'open_download', id: d.id }));
     return row;
   }
-  // « 12,3 Mo sur 40 Mo · 2,1 Mo/s »
+  // « 12,3 Mo reçus · 2,1 Mo/s » : la taille totale n'est pas demandée au serveur
+  // (une seconde requête pouvait consommer un lien à usage unique).
   const size = (n) => n >= 1073741824 ? (n / 1073741824).toFixed(1).replace('.', ',') + ' Go'
     : n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' Mo' : Math.max(1, Math.round(n / 1024)) + ' ko';
   function progressText(d) {
     if (d.received == null) return 'Téléchargement en cours…';
-    let t = size(d.received) + (d.total ? ' sur ' + size(d.total) + ' · ' + percent(d.received, d.total) + ' %' : '');
+    const got = size(d.received);
+    // Singulier sous 2 : « 1 ko reçu », « 1,5 Mo reçu ».
+    let t = got + (parseFloat(got.replace(',', '.')) < 2 ? ' reçu' : ' reçus');
     if (d.speed) t += ' · ' + size(d.speed) + '/s';
-    // Temps restant, quand on connaît la taille et la vitesse.
-    if (d.speed && d.total && d.total > d.received) t += ' · ' + remaining((d.total - d.received) / d.speed);
     return t;
   }
   // Gestionnaire des onglets : une ligne par onglet, avec sa mémoire, son
@@ -4056,12 +4053,7 @@
     if (!clear.dataset.armed) disarm(clear, clear.dataset.label);
   }
   const percent = (done, total) => Math.min(100, Math.floor((done / total) * 100));
-  function remaining(seconds) {
-    if (seconds < 60) return 'moins d\'1 min';
-    const m = Math.round(seconds / 60);
-    return m < 60 ? m + ' min restante' + (m > 1 ? 's' : '') : Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' restantes';
-  }
-  // Anneau : la part déjà reçue de tous les téléchargements dont on connaît la taille.
+  // Anneau : la part déjà reçue de la mise à jour.
   function setRing(el, p) {
     el.classList.toggle('ring', p != null);
     if (p != null) el.style.setProperty('--p', String(p));
@@ -4080,12 +4072,9 @@
     dlWasBusy = busy;
     b.classList.toggle('busy', busy);
     b.classList.toggle('fresh', !busy && dls.filter((d) => d.state !== 'progress').length > seenDownloads);
-    const sized = running.filter((d) => d.total && d.received != null);
-    const p = sized.length ? percent(sized.reduce((a, d) => a + d.received, 0), sized.reduce((a, d) => a + d.total, 0)) : null;
-    setRing(b, busy ? p : null);
     b.title = !busy ? 'Téléchargements'
       : running.length === 1 ? running[0].name + '\n' + progressText(running[0])
-      : running.length + ' téléchargements en cours' + (p != null ? ' · ' + p + ' %' : '');
+      : running.length + ' téléchargements en cours';
     renderDlPop();
   }
 
