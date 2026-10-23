@@ -1019,6 +1019,95 @@
   .saved { right: 24px; bottom: 22px; padding: 8px 16px; border-radius: 18px; font-size: 14px; }
   @media (max-width: 900px) { .set-nav { width: 240px; } #ov-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } #ov-quick { grid-template-columns: 1fr; } }
   @media (max-width: 700px) { .set-nav { width: 72px; padding: 24px 10px; } .set-nav h2, .set-nav .navbtn span, .set-search { display: none; } .set-body { padding: 32px 28px 40px; } }
+  /* --- Paramètres « réglages groupés » : menu en sections avec des tuiles
+     d'icône, réglages posés sur des cartes, aperçu en direct de l'apparence. --- */
+  :root { --ok-bg: #e1f3e8; --ok: #17643a; }
+  :root[data-mode="dark"] { --ok-bg: #1f3a2a; --ok: #8fe0b0; }
+  .set-nav { width: 290px; padding: 28px 16px 18px; gap: 2px; background: var(--surface); }
+  .set-nav h2 { margin-bottom: 18px; }
+  .set-search { background: var(--bg); }
+  .set-grp { margin: 14px 12px 5px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .navbtn { gap: 12px; padding: 7px 10px; font-size: 15.5px; }
+  .navbtn .nti { flex: none; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+  .navbtn .nti svg { width: 16px; height: 16px; color: inherit; }
+  .navbtn[data-cat="vieprivee"] .nti, .nti.ok { background: var(--ok-bg); color: var(--ok); }
+  .navbtn.on .nti { background: var(--accent); color: var(--surface); }
+  .navbtn:hover { background: var(--bg); }
+  .navbtn.on { background: var(--accent-soft); }
+  .navbtn.vercard { margin-top: auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; font-size: 14px; }
+  .navbtn.vercard .nti { width: 32px; height: 32px; border-radius: 9px; background: var(--ok-bg); color: var(--ok); }
+  .navbtn.vercard .nti.new { background: var(--accent-soft); color: var(--accent); }
+  .navbtn.vercard.on .nti { background: var(--accent); color: var(--surface); }
+  .navbtn.vercard > span { display: flex; flex-direction: column; min-width: 0; }
+  .navbtn.vercard b { font-weight: 600; }
+  .navbtn.vercard small { font-size: 13px; font-weight: 400; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .set-body { background: var(--bg); padding-top: 36px; }
+  .shead { display: flex; align-items: center; gap: 16px; margin-bottom: 4px; }
+  .shead .nti { flex: none; width: 54px; height: 54px; border-radius: 15px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+  .shead .nti svg { width: 27px; height: 27px; }
+  .shead h3 { font-size: 28px; }
+  .shead .desc { margin: 0; }
+  .set-body.searching .shead { margin-top: 26px; }
+  .set-body.searching .shead .nti { width: 36px; height: 36px; border-radius: 10px; }
+  .set-body.searching .shead .nti svg { width: 18px; height: 18px; }
+  .set-body.searching .shead h3 { font-size: 20px; }
+  .glab { margin: 24px 6px 9px; font-size: 12.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .gcard { padding: 2px 22px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); }
+  .sgroup.hide { display: none; }
+  .set-body.searching .glab { margin-top: 12px; }
+  .srow .lab.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  #settings .srow.col:has(> .lab.sr) { padding-top: 18px; }
+  #settings .update { margin-top: 24px; background: var(--surface); }
+  #ov-tiles { margin-top: 24px; margin-bottom: 0; }
+  #ov-quick .srow:nth-last-child(-n+2) { border-bottom: 0; }
+  #s-keys .key:last-child { border-bottom: 0; }
+  /* Apparence : les réglages à gauche, l'aperçu qui reste en vue à droite */
+  .set-body:has(section[data-cat="apparence"].on):not(.searching) { padding-left: max(40px, calc((100% - 1320px) / 2)); padding-right: max(40px, calc((100% - 1320px) / 2)); }
+  .app-cols { display: flex; align-items: flex-start; gap: 32px; }
+  .app-main { flex: 1; min-width: 0; }
+  .app-prev { position: sticky; top: 0; width: 340px; flex: none; padding-top: 2px; }
+  .set-body.searching .app-prev { display: none; }
+  .pcap { margin: 12px 4px 0; font-size: 14px; color: var(--muted); }
+  .last { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); font-size: 15px; }
+  .last > span { flex: 1; min-width: 0; }
+  .last small { display: block; font-size: 13px; color: var(--muted); }
+  #settings .last .plain { height: 36px; padding: 0 16px; font-size: 14px; }
+  #settings .last .plain:disabled { opacity: .45; cursor: default; border-color: var(--line); }
+  /* L'accueil en petit (toujours aux couleurs du thème, comme les miniatures) */
+  .mini, .mini i, .mini b { display: block; }
+  .mini { display: flex; gap: 7px; height: 226px; padding: 7px; border-radius: 12px; background: #efede7; border: 1px solid #e2e0da; box-shadow: var(--shadow); }
+  .mini.dk { background: #121215; border-color: #34343a; }
+  .mini.p-right { flex-direction: row-reverse; }
+  .mini.p-top { flex-direction: column; }
+  .mini .mrail { width: 22px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 7px; padding-top: 4px; }
+  .mini .mrail b { width: 12px; height: 12px; border-radius: 4px; background: #d4d2ca; }
+  .mini .mrail b:first-child { background: #5b5bd6; }
+  .mini.dk .mrail b { background: #3a3a42; }
+  .mini.dk .mrail b:first-child { background: #8f8ff5; }
+  .mini.s-wide .mrail { width: 84px; align-items: stretch; padding: 4px 2px 0; }
+  .mini.s-wide .mrail b { width: auto; height: 11px; }
+  .mini.p-top .mrail { width: auto; height: 14px; flex-direction: row; align-items: stretch; padding: 0 2px; }
+  .mini.p-top .mrail b { width: 34px; height: 14px; }
+  .mini .mpage { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; background: #fff; overflow: hidden; }
+  .mini.dk .mpage { background: #222226; }
+  .mini .maddr { display: none; align-self: stretch; height: 14px; border-radius: 7px; background: #efede7; }
+  .mini.s-banner:not(.p-top) .maddr { display: block; }
+  .mini.dk .maddr { background: #2c2c32; }
+  .mini .mhello { width: 120px; height: 12px; margin-top: 18px; border-radius: 6px; background: #d4d2ca; }
+  .mini.dk .mhello { background: #3a3a42; }
+  .mini .msearch { width: 72%; height: 24px; border-radius: 12px; border: 1px solid #e2e0da; }
+  .mini.dk .msearch { border-color: #34343a; }
+  .mini .mfav { display: flex; gap: 9px; margin-top: 4px; }
+  .mini .mfav b { width: 28px; height: 28px; border-radius: 8px; background: #e6e6fb; }
+  .mini.dk .mfav b { background: #2c2c4a; }
+  .mini .mrec { display: flex; flex-direction: column; gap: 5px; align-self: stretch; margin: 2px 22px 0; }
+  .mini .mrec b { height: 8px; border-radius: 4px; background: #efede7; }
+  .mini .mrec b + b { width: 70%; }
+  .mini.dk .mrec b { background: #2c2c32; }
+  .mini.no-fav .mfav, .mini.no-rec .mrec { display: none; }
+  @media (max-width: 1180px) { .app-cols { flex-direction: column; align-items: stretch; } .app-prev { position: static; width: auto; } .mini { max-width: 380px; } }
+  @media (max-width: 900px) { .set-nav { width: 240px; } }
+  @media (max-width: 700px) { .set-nav { width: 72px; padding: 24px 10px; } .set-grp, .navbtn.vercard > span { display: none; } .navbtn.vercard { border: 0; padding: 7px 10px; } }
 </style>
 </head>
 <body data-pos="left">
@@ -1250,16 +1339,20 @@
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
           <input type="search" id="s-search" placeholder="Chercher un réglage" spellcheck="false" autocomplete="off">
         </div>
-        <button type="button" class="navbtn" data-cat="apercu"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span>Vue d'ensemble</span></button>
-        <button type="button" class="navbtn" data-cat="general"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z"/></svg><span>Général</span></button>
-        <button type="button" class="navbtn" data-cat="apparence"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor"/></svg><span>Apparence</span></button>
-        <button type="button" class="navbtn" data-cat="recherche"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Recherche</span></button>
-        <button type="button" class="navbtn" data-cat="onglets"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M10 10h4v4h-4zM9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></svg><span>Onglets et mémoire</span></button>
-        <button type="button" class="navbtn" data-cat="vieprivee"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg><span>Vie privée et sites</span></button>
-        <button type="button" class="navbtn" data-cat="donnees"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 4v4h4"/><path d="M12 7.5V12l3 2"/></svg><span>Historique et données</span></button>
-        <button type="button" class="navbtn" data-cat="telech"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg><span>Téléchargements</span></button>
-        <button type="button" class="navbtn" data-cat="raccourcis"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h1M10 10h1M14 10h1M18 10h0M7 14h10"/></svg><span>Raccourcis clavier</span></button>
-        <button type="button" class="navbtn" data-cat="apropos"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.5"/></svg><span>À propos et mise à jour</span></button>
+        <button type="button" class="navbtn" data-cat="apercu"><i class="nti"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></i><span>Vue d'ensemble</span></button>
+        <p class="set-grp">Navigation</p>
+        <button type="button" class="navbtn" data-cat="general"><i class="nti"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z"/></svg></i><span>Général</span></button>
+        <button type="button" class="navbtn" data-cat="apparence"><i class="nti"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor"/></svg></i><span>Apparence</span></button>
+        <button type="button" class="navbtn" data-cat="recherche"><i class="nti"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></i><span>Recherche</span></button>
+        <p class="set-grp">Légèreté</p>
+        <button type="button" class="navbtn" data-cat="onglets"><i class="nti"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M10 10h4v4h-4zM9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></svg></i><span>Onglets et mémoire</span></button>
+        <button type="button" class="navbtn" data-cat="telech"><i class="nti"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg></i><span>Téléchargements</span></button>
+        <p class="set-grp">Confidentialité</p>
+        <button type="button" class="navbtn" data-cat="vieprivee"><i class="nti"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></i><span>Vie privée et sites</span></button>
+        <button type="button" class="navbtn" data-cat="donnees"><i class="nti"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 4v4h4"/><path d="M12 7.5V12l3 2"/></svg></i><span>Historique et données</span></button>
+        <p class="set-grp">Feather</p>
+        <button type="button" class="navbtn" data-cat="raccourcis"><i class="nti"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h1M10 10h1M14 10h1M18 10h0M7 14h10"/></svg></i><span>Raccourcis clavier</span></button>
+        <button type="button" class="navbtn vercard" data-cat="apropos" title="À propos et mise à jour"><i class="nti" id="s-ver-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></i><span><b id="s-ver">Feather</b><small id="s-ver-state">À propos et mise à jour</small></span></button>
       </nav>
       <div class="set-body" id="set-body">
         <button type="button" class="set-close" id="s-close" title="Fermer (Échap)" aria-label="Fermer">&times;</button>
@@ -1267,17 +1360,19 @@
           <h3>Votre Feather en un coup d'œil</h3>
           <p class="desc">Chaque carte mène à sa catégorie.</p>
           <div id="ov-tiles"></div>
-          <h3 class="sec">Réglages rapides</h3>
+          <div class="sgroup"><p class="glab">Réglages rapides</p><div class="gcard">
           <div id="ov-quick">
             <div class="srow"><label class="lab" for="q-economy">Mode économie</label><input type="checkbox" class="tg" id="q-economy" data-for="s-economy"></div>
             <div class="srow"><label class="lab" for="q-ads">Bloquer les publicités</label><input type="checkbox" class="tg" id="q-ads" data-for="s-ads"></div>
             <div class="srow"><label class="lab" for="q-trackers">Bloquer les traqueurs</label><input type="checkbox" class="tg" id="q-trackers" data-for="s-trackers"></div>
             <div class="srow"><label class="lab" for="q-bmhome">Favoris sur la page d'accueil</label><input type="checkbox" class="tg" id="q-bmhome" data-for="s-bmhome"></div>
           </div>
+          </div></div>
         </section>
         <section data-cat="general">
           <h3>Général</h3>
           <p class="desc">Ce que Feather ouvre au démarrage et qui il salue.</p>
+          <div class="sgroup"><p class="glab">Accueil et démarrage</p><div class="gcard">
           <div class="srow"><label class="lab" for="s-name">Votre prénom<small>Affiché sur l'accueil</small></label>
             <input type="text" id="s-name" maxlength="40" autocomplete="off"></div>
           <div class="srow"><span class="lab">Au démarrage</span>
@@ -1287,16 +1382,21 @@
             </div></div>
           <div class="srow"><label class="lab" for="s-home">Bouton d'accueil<small>Vide : l'accueil Feather, avec l'heure et la recherche</small></label>
             <input type="text" id="s-home" placeholder="exemple.fr" autocomplete="off"></div>
+          </div></div>
         </section>
         <section data-cat="apparence">
           <h3>Apparence</h3>
           <p class="desc">Cliquez sur un aperçu : le changement se voit tout de suite.</p>
-          <div class="srow col"><span class="lab">Thème</span>
+          <div class="app-cols"><div class="app-main">
+          <div class="sgroup"><p class="glab">Thème</p><div class="gcard">
+          <div class="srow col"><span class="lab sr">Thème</span>
             <div class="choices cards" id="s-theme">
               <button type="button" data-value="auto"><span class="th auto"><i class="sb"><b></b><b></b><b></b></i><i class="pg"></i></span><span>Automatique<small>Suit le système</small></span></button>
               <button type="button" data-value="light"><span class="th"><i class="sb"><b></b><b></b><b></b></i><i class="pg"></i></span><span>Clair</span></button>
               <button type="button" data-value="dark"><span class="th dark"><i class="sb"><b></b><b></b><b></b></i><i class="pg"></i></span><span>Sombre</span></button>
             </div></div>
+          </div></div>
+          <div class="sgroup"><p class="glab">Barre des onglets</p><div class="gcard">
           <div class="srow col"><span class="lab">Position de la barre des onglets</span>
             <div class="choices cards" id="s-pos">
               <button type="button" data-value="left"><span class="th"><i class="sb"><b></b><b></b><b></b></i><i class="pg"></i></span><span>À gauche</span></button>
@@ -1312,6 +1412,8 @@
             </div></div>
           <div class="srow" id="row-width"><label class="lab" for="s-width">Largeur de la barre<small>Les pastilles seules, ou avec le titre des pages</small></label>
             <input type="range" id="s-width" min="56" max="300" step="2"><span id="s-width-v"></span></div>
+          </div></div>
+          <div class="sgroup"><p class="glab">Accueil et mouvement</p><div class="gcard">
           <div class="srow"><span class="lab">Animations<small>Réduites : de simples fondus. Le mode économie et le réglage « réduire les animations » du système passent en réduites.</small></span>
             <div class="choices" id="s-anim">
               <button type="button" data-value="full">Complètes</button>
@@ -1322,10 +1424,24 @@
             <input type="checkbox" class="tg" id="s-bmhome"></div>
           <div class="srow"><label class="lab" for="s-recent">Dernières pages visitées sur la page d'accueil<small>La rubrique « Reprendre » ; jamais dans un onglet privé</small></label>
             <input type="checkbox" class="tg" id="s-recent"></div>
+          </div></div>
+          </div>
+          <aside class="app-prev" aria-label="Aperçu">
+            <p class="glab">Aperçu en direct</p>
+            <div class="mini" id="s-mini" aria-hidden="true">
+              <i class="mrail"><b></b><b></b><b></b><b></b></i>
+              <i class="mpage"><i class="maddr"></i><i class="mhello"></i><i class="msearch"></i><i class="mfav"><b></b><b></b><b></b><b></b></i><i class="mrec"><b></b><b></b></i></i>
+            </div>
+            <p class="pcap">Votre accueil, tel qu'il sera en fermant les paramètres.</p>
+            <p class="glab">Dernier changement</p>
+            <div class="last"><span><span id="s-last">Aucun pour l'instant</span><small>Enregistré tout de suite</small></span><button type="button" class="plain" id="s-undo" disabled>Annuler</button></div>
+          </aside>
+        </div>
         </section>
         <section data-cat="recherche">
           <h3>Recherche</h3>
           <p class="desc">Ce que fait la barre quand on tape autre chose qu'une adresse.</p>
+          <div class="sgroup"><p class="glab">Moteur</p><div class="gcard">
           <div class="srow"><label class="lab" for="s-engine">Moteur de recherche</label>
             <select id="s-engine">
               <option value="duckduckgo">DuckDuckGo</option>
@@ -1336,17 +1452,23 @@
             </select></div>
           <div class="srow"><label class="lab" for="s-suggest">Suggestions du moteur<small>Pendant la frappe, le texte tapé est envoyé au moteur choisi pour proposer des recherches ; jamais dans un onglet privé, ni pour une adresse complète</small></label>
             <input type="checkbox" class="tg" id="s-suggest"></div>
+          </div></div>
+          <div class="sgroup"><p class="glab">Loupe</p><div class="gcard">
           <div class="srow"><span class="lab">Recherche de la loupe<small>Où s'ouvre ce qu'on cherche depuis la pastille à la loupe</small></span>
             <div class="choices" id="s-searchtab">
               <button type="button" data-value="active">Dans l'onglet actif</button>
               <button type="button" data-value="new">Dans un nouvel onglet</button>
             </div></div>
+          </div></div>
         </section>
         <section data-cat="onglets">
           <h3>Onglets et mémoire</h3>
           <p class="desc">Ce qui garde Feather léger.</p>
+          <div class="sgroup"><p class="glab">Mode économie</p><div class="gcard">
           <div class="srow"><label class="lab" for="s-economy">Mode économie<small>Veille après 5 minutes, vidéos des onglets cachés en pause, lecture automatique des vidéos bloquée, traqueurs bloqués, YouTube en H.264 (moins de calcul), animations réduites</small></label>
             <input type="checkbox" class="tg" id="s-economy"></div>
+          </div></div>
+          <div class="sgroup"><p class="glab">Veille</p><div class="gcard">
           <div class="srow"><label class="lab" for="s-sleep">Mettre en veille un onglet caché après<small>Sa page est fermée et rechargée au retour ; sa mémoire est rendue</small></label>
             <select id="s-sleep">
               <option value="0">Jamais</option>
@@ -1355,22 +1477,28 @@
               <option value="60">1 heure</option>
               <option value="120">2 heures</option>
             </select></div>
+          </div></div>
         </section>
         <section data-cat="vieprivee">
           <h3>Vie privée et sites</h3>
           <p class="desc">Ce que les sites peuvent savoir de vous, et ce que vous leur avez permis.</p>
+          <div class="sgroup"><p class="glab">Blocage</p><div class="gcard">
           <div class="srow"><label class="lab" for="s-trackers">Bloquer les traqueurs<small>Mesure d'audience et publicité</small></label>
             <input type="checkbox" class="tg" id="s-trackers"></div>
           <div class="srow"><label class="lab" for="s-ads">Bloquer les publicités<small>Bandeaux, encarts et vidéos publicitaires ; désactivable site par site depuis la fiche du site</small></label>
             <input type="checkbox" class="tg" id="s-ads"></div>
           <div class="srow"><span class="lab">Listes de blocage<small id="s-ads-info"></small></span>
             <button type="button" class="plain" id="s-ads-update">Mettre à jour</button></div>
+          </div></div>
+          <div class="sgroup"><p class="glab">Sites</p><div class="gcard">
           <div class="srow col"><span class="lab">Autorisations retenues<small>Caméra, micro, position, notifications… site par site</small></span>
             <div id="s-perms"></div></div>
+          </div></div>
         </section>
         <section data-cat="donnees">
           <h3>Historique et données</h3>
           <p class="desc">Ce que Feather garde sur cet ordinateur.</p>
+          <div class="sgroup"><p class="glab">Historique</p><div class="gcard">
           <div class="srow"><label class="lab" for="s-history">Conserver l'historique</label>
             <select id="s-history">
               <option value="7">7 jours</option>
@@ -1379,25 +1507,34 @@
               <option value="365">1 an</option>
               <option value="0">Toujours</option>
             </select></div>
+          </div></div>
+          <div class="sgroup"><p class="glab">Texte des pages</p><div class="gcard">
           <div class="srow"><label class="lab" for="s-index">Retrouver les pages par leur texte<small>Le texte des pages visitées est gardé en clair sur cet ordinateur. Jamais celui des onglets privés, des pages avec un mot de passe, des messageries, banques et sites de santé</small></label>
             <input type="checkbox" class="tg" id="s-index"></div>
           <div class="srow"><label class="lab" for="s-index-ex">Sites dont le texte n'est jamais gardé<small>Séparés par des virgules ; leurs pages déjà gardées sont oubliées</small></label>
             <input type="text" id="s-index-ex" placeholder="exemple.fr, intranet.fr" autocomplete="off" spellcheck="false"></div>
+          </div></div>
+          <div class="sgroup"><p class="glab">Effacer et importer</p><div class="gcard">
           <div class="srow"><span class="lab">Effacer l'historique<small>Toutes les pages visitées et leur texte</small></span>
             <button type="button" class="danger" id="s-clear">Effacer l'historique</button></div>
           <div class="srow"><span class="lab">Importer des favoris<small>Depuis Chrome, Edge, Brave, ou un fichier exporté par Firefox ou Safari</small></span>
             <button type="button" class="plain" id="s-import">Importer…</button></div>
+          </div></div>
         </section>
         <section data-cat="telech">
           <h3>Téléchargements</h3>
           <p class="desc">Où vont les fichiers et les captures de page.</p>
+          <div class="sgroup"><p class="glab">Dossier</p><div class="gcard">
           <div class="srow"><label class="lab" for="s-dldir">Dossier<small>Vide : le dossier Téléchargements de l'ordinateur</small></label>
             <input type="text" id="s-dldir" placeholder="Téléchargements" autocomplete="off" spellcheck="false"></div>
+          </div></div>
         </section>
         <section data-cat="raccourcis">
           <h3>Raccourcis clavier</h3>
           <p class="desc">Ils marchent aussi quand la page a le focus.</p>
+          <div class="sgroup"><p class="glab">Dans Feather et dans les pages</p><div class="gcard">
           <div id="s-keys"></div>
+          </div></div>
         </section>
         <section data-cat="apropos">
           <h3>À propos et mise à jour</h3>
@@ -1414,8 +1551,10 @@
               <button type="button" id="u-page" hidden>Voir la version</button>
             </div>
           </div>
+          <div class="sgroup"><p class="glab">Vérification</p><div class="gcard">
           <div class="srow"><label class="lab" for="s-autoupdate">Chercher une mise à jour à chaque démarrage</label>
             <input type="checkbox" class="tg" id="s-autoupdate"></div>
+          </div></div>
         </section>
         <p class="set-none" id="s-none" hidden>Aucun réglage ne correspond.</p>
       </div>
@@ -2809,6 +2948,7 @@
     renderOverview();
     renderPermissions();
     renderUpdate();
+    renderPreview();
   }
   const choose = (id, value) => { for (const b of $(id).children) b.classList.toggle('on', b.dataset.value === value); };
   const chosen = (id) => { const b = $(id).querySelector('.on'); return b ? b.dataset.value : undefined; };
@@ -2886,6 +3026,7 @@
         if (hit) found++;
       }
       sec.classList.toggle('empty', words.length > 0 && !found);
+      for (const g of sec.querySelectorAll('.sgroup')) g.classList.toggle('hide', words.length > 0 && !g.querySelector('.srow:not(.hide), .key:not(.hide)'));
       const btn = document.querySelector('.navbtn[data-cat="' + sec.dataset.cat + '"]');
       btn.classList.toggle('dim', words.length > 0 && !found);
       any = any || found > 0;
@@ -2911,6 +3052,63 @@
     $('s-ads-update').disabled = !!a.updating;
   }
   let savedTimer = 0;
+  // Dernier changement : son nom et sa valeur, et les réglages d'avant pour l'annuler.
+  const SETTING_NAMES = {
+    theme: ['Thème', 's-theme'], bar_position: ['Barre des onglets', 's-pos'], sidebar_style: ['Adresse et boutons', 's-style'],
+    animations: ['Animations', 's-anim'], startup: ['Au démarrage', 's-startup'], search_new_tab: ['Recherche de la loupe', 's-searchtab'],
+    search_engine: ['Moteur de recherche', 's-engine'], search_suggestions: ['Suggestions du moteur', 's-suggest'],
+    history_days: ['Historique', 's-history'], bookmarks_on_home: ['Favoris sur l\'accueil', 's-bmhome'],
+    recent_on_home: ['Dernières pages sur l\'accueil', 's-recent'], block_trackers: ['Bloquer les traqueurs', 's-trackers'],
+    block_ads: ['Bloquer les publicités', 's-ads'], sleep_minutes: ['Veille des onglets cachés', 's-sleep'],
+    index_pages: ['Retrouver les pages par leur texte', 's-index'], economy: ['Mode économie', 's-economy'],
+    auto_update_check: ['Mise à jour au démarrage', 's-autoupdate'], name: ['Prénom', 's-name'], home_page: ['Bouton d\'accueil', 's-home'],
+    download_dir: ['Dossier des téléchargements', 's-dldir'], index_exclude: ['Sites jamais gardés', 's-index-ex'],
+    sidebar_width: ['Largeur de la barre', 's-width'],
+  };
+  function settingText(key) {
+    const [name, id] = SETTING_NAMES[key] || [key, null];
+    const el = id && $(id);
+    let v = '';
+    if (!el) v = String(state.settings[key]);
+    else if (el.classList.contains('choices')) {
+      const b = el.querySelector('.on');
+      const t = b && (b.querySelector('span:last-child') || b);
+      v = t ? t.firstChild.textContent.trim() : '';
+    } else if (el.type === 'checkbox') v = el.checked ? 'oui' : 'non';
+    else if (el.tagName === 'SELECT') v = el.selectedOptions[0] ? el.selectedOptions[0].textContent : '';
+    else if (key === 'sidebar_width') v = state.settings.sidebar_width + ' px';
+    else v = el.value.trim() || 'vide';
+    return name + ' : ' + v;
+  }
+  let lastChange = null;   // { text, prev } : annulable une fois
+  let undoing = false;
+  function renderLast(text) {
+    if (text) $('s-last').textContent = text;
+    $('s-undo').disabled = !lastChange;
+  }
+  $('s-undo').addEventListener('click', () => {
+    if (!lastChange) return;
+    const prev = lastChange.prev;
+    lastChange = null;
+    state.settings = Object.assign({}, prev);
+    undoing = true;
+    fillSettings();
+    saveSettings();
+    undoing = false;
+    fillSettings();
+    renderLast('Changement annulé');
+  });
+  // Aperçu en direct de l'apparence : l'accueil en petit, avec la barre, le
+  // thème (celui de l'interface en ce moment) et les rubriques choisies.
+  function renderPreview() {
+    const s = state.settings;
+    const pos = s.bar_position || 'left';
+    const style = pos === 'top' ? 'palette' : (s.sidebar_style || 'palette');
+    const mini = $('s-mini');
+    mini.className = 'mini p-' + pos + ' s-' + style + (document.documentElement.dataset.mode === 'dark' ? ' dk' : '');
+    mini.classList.toggle('no-fav', s.bookmarks_on_home === false);
+    mini.classList.toggle('no-rec', s.recent_on_home === false);
+  }
   function saveSettings() {
     const settings = {
       name: $('s-name').value,
@@ -2936,12 +3134,16 @@
       economy: $('s-economy').checked,
       animations: chosen('s-anim'),
     };
+    const before = state.settings;
     state.settings = Object.assign({}, state.settings, settings);
+    const changed = Object.keys(settings).find((k) => JSON.stringify(settings[k]) !== JSON.stringify(before[k]));
+    if (changed && !undoing) { lastChange = { prev: before }; renderLast(settingText(changed)); }
     applyTheme(settings.theme);
     applyPos(settings.bar_position);
     applyStyle();
     applySide(state.settings.sidebar_width);
     send({ type: 'save_settings', settings });
+    renderPreview();
     const tag = $('s-saved');
     tag.classList.add('show');
     clearTimeout(savedTimer);
@@ -3718,6 +3920,17 @@
   for (const b of document.querySelectorAll('.navbtn')) {
     b.addEventListener('click', () => { $('s-search').value = ''; filterSettings(); showCat(b.dataset.cat); });
   }
+  for (const sec of document.querySelectorAll('.set-body section')) {
+    const tile = document.querySelector('.navbtn[data-cat="' + sec.dataset.cat + '"] .nti');
+    const h3 = sec.querySelector('h3');
+    const head = document.createElement('div');
+    head.className = 'shead';
+    const text = document.createElement('div');
+    sec.insertBefore(head, h3);
+    if (tile && sec.dataset.cat !== 'apropos') head.appendChild(tile.cloneNode(true));
+    text.append(h3, sec.querySelector('.desc'));
+    head.appendChild(text);
+  }
   $('s-search').addEventListener('input', filterSettings);
   $('s-search').addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('s-search').value) { e.stopPropagation(); $('s-search').value = ''; filterSettings(); } });
   $('s-close').addEventListener('click', closeSettings);
@@ -4377,6 +4590,15 @@
     $('u-install').hidden = !(u.state === 'available' && canInstall);
     $('u-restart').hidden = u.state !== 'ready';
     $('u-page').hidden = !(u.state === 'available' && !canInstall);
+    const fresh = u.state === 'available' || u.state === 'ready' || u.state === 'downloading';
+    $('s-ver').textContent = 'Feather ' + (state.version || '');
+    $('s-ver-state').textContent = u.state === 'available' ? 'Nouvelle version disponible'
+      : u.state === 'downloading' ? 'Téléchargement de la mise à jour'
+      : u.state === 'ready' ? 'Redémarrez pour mettre à jour'
+      : u.state === 'uptodate' ? 'À jour'
+      : u.state === 'error' ? 'Vérification impossible'
+      : (state.settings || {}).auto_update_check !== false ? 'Vérifiée au démarrage' : 'À propos et mise à jour';
+    $('s-ver-ic').classList.toggle('new', fresh);
     $('gear').classList.toggle('has-update', u.state === 'available' || u.state === 'ready' || u.state === 'downloading');
     // Progression : une barre dans les paramètres, un anneau autour de la roue dentée.
     const p = u.state === 'downloading' && info && info.size ? percent(u.received || 0, info.size) : null;
