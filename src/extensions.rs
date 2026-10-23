@@ -47,6 +47,10 @@ const MAX_UNPACKED: u64 = 300 * 1024 * 1024;
 const MAX_FILES: usize = 20_000;
 /// Icône envoyée à l'interface : au-delà, on garde la pastille avec l'initiale.
 const MAX_ICON: u64 = 96 * 1024;
+/// Demandes d'autorisation d'une même extension en attente de réponse : au-delà, refusées.
+const MAX_ASKS: usize = 2;
+/// Motifs qui donnent accès à tous les sites.
+const ALL_SITES: [&str; 4] = ["<all_urls>", "*://*/*", "http://*/*", "https://*/*"];
 /// Version de Chrome annoncée au Chrome Web Store (certaines extensions en exigent une récente).
 const CHROME_VERSION: &str = "138.0";
 
@@ -101,6 +105,11 @@ pub struct Extension {
     pub hosts: Vec<String>,
     #[serde(default)]
     pub optional: Vec<String>,
+    /// Accordé plus tard, à la demande de l'extension et avec l'accord de
+    /// l'utilisateur (macOS, voir `extension_asks`) : autorisations et motifs
+    /// de sites, rendus au moteur à chaque lancement.
+    #[serde(default)]
+    pub granted: Vec<String>,
 }
 
 impl Extension {
@@ -356,6 +365,7 @@ fn prepare_in(request: Request, root: &Path, tmp: &Path) -> Result<Extension, St
         permissions: info.permissions,
         hosts: info.hosts,
         optional: info.optional,
+        granted: Vec::new(),
     })
 }
 
@@ -375,7 +385,10 @@ pub fn id_from_key(key: &[u8]) -> String {
 }
 
 /// Sépare une archive d'extension en zip et clé publique (fichiers `.crx`).
-/// Un `.xpi` ou un `.zip` est déjà un zip, sans clé.
+/// Un `.xpi` ou un `.zip` est déjà un zip, sans clé. La clé d'un `.crx` n'est
+/// rendue que si sa signature est vérifiée (voir `crx3_key`) : sans cela,
+/// n'importe qui pourrait prendre l'identifiant d'une autre extension (la clé
+/// publique de Proton Pass est publique, sa clé privée non).
 pub fn crx_zip(bytes: &[u8]) -> Result<(&[u8], Option<Vec<u8>>), String> {
     const BAD: &str = "ce fichier n'est pas une extension (.crx, .xpi ou .zip)";
     if bytes.starts_with(b"PK\x03\x04") {
@@ -385,20 +398,21 @@ pub fn crx_zip(bytes: &[u8]) -> Result<(&[u8], Option<Vec<u8>>), String> {
         return Err(BAD.into());
     }
     let u32_at = |at: usize| bytes.get(at..at + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize);
-    let (zip_start, key) = match u32_at(4) {
-        Some(2) => {
-            let (klen, slen) = (u32_at(8).ok_or(BAD)?, u32_at(12).ok_or(BAD)?);
-            let key = bytes.get(16..16 + klen).ok_or(BAD)?.to_vec();
-            (16 + klen + slen, Some(key))
-        }
+    let (zip_start, header) = match u32_at(4) {
+        // Ancien format, signé en SHA-1, que Chrome refuse depuis 2019 : sa clé
+        // n'est pas vérifiée, donc pas gardée (l'extension s'installe comme un zip).
+        Some(2) => (16 + u32_at(8).ok_or(BAD)? + u32_at(12).ok_or(BAD)?, None),
         Some(3) => {
             let hlen = u32_at(8).ok_or(BAD)?;
-            let header = bytes.get(12..12 + hlen).ok_or(BAD)?;
-            (12 + hlen, crx3_key(header))
+            (12 + hlen, Some(bytes.get(12..12 + hlen).ok_or(BAD)?))
         }
         _ => return Err(BAD.into()),
     };
     let zip = bytes.get(zip_start..).filter(|z| z.starts_with(b"PK\x03\x04")).ok_or(BAD)?;
+    let key = match header {
+        Some(header) => crx3_key(header, zip)?,
+        None => None,
+    };
     Ok((zip, key))
 }
 
@@ -442,23 +456,42 @@ fn proto_fields(mut buf: &[u8]) -> Vec<(u64, &[u8])> {
     fields
 }
 
-/// Clé publique de l'en-tête d'un `.crx` (version 3) : celle qui correspond à
-/// l'identifiant signé (`CrxFileHeader` : 2 = preuves RSA, 10000 = données signées).
-fn crx3_key(header: &[u8]) -> Option<Vec<u8>> {
-    let mut keys = Vec::new();
-    let mut crx_id = None;
+/// Clé publique vérifiée de l'en-tête d'un `.crx` (version 3) : celle qui
+/// correspond à l'identifiant signé (`CrxFileHeader` : 2 = preuves RSA,
+/// 10000 = données signées). Comme dans Chrome, chaque preuve RSA (celle de
+/// l'auteur, celle du Chrome Web Store) doit signer « CRX3 SignedData », les
+/// données signées et l'archive : une seule fausse et le fichier est refusé.
+/// `None` : rien de vérifiable (pas d'identifiant signé, ou sa clé n'est pas
+/// parmi les preuves RSA).
+fn crx3_key(header: &[u8], zip: &[u8]) -> Result<Option<Vec<u8>>, String> {
+    let mut proofs = Vec::new();
+    let mut signed = None;
     for (field, value) in proto_fields(header) {
         match field {
-            2 => keys.extend(proto_fields(value).into_iter().find(|(f, _)| *f == 1).map(|(_, k)| k)),
-            10000 => crx_id = proto_fields(value).into_iter().find(|(f, _)| *f == 1).map(|(_, id)| id),
+            2 => {
+                let parts = proto_fields(value);
+                let part = |n: u64| parts.iter().find(|(f, _)| *f == n).map_or(&[][..], |(_, v)| *v);
+                proofs.push((part(1), part(2)));
+            }
+            10000 => signed = Some(value),
             _ => {}
         }
     }
-    let key = match crx_id {
-        Some(id) => keys.into_iter().find(|k| Sha256::digest(k).get(..16) == Some(id))?,
-        None => keys.into_iter().next()?,
-    };
-    Some(key.to_vec())
+    let crx_id = signed.and_then(|s| proto_fields(s).into_iter().find(|(f, _)| *f == 1)).map(|(_, id)| id);
+    let (Some(signed), Some(crx_id)) = (signed, crx_id.filter(|id| id.len() == 16)) else { return Ok(None) };
+    let digest: [u8; 32] = Sha256::new()
+        .chain_update(b"CRX3 SignedData\x00")
+        .chain_update((signed.len() as u32).to_le_bytes())
+        .chain_update(signed)
+        .chain_update(zip)
+        .finalize()
+        .into();
+    for (key, signature) in &proofs {
+        if !crate::rsa::public_key(key).is_some_and(|key| crate::rsa::verify_sha256(&key, &digest, signature)) {
+            return Err("signature invalide : le fichier a été modifié ou abîmé".into());
+        }
+    }
+    Ok(proofs.into_iter().map(|(key, _)| key).find(|key| Sha256::digest(key).get(..16) == Some(crx_id)).map(<[u8]>::to_vec))
 }
 
 /// Décompresse l'extension dans `dest` et renvoie la clé du `.crx`.
@@ -656,7 +689,6 @@ pub fn read_manifest(dir: &Path) -> Result<Info, String> {
     let icon = pick_icon(action.and_then(|a| a.get("default_icon")))
         .and_then(|p| inner_path(dir, Some(&p)))
         .or_else(|| pick_icon(manifest.get("icons")).and_then(|p| inner_path(dir, Some(&p))));
-    let all = ["<all_urls>", "*://*/*", "http://*/*", "https://*/*"];
     let lists = ["/permissions", "/host_permissions"]
         .iter()
         .filter_map(|p| manifest.pointer(p).and_then(Value::as_array))
@@ -670,7 +702,7 @@ pub fn read_manifest(dir: &Path) -> Result<Info, String> {
                 .filter_map(|c| c.get("matches").and_then(Value::as_array))
                 .flatten(),
         );
-    let all_sites = lists.filter_map(Value::as_str).any(|p| all.contains(&p));
+    let all_sites = lists.filter_map(Value::as_str).any(|p| ALL_SITES.contains(&p));
     // Les sites sont rangés à part : dans un manifeste version 2, ils sont mêlés
     // aux autorisations (`"https://*.proton.me/*"`).
     let strings = |pointers: &[&str]| -> Vec<String> {
@@ -971,7 +1003,7 @@ fn icon_data(ext: &Extension) -> Option<String> {
 /// Ce que veut dire une autorisation, en clair. `None` : sans conséquence pour
 /// l'utilisateur (stockage, minuteries, menus…), on ne la montre pas.
 pub fn permission_label(permission: &str) -> Option<String> {
-    if permission.contains("://") || permission == "<all_urls>" {
+    if is_site_pattern(permission) {
         return Some("Lire et modifier d'autres sites".into());
     }
     let text = match permission {
@@ -1006,6 +1038,24 @@ pub fn permission_label(permission: &str) -> Option<String> {
         other => return Some(other.chars().take(60).collect()),
     };
     Some(text.to_string())
+}
+
+/// Un motif de sites (`https://*.proton.me/*`, `<all_urls>`), pas un nom d'autorisation.
+fn is_site_pattern(item: &str) -> bool {
+    item.contains("://") || item == "<all_urls>"
+}
+
+/// Ce qu'une extension demande en plus, en clair (voir `extension_asks`) ;
+/// vide si rien ne touche aux pages ni aux données.
+fn ask_labels(items: &[String]) -> Vec<String> {
+    let (sites, permissions): (Vec<String>, Vec<String>) = items.iter().cloned().partition(|i| is_site_pattern(i));
+    let mut out = labels(&permissions);
+    if sites.iter().any(|s| ALL_SITES.contains(&s.as_str())) {
+        out.push("Lire et modifier toutes les pages que vous visitez".into());
+    } else if !sites.is_empty() {
+        out.push(format!("Lire et modifier les pages de {}", site_labels(&sites).join(", ")));
+    }
+    out
 }
 
 /// Ce que montre la fiche, sans doublons (`webRequest` et `webRequestBlocking`…).
@@ -1172,6 +1222,15 @@ pub struct Pending {
     pub update: bool,
 }
 
+/// Demande d'autorisation d'une extension qui attend la réponse de
+/// l'utilisateur (voir `extension_asks`) : son numéro chez le moteur, et ce
+/// qu'elle demande (autorisations et motifs de sites).
+pub struct Ask {
+    number: u32,
+    id: String,
+    items: Vec<String>,
+}
+
 /// Les extensions installées, et ce que montre le panneau.
 #[derive(Default)]
 pub struct Extensions {
@@ -1188,6 +1247,8 @@ pub struct Extensions {
     fresh: std::collections::HashSet<String>,
     /// Extension à confirmer (voir `Pending`).
     pub pending: Option<Pending>,
+    /// Demandes d'autorisation en attente, posées une à une dans le bandeau du bas.
+    asks: Vec<Ask>,
     /// Dernière recherche de nouvelles versions (secondes depuis 1970).
     checked: u64,
     /// Recherche de nouvelles versions en cours.
@@ -1400,6 +1461,12 @@ impl Extensions {
             "error": self.error,
             "popup": self.popup_id(),
             "list": list,
+            // La plus ancienne demande d'autorisation, posée dans le bandeau du bas.
+            "ask": self.asks.first().map(|a| json!({
+                "request": a.number,
+                "name": self.get(&a.id).map_or("", |e| e.name.as_str()),
+                "items": ask_labels(&a.items),
+            })),
             "pending": self.pending.as_ref().map(|p| {
                 let e = &p.ext;
                 json!({
@@ -1425,7 +1492,9 @@ pub fn prepare_builder<'a>(builder: WebViewBuilder<'a>, attach: bool, url: &str)
     engine::prepare_builder(builder, attach, url)
 }
 
-pub use engine::{add, close_popup, open_popup, options_url, page_url, popup_shown, remove, replace, set_enabled, start, sync_tabs};
+pub use engine::{
+    add, answer, close_popup, open_popup, options_url, page_url, popup_shown, remove, replace, set_enabled, start, sync_tabs,
+};
 
 /// Un onglet non privé tel que les extensions le voient (macOS, voir `sync_tabs`).
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -1601,6 +1670,55 @@ impl crate::App {
         }
     }
 
+    /// Une extension demande plus que ce qu'elle a reçu à l'installation
+    /// (macOS : `permissions.request`, accès à d'autres sites). Avant, WebKit
+    /// recevait toujours oui. Comme dans Chrome, ce qui ne touche ni aux pages
+    /// ni aux données est accordé sans question ; le reste attend la réponse de
+    /// l'utilisateur, dans le bandeau du bas (le banc, lui, accepte).
+    pub(crate) fn extension_asks(&mut self, number: u32, id: String, items: Vec<String>) {
+        let waiting = self.extensions.asks.iter().filter(|a| a.id == id).count();
+        if !self.extensions.get(&id).is_some_and(|e| e.enabled) || waiting >= MAX_ASKS {
+            answer(number, false);
+        } else if ask_labels(&items).is_empty() || crate::banc::demande_extension(&id, &items) {
+            self.grant_extension(&id, &items);
+            answer(number, true);
+        } else {
+            self.extensions.asks.push(Ask { number, id, items });
+            self.push_state();
+        }
+    }
+
+    /// Réponse du bandeau : tout ce qui était demandé, ou rien.
+    pub(crate) fn answer_extension(&mut self, number: u32, allow: bool) {
+        let Some(at) = self.extensions.asks.iter().position(|a| a.number == number) else { return };
+        let ask = self.extensions.asks.remove(at);
+        if allow {
+            self.grant_extension(&ask.id, &ask.items);
+        }
+        answer(number, allow);
+        self.push_state();
+    }
+
+    /// Retenu pour les prochains lancements (voir `Extension::granted`).
+    fn grant_extension(&mut self, id: &str, items: &[String]) {
+        let Some(ext) = self.extensions.get_mut(id) else { return };
+        for item in items {
+            if !ext.granted.contains(item) {
+                ext.granted.push(item.clone());
+            }
+        }
+        self.extensions.save();
+    }
+
+    /// Extension retirée, coupée ou remplacée : ses demandes en attente reçoivent non.
+    fn drop_asks(&mut self, id: &str) {
+        let (dropped, kept): (Vec<Ask>, Vec<Ask>) = std::mem::take(&mut self.extensions.asks).into_iter().partition(|a| a.id == id);
+        self.extensions.asks = kept;
+        for ask in dropped {
+            answer(ask.number, false);
+        }
+    }
+
     /// Réponse de la fiche : installer l'extension en attente, ou l'abandonner.
     pub(crate) fn confirm_extension(&mut self, accept: bool) {
         let Some(pending) = self.extensions.pending.take() else { return };
@@ -1617,8 +1735,11 @@ impl crate::App {
             self.close_extension_popup();
         }
         if let Some(old) = self.extensions.get(&ext.id) {
-            // Mise à jour : on garde le choix « activée » de l'ancienne version.
+            // Mise à jour : on garde le choix « activée » de l'ancienne version,
+            // et ce que l'utilisateur lui avait accordé.
             ext.enabled = old.enabled;
+            ext.granted = old.granted.clone();
+            self.drop_asks(&ext.id);
         }
         // Un bloqueur prépare ses listes : le bloqueur intégré reste actif en attendant.
         self.extensions.fresh.insert(ext.id.clone());
@@ -1719,6 +1840,9 @@ impl crate::App {
         let Some(ext) = self.extensions.get_mut(id) else { return };
         ext.enabled = enabled;
         let ext = ext.clone();
+        if !enabled {
+            self.drop_asks(id);
+        }
         self.extensions.save();
         self.extensions.sync_declared();
         set_enabled(&ext, enabled);
@@ -1729,6 +1853,7 @@ impl crate::App {
         if self.extensions.popup_id() == Some(id) {
             self.close_extension_popup();
         }
+        self.drop_asks(id);
         if let Some(ext) = self.extensions.remove(id) {
             remove(&ext);
             remove_folder_later(&ext);
@@ -2096,6 +2221,9 @@ mod engine {
         Vec::new()
     }
 
+    /// WebView2 ne confie pas les demandes d'autorisation à Feather.
+    pub fn answer(_number: u32, _allow: bool) {}
+
     /// Adresse d'une page de l'extension (`popup.html`…), une fois chargée.
     pub fn page_url(ext: &Extension, page: &str) -> Option<String> {
         Some(format!("chrome-extension://{}/{page}", ext.engine_id.as_ref()?))
@@ -2142,7 +2270,7 @@ mod engine {
     use block2::{DynBlock, RcBlock};
     use objc2::rc::Retained;
     use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
-    use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+    use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send};
     use objc2_app_kit::{NSPopover, NSPopoverBehavior, NSView};
     use objc2_foundation::{
         NSArray, NSDate, NSError, NSNotification, NSNotificationCenter, NSPoint, NSRect, NSRectEdge, NSSet, NSSize, NSString,
@@ -2165,6 +2293,15 @@ mod engine {
     pub const PLATFORM: &str = "macos";
 
     type NewTabDone = RcBlock<dyn Fn(*mut ProtocolObject<dyn WKWebExtensionTab>, *mut NSError)>;
+    type Reply<T> = RcBlock<dyn Fn(NonNull<NSSet<T>>, *mut NSDate)>;
+
+    /// Demande d'autorisation d'une extension : ce qu'elle demande, et la
+    /// réponse que WebKit attend (voir `ask` et `answer`).
+    enum Asked {
+        Permissions(Retained<NSSet<NSString>>, Reply<NSString>),
+        Urls(Retained<NSSet<NSURL>>, Reply<NSURL>),
+        Patterns(Retained<NSSet<WKWebExtensionMatchPattern>>, Reply<WKWebExtensionMatchPattern>),
+    }
 
     /// Un onglet de Feather tel que les extensions le voient (recopié par `sync_tabs`).
     struct Mirror {
@@ -2201,6 +2338,9 @@ mod engine {
         /// lecture déjà demandée à la boucle d'évènements.
         errors_observer: Option<Retained<ProtocolObject<dyn NSObjectProtocol>>>,
         errors_due: bool,
+        /// Demandes d'autorisation en attente de la réponse de l'utilisateur.
+        asks: Vec<(u32, Asked)>,
+        next_ask: u32,
     }
 
     thread_local! {
@@ -2456,19 +2596,20 @@ mod engine {
                 done.call((ptr::null_mut(),));
             }
 
-            // Autorisations demandées plus tard par l'extension : WebKit n'accepte
-            // que celles que son manifeste annonce comme facultatives, et la fiche
-            // les a montrées avant l'installation (« pourra aussi demander… »).
+            // Autorisations demandées plus tard par l'extension (WebKit n'accepte
+            // que celles que son manifeste annonce comme facultatives) : la
+            // réponse attend l'utilisateur (voir `ask`). Avant, c'était toujours oui.
             #[unsafe(method(webExtensionController:promptForPermissions:inTab:forExtensionContext:completionHandler:))]
             fn prompt_permissions(
                 &self,
                 _controller: &WKWebExtensionController,
                 permissions: &NSSet<NSString>,
                 _tab: Option<&ProtocolObject<dyn WKWebExtensionTab>>,
-                _context: &WKWebExtensionContext,
+                context: &WKWebExtensionContext,
                 done: &DynBlock<dyn Fn(NonNull<NSSet<NSString>>, *mut NSDate)>,
             ) {
-                done.call((NonNull::from(permissions), ptr::null_mut()));
+                let items = permissions.iter().map(|p| p.to_string()).collect();
+                ask(context, items, Asked::Permissions(permissions.retain(), done.copy()));
             }
 
             #[unsafe(method(webExtensionController:promptForPermissionToAccessURLs:inTab:forExtensionContext:completionHandler:))]
@@ -2477,10 +2618,11 @@ mod engine {
                 _controller: &WKWebExtensionController,
                 urls: &NSSet<NSURL>,
                 _tab: Option<&ProtocolObject<dyn WKWebExtensionTab>>,
-                _context: &WKWebExtensionContext,
+                context: &WKWebExtensionContext,
                 done: &DynBlock<dyn Fn(NonNull<NSSet<NSURL>>, *mut NSDate)>,
             ) {
-                done.call((NonNull::from(urls), ptr::null_mut()));
+                let items = urls.iter().map(|url| site_of(&url)).collect();
+                ask(context, items, Asked::Urls(urls.retain(), done.copy()));
             }
 
             #[unsafe(method(webExtensionController:promptForPermissionMatchPatterns:inTab:forExtensionContext:completionHandler:))]
@@ -2489,10 +2631,12 @@ mod engine {
                 _controller: &WKWebExtensionController,
                 patterns: &NSSet<WKWebExtensionMatchPattern>,
                 _tab: Option<&ProtocolObject<dyn WKWebExtensionTab>>,
-                _context: &WKWebExtensionContext,
+                context: &WKWebExtensionContext,
                 done: &DynBlock<dyn Fn(NonNull<NSSet<WKWebExtensionMatchPattern>>, *mut NSDate)>,
             ) {
-                done.call((NonNull::from(patterns), ptr::null_mut()));
+                // SAFETY : motifs valides donnés par WebKit.
+                let items = patterns.iter().map(|p| unsafe { p.string() }.to_string()).collect();
+                ask(context, items, Asked::Patterns(patterns.retain(), done.copy()));
             }
 
             // WebKit appelle ceci une fois la page de la fenêtre chargée : avant,
@@ -2517,6 +2661,50 @@ mod engine {
             // SAFETY : `init` de NSObject.
             unsafe { msg_send![super(this), init] }
         }
+    }
+
+    /// Le site d'une adresse, écrit comme un motif (« https://exemple.fr/* »).
+    fn site_of(url: &NSURL) -> String {
+        let text = url.absoluteString().map(|s| s.to_string()).unwrap_or_default();
+        match url::Url::parse(&text) {
+            Ok(parsed) if parsed.host_str().is_some() => {
+                format!("{}://{}/*", parsed.scheme(), parsed.host_str().unwrap_or_default())
+            }
+            _ => text,
+        }
+    }
+
+    /// Demande d'une extension : gardée avec la réponse que WebKit attend, puis
+    /// confiée à Feather (`App::extension_asks`), qui répond par `answer`.
+    fn ask(context: &WKWebExtensionContext, items: Vec<String>, asked: Asked) {
+        // SAFETY : fil principal, contexte valide.
+        let id = unsafe { context.uniqueIdentifier() }.to_string();
+        let number = STATE.with_borrow_mut(|s| {
+            s.next_ask += 1;
+            s.asks.push((s.next_ask, asked));
+            s.next_ask
+        });
+        send(UserEvent::ExtensionAsks { number, id, items });
+    }
+
+    /// Réponse à une demande (voir `ask`) : tout ce qui était demandé, ou rien.
+    pub fn answer(number: u32, allow: bool) {
+        let asked = STATE.with_borrow_mut(|s| {
+            let at = s.asks.iter().position(|(n, _)| *n == number)?;
+            Some(s.asks.remove(at).1)
+        });
+        // Hors de `STATE` : WebKit peut rappeler Feather pendant la réponse.
+        match asked {
+            Some(Asked::Permissions(set, done)) => reply(set, &done, allow),
+            Some(Asked::Urls(set, done)) => reply(set, &done, allow),
+            Some(Asked::Patterns(set, done)) => reply(set, &done, allow),
+            None => {}
+        }
+    }
+
+    fn reply<T: Message>(set: Retained<NSSet<T>>, done: &Reply<T>, allow: bool) {
+        let set = if allow { set } else { NSSet::new() };
+        done.call((NonNull::from(&*set), ptr::null_mut()));
     }
 
     pub fn support() -> Result<(), &'static str> {
@@ -2756,6 +2944,7 @@ mod engine {
         STATE.with_borrow_mut(|s| s.wanted = true);
         let id = ext.id.clone();
         let enabled = ext.enabled;
+        let granted = ext.granted.clone();
         let proxy = proxy.clone();
         let block = RcBlock::new(move |extension: *mut WKWebExtension, error: *mut NSError| {
             // SAFETY : WebKit passe une extension valide, ou nulle avec une erreur.
@@ -2777,6 +2966,17 @@ mod engine {
                 }
                 for pattern in extension.allRequestedMatchPatterns().iter() {
                     context.setPermissionStatus_forMatchPattern(WKWebExtensionContextPermissionStatus::GrantedExplicitly, &pattern);
+                }
+                // Et ce que l'utilisateur lui a accordé ensuite (voir `answer`).
+                for item in &granted {
+                    let text = NSString::from_str(item);
+                    if super::is_site_pattern(item) {
+                        if let Some(pattern) = WKWebExtensionMatchPattern::matchPatternWithString(&text, mtm) {
+                            context.setPermissionStatus_forMatchPattern(WKWebExtensionContextPermissionStatus::GrantedExplicitly, &pattern);
+                        }
+                    } else {
+                        context.setPermissionStatus_forPermission(WKWebExtensionContextPermissionStatus::GrantedExplicitly, &text);
+                    }
                 }
                 let loaded = if enabled { controller.loadExtensionContext_error(&context) } else { Ok(()) };
                 STATE.with_borrow_mut(|s| s.contexts.insert(id.clone(), context));
@@ -2968,6 +3168,8 @@ mod engine {
         Vec::new()
     }
 
+    pub fn answer(_number: u32, _allow: bool) {}
+
     pub fn page_url(_ext: &Extension, _page: &str) -> Option<String> {
         None
     }
@@ -3019,6 +3221,7 @@ mod tests {
             permissions: Vec::new(),
             hosts: Vec::new(),
             optional: Vec::new(),
+            granted: Vec::new(),
         };
         assert!(blocks_ads(&ext("ddkjiahejlhfcafbddmgiahcphecmpfh", "uBO Lite")));
         assert!(blocks_ads(&ext("autre", "AdGuard AdBlocker")));
@@ -3034,6 +3237,20 @@ mod tests {
         assert_eq!(labels(&["webRequest".into(), "webRequestBlocking".into(), "alarms".into()]), ["Observer les requêtes des pages"]);
         let hosts = ["https://*.proton.me/*".to_string(), "*://*.proton.me/x".into(), "http://a.fr/".into()];
         assert_eq!(site_labels(&hosts), ["*.proton.me", "a.fr"]);
+    }
+
+    #[test]
+    fn demandes_en_clair() {
+        let ask = |items: &[&str]| ask_labels(&items.iter().map(|i| i.to_string()).collect::<Vec<_>>());
+        // Sans conséquence pour l'utilisateur : accordé sans question.
+        assert!(ask(&["storage", "alarms"]).is_empty());
+        assert_eq!(ask(&["tabs"]), ["Voir vos onglets et leurs adresses"]);
+        assert_eq!(ask(&["https://*.proton.me/*", "https://a.fr/*"]), ["Lire et modifier les pages de *.proton.me, a.fr"]);
+        assert_eq!(
+            ask(&["<all_urls>", "cookies", "https://a.fr/*"]),
+            ["Lire et modifier les cookies des sites", "Lire et modifier toutes les pages que vous visitez"]
+        );
+        assert!(is_site_pattern("<all_urls>") && is_site_pattern("*://*/*") && !is_site_pattern("tabs"));
     }
 
     #[test]
@@ -3068,6 +3285,7 @@ mod tests {
             permissions: vec!["tabs".into()],
             hosts: vec!["https://a.fr/*".into()],
             optional: Vec::new(),
+            granted: Vec::new(),
         };
         let mut same = base.clone();
         same.version = "2".into();
@@ -3111,6 +3329,7 @@ mod tests {
             permissions: Vec::new(),
             hosts: Vec::new(),
             optional: Vec::new(),
+            granted: Vec::new(),
         };
         sweep_in(&root, &[used], now);
         // L'extension de la liste reste ; l'ancienne version attend à la corbeille.
@@ -3179,24 +3398,81 @@ mod tests {
         out
     }
 
-    #[test]
-    fn crx3_lu() {
-        let key = b"une cle publique".to_vec();
-        let other = b"une autre cle".to_vec();
-        let id: Vec<u8> = Sha256::digest(&key)[..16].to_vec();
-        let mut header = field(2, &[field(1, &other), field(2, b"sig")].concat());
-        header.extend(field(2, &[field(1, &key), field(2, b"sig")].concat()));
-        header.extend(field(10000, &field(1, &id)));
+    /// Extension signée faite pour ces tests : zip de `essai/manifest.json`,
+    /// `essai/popup.html` et `essai/icons/32.png`, deux preuves RSA de 2048 bits
+    /// (celle de l'auteur, dont la clé donne l'identifiant, et une seconde comme
+    /// celle du Chrome Web Store), signées par openssl (dgst -sha256 -sign).
+    const SIGNED_CRX: &str = concat!(
+        "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",
+        "AAA=",
+    );
+    const SIGNED_ID: &str = "dldbbmnkgmaeidmakkhlcohgijjklcad";
+
+    /// Un `.crx` (version 3) fait à la main : preuves (clé, signature) et identifiant signé.
+    fn crx3(proofs: &[(&[u8], &[u8])], crx_id: Option<&[u8]>, zip: &[u8]) -> Vec<u8> {
+        let mut header: Vec<u8> = proofs.iter().flat_map(|(key, sig)| field(2, &[field(1, key), field(2, sig)].concat())).collect();
+        if let Some(id) = crx_id {
+            header.extend(field(10000, &field(1, id)));
+        }
         let mut crx = b"Cr24".to_vec();
         crx.extend(3u32.to_le_bytes());
         crx.extend((header.len() as u32).to_le_bytes());
         crx.extend(&header);
-        crx.extend(b"PK\x03\x04reste");
-        let (zip, found) = crx_zip(&crx).unwrap();
-        assert!(zip.starts_with(b"PK"));
-        assert_eq!(found.as_deref(), Some(&key[..]));
-        assert_eq!(id_from_key(&key).len(), 32);
+        crx.extend(zip);
+        crx
+    }
+
+    #[test]
+    fn crx3_lu() {
+        let crx = base64_decode(SIGNED_CRX).unwrap();
+        let (zip, key) = crx_zip(&crx).unwrap();
+        assert!(zip.starts_with(b"PK\x03\x04"));
+        // La clé de l'auteur (celle de l'identifiant signé), pas la seconde.
+        let key = key.unwrap();
+        assert_eq!(id_from_key(&key), SIGNED_ID);
         assert!(is_store_id(&id_from_key(&key)));
+        // Archive modifiée, ou une des signatures abîmée : refusé.
+        let mut changed = crx.clone();
+        let last = changed.len() - 30;
+        changed[last] ^= 1;
+        assert!(crx_zip(&changed).unwrap_err().contains("signature invalide"));
+        let mut bad = crx.clone();
+        bad[100] ^= 1;
+        assert!(crx_zip(&bad).is_err());
+        // La clé d'une autre extension (publique) avec une fausse signature : refusé.
+        let id: Vec<u8> = Sha256::digest(&key)[..16].to_vec();
+        assert!(crx_zip(&crx3(&[(&key[..], &b"fausse"[..])], Some(&id), zip)).is_err());
+        // Sans identifiant signé : rien à vérifier, donc pas de clé.
+        assert_eq!(crx_zip(&crx3(&[(&key[..], &b"fausse"[..])], None, zip)).unwrap().1, None);
+        // Ancien format (version 2) : pas de clé non plus.
+        let mut crx2 = b"Cr24".to_vec();
+        for v in [2u32, 3, 2] {
+            crx2.extend(v.to_le_bytes());
+        }
+        crx2.extend(b"clesg");
+        crx2.extend(zip);
+        assert_eq!(crx_zip(&crx2).unwrap(), (zip, None));
         // Zip seul (.xpi) : pas de clé ; autre chose : refusé.
         assert_eq!(crx_zip(b"PK\x03\x04abc").unwrap().1, None);
         assert!(crx_zip(b"<html>").is_err());
@@ -3474,30 +3750,13 @@ mod tests {
         out
     }
 
-    /// De bout en bout : un `.crx` (version 3) choisi comme fichier est décompressé,
-    /// rangé, et reçoit sa clé.
+    /// De bout en bout : un `.crx` (version 3) choisi comme fichier est vérifié,
+    /// décompressé, rangé, et reçoit sa clé.
     #[test]
     fn fichier_crx_installe() {
-        let key = b"cle publique de test".to_vec();
-        let crx_id: Vec<u8> = Sha256::digest(&key)[..16].to_vec();
-        let mut header = field(2, &[field(1, &key), field(2, b"sig")].concat());
-        header.extend(field(10000, &field(1, &crx_id)));
-        let manifest = br#"{ // commentaire
-            "manifest_version": 3, "name": "Essai", "version": "0.1",
-            "action": { "default_popup": "popup.html", "default_icon": { "32": "icons/32.png" } } }"#;
-        let archive = zip(&[
-            ("essai/manifest.json", &manifest[..]),
-            ("essai/popup.html", b"<p>bonjour</p>"),
-            ("essai/icons/32.png", b"\x89PNG"),
-        ]);
-        let mut crx = b"Cr24".to_vec();
-        crx.extend(3u32.to_le_bytes());
-        crx.extend((header.len() as u32).to_le_bytes());
-        crx.extend(&header);
-        crx.extend(&archive);
-
+        let crx = base64_decode(SIGNED_CRX).unwrap();
         let ext = prepare(Request::File { name: "essai.crx".into(), bytes: crx }).unwrap();
-        assert_eq!(ext.id, id_from_key(&key));
+        assert_eq!(ext.id, SIGNED_ID);
         assert_eq!(ext.name, "Essai");
         assert_eq!(ext.source, Source::Fichier);
         assert_eq!(ext.popup.as_deref(), Some("popup.html"));

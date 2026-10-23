@@ -260,6 +260,12 @@ pub fn extension_chargee(id: &str, result: &Result<Option<String>, String>) {
     });
 }
 
+/// Une extension demande une autorisation de plus : notée, et acceptée sans
+/// question (vrai) quand le banc tourne.
+pub fn demande_extension(id: &str, items: &[String]) -> bool {
+    avec(|e| ecrire(&e.fichier, &format!("demande {id} {}", resume(&items.join(" "))))).is_some()
+}
+
 /// Erreurs notées par le moteur pour une extension : chacune écrite une fois.
 pub fn erreurs_moteur(id: &str, erreurs: &[String]) {
     avec(|e| {
