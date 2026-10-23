@@ -245,6 +245,26 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   est à 15 minutes par défaut. Un bouton d'accueil apparaît, l'utilisation de la
   mémoire s'affiche en direct, et la pastille à la loupe ouvre une recherche au
   milieu de la page (dans l'onglet actif ou un nouvel onglet, au choix).
+- **Nouveau en 0.6.0** : les paramètres s'ouvrent en pleine page, à la
+  place de la page et avec un texte plus grand. Sur l'accueil, les vignettes
+  de favoris se déplacent en les glissant. La barre d'adresse propose les
+  suggestions du moteur de recherche (jamais en navigation privée, réglable
+  dans les paramètres). Sous macOS, la barre de menus est complète, dans
+  l'ordre de Safari : Fichier (enregistrer la page, exporter en PDF, ouvrir
+  un fichier, partager), Présentation (avec les téléchargements),
+  Historique (pages récentes, onglets fermés), Favoris, Onglet, Fenêtre et
+  Aide. Proton Pass montre son icône et son menu dans les champs des pages
+  de connexion sous macOS. Les extensions sont plus sûres : leur signature
+  est vérifiée, leur archive contrôlée avant d'être écrite, et sous macOS
+  Feather demande votre accord avant de leur donner des autorisations ; on
+  les choisit avec la fenêtre « Ouvrir » du système. Sous macOS, les sites
+  peuvent demander la caméra, le micro et la position. Feather consomme
+  moins au repos (une seule horloge, relevés espacés, onglets cachés au
+  calme) et oublie plus vite ce qui ne sert plus. Les raccourcis clavier
+  viennent d'une seule liste, et ⌥← / ⌥→ ne quittent plus la page pendant
+  la saisie sous macOS. Sous Windows, les outils du système sont appelés par
+  leur chemin complet. Petites corrections : captures à l'heure locale, titres trop
+  longs coupés, accents de l'import de favoris, mode lecture durci.
 - **Nouveau en 0.5.10** : Feather s'ouvre en grand au premier lancement,
   puis retrouve la taille et la place de sa fenêtre. Sous macOS, le menu
   Édition fait enfin marcher copier, coller et tout sélectionner, et ⌘Q
