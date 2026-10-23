@@ -122,9 +122,10 @@
   // Appelé par Rust pour Ctrl+L.
   window.focusSearch = () => { q.focus(); q.select(); };
 
-  // « / » ouvre la liste des commandes de l'interface.
+  // Ce qui est tapé passe dans la barre de l'interface : « / » pour ses
+  // commandes, sinon pour les suggestions (favoris, historique, moteur).
   q.addEventListener('input', () => {
-    if (q.value.startsWith('/')) { send({ open_bar: q.value }); q.value = ''; }
+    if (q.value.trim()) { send({ open_bar: q.value }); q.value = ''; }
   });
   document.getElementById('search').addEventListener('submit', (e) => {
     e.preventDefault();
