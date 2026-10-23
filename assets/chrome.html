@@ -1224,7 +1224,6 @@
       </form>
       <div id="ext-file-row">
         <button type="button" id="ext-pick">Ou choisir un fichier (.crx, .xpi, .zip)…</button>
-        <input type="file" id="ext-file" accept=".crx,.xpi,.zip" hidden>
       </div>
       <p id="ext-status" role="status"></p>
       <div id="ext-confirm" hidden>
@@ -3678,15 +3677,10 @@
     send({ type: 'install_extension', input: value });
     $('ext-input').value = '';
   });
-  $('ext-pick').addEventListener('click', () => $('ext-file').click());
-  $('ext-file').addEventListener('change', () => {
-    const f = $('ext-file').files[0];
-    $('ext-file').value = '';
-    if (!f) return;
-    if (f.size > 100 * 1024 * 1024) { showNotice('Ce fichier est trop gros pour être une extension.'); return; }
-    const reader = new FileReader();
-    reader.onload = () => send({ type: 'install_extension_file', name: f.name, data: String(reader.result || '') });
-    reader.readAsDataURL(f);
+  // Fenêtre « Ouvrir » du système : Feather lit le fichier sur le disque, il ne
+  // passe plus par cette page (voir `pick_extension_file`).
+  $('ext-pick').addEventListener('click', () => {
+    if (!extState().busy) send({ type: 'pick_extension_file' });
   });
   // Un clic ailleurs dans l'interface ferme la fenêtre d'une extension, comme dans la page.
   document.addEventListener('pointerdown', (e) => {

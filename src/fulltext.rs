@@ -8,7 +8,9 @@
 //! messageries, banques et sites de santé (voir `excluded`), et les sites que
 //! l'utilisateur a exclus dans les paramètres.
 
+use std::cell::Cell;
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +23,9 @@ const FICHIER: &str = "contenu.json";
 const MAX_PAGES: usize = 2000;
 /// Caractères gardés par page : de quoi retrouver un article sans grossir le fichier.
 const MAX_TEXTE: usize = 4000;
+/// Les textes normalisés sont libérés ce délai après la dernière recherche
+/// (voir `FullText::release`).
+const GARDE_NORMALISES: Duration = Duration::from_secs(60);
 
 /// Sites dont le texte n'est jamais gardé : messageries, documents en ligne,
 /// administrations (le site et ses sous-domaines).
@@ -68,7 +73,8 @@ struct Page {
     text: String,
     time: u64,
     /// Titre et texte normalisés (minuscules, sans accents), calculés à la
-    /// première recherche seulement : tant qu'on ne cherche rien, ils ne
+    /// première recherche seulement et libérés une minute après la dernière
+    /// (voir `FullText::release`) : tant qu'on ne cherche rien, ils ne
     /// prennent aucune place en mémoire. Rangés en `String` (1 octet par
     /// lettre courante) et non en `Vec<char>` (4 octets par lettre).
     #[serde(skip)]
@@ -98,12 +104,14 @@ pub struct Trouve {
 pub struct FullText {
     pages: Vec<Page>,
     changed: bool,
+    /// Heure de la dernière recherche (voir `release`).
+    searched: Cell<Option<Instant>>,
 }
 
 impl FullText {
     pub fn load() -> Self {
         let pages: Vec<Page> = storage::read_json(FICHIER).unwrap_or_default();
-        Self { pages, changed: false }
+        Self { pages, changed: false, searched: Cell::new(None) }
     }
 
     pub fn save(&mut self) -> std::io::Result<()> {
@@ -194,8 +202,22 @@ impl FullText {
         self.changed |= self.pages.len() != avant;
     }
 
+    /// Libère les textes normalisés une minute après la dernière recherche :
+    /// jusqu'à 2 000 pages de 4 000 caractères (8 Mo environ), qui ne servent
+    /// qu'à chercher. La recherche suivante les recalcule. Appelé toutes les
+    /// cinq secondes (voir `App::survey`).
+    pub fn release(&mut self, now: Instant) {
+        if self.searched.get().is_some_and(|t| now.saturating_duration_since(t) >= GARDE_NORMALISES) {
+            self.searched.set(None);
+            for p in &mut self.pages {
+                p.norm = OnceLock::new();
+            }
+        }
+    }
+
     /// Pages contenant tous les mots cherchés, les plus pertinentes d'abord.
     pub fn search(&self, query: &str, limit: usize) -> Vec<Trouve> {
+        self.searched.set(Some(Instant::now()));
         let mots: Vec<String> = query
             .split_whitespace()
             .map(normaliser)
@@ -329,6 +351,13 @@ mod tests {
         index.set_title("https://a.fr/", "Vacances");
         assert!(index.pages[0].norm.get().is_none());
         assert_eq!(index.search("vacances", 1).len(), 1);
+        // Libérée une minute après la dernière recherche, pas avant.
+        let after = Instant::now();
+        index.release(after + Duration::from_secs(30));
+        assert!(index.pages[0].norm.get().is_some());
+        index.release(after + Duration::from_secs(61));
+        assert!(index.pages[0].norm.get().is_none());
+        assert_eq!(index.search("plage", 1).len(), 1);
     }
 
     #[test]

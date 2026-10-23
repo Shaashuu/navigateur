@@ -2,6 +2,7 @@
 //! décompressées, dans le profil commun à toutes les pages.
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 
 use tao::event_loop::EventLoopProxy;
 use webview2_com::Microsoft::Web::WebView2::Win32::{
@@ -26,6 +27,39 @@ thread_local! {
 
 pub fn support() -> Result<(), &'static str> {
     Ok(())
+}
+
+/// « Choisir un fichier » : la fenêtre « Ouvrir » de Windows, limitée aux
+/// extensions, devant la fenêtre de Feather qui attend la réponse. tao sait
+/// recevoir les événements de Windows pendant ce temps (boucle imbriquée).
+pub fn choose_archive(chrome: &WebView, chosen: impl Fn(PathBuf) + 'static) {
+    if let Some(path) = open_dialog(chrome) {
+        chosen(path);
+    }
+}
+
+fn open_dialog(chrome: &WebView) -> Option<PathBuf> {
+    use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance, CoTaskMemFree};
+    use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
+    use windows::Win32::UI::Shell::{FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, FileOpenDialog, IFileOpenDialog, SIGDN_FILESYSPATH};
+    use windows::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor};
+    use windows::core::w;
+
+    let types = [COMDLG_FILTERSPEC { pszName: w!("Extensions (.crx, .xpi, .zip)"), pszSpec: w!("*.crx;*.xpi;*.zip") }];
+    // SAFETY : fil de l'interface, où COM est déjà prêt (WebView2 en dépend) ;
+    // le chemin rendu par Windows est copié, puis libéré.
+    unsafe {
+        let owner = GetAncestor(chrome.hwnd(), GA_ROOT);
+        let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        dialog.SetFileTypes(&types).ok()?;
+        dialog.SetOptions(dialog.GetOptions().ok()? | FOS_FILEMUSTEXIST | FOS_FORCEFILESYSTEM).ok()?;
+        // Fenêtre fermée sans choix : une erreur, donc rien.
+        dialog.Show(Some(owner)).ok()?;
+        let text = dialog.GetResult().ok()?.GetDisplayName(SIGDN_FILESYSPATH).ok()?;
+        let path = text.to_string().ok();
+        CoTaskMemFree(Some(text.0 as *const _));
+        path.map(PathBuf::from)
+    }
 }
 
 pub fn prepare_builder<'a>(builder: WebViewBuilder<'a>, _attach: bool, _url: &str) -> WebViewBuilder<'a> {

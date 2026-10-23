@@ -196,22 +196,43 @@ mod platform {
     /// Sous Windows, un seul réglage pour toutes les pages (lu à chaque requête).
     static ENABLED: AtomicBool = AtomicBool::new(true);
 
+    /// Genres de requêtes qui passent par l'événement : ceux des traqueurs et
+    /// des publicités. Les documents comptent pour les cadres (publicités en
+    /// `<iframe>`), que WebView2 ne distingue pas de la page elle-même. Les
+    /// feuilles de style, les polices et le reste ne font plus l'aller-retour
+    /// jusqu'à Feather, qui retardait chacune de ces requêtes.
+    const CONTEXTES: [COREWEBVIEW2_WEB_RESOURCE_CONTEXT; 8] = [
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_MEDIA,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_WEBSOCKET,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING,
+    ];
+
     pub fn install(webview: &WebView, page_host: Arc<RwLock<String>>, private: bool) {
         let core = webview.webview();
         let env = webview.environment();
         let filter = HSTRING::from("*");
         // SAFETY : appels COM sur le fil de la webview, objets valides.
         unsafe {
-            let added = match core.cast::<ICoreWebView2_22>() {
-                // Les cadres et les « workers » ne passent par l'événement qu'avec cette version.
-                Ok(core22) => core22.AddWebResourceRequestedFilterWithRequestSourceKinds(
-                    &filter,
-                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
-                    COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_ALL,
-                ),
-                Err(_) => core.AddWebResourceRequestedFilter(&filter, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL),
-            };
-            if added.is_err() {
+            // Les cadres et les « workers » ne passent par l'événement qu'avec cette version.
+            let core22 = core.cast::<ICoreWebView2_22>().ok();
+            let mut added = false;
+            for context in CONTEXTES {
+                let result = match &core22 {
+                    Some(core22) => core22.AddWebResourceRequestedFilterWithRequestSourceKinds(
+                        &filter,
+                        context,
+                        COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_ALL,
+                    ),
+                    None => core.AddWebResourceRequestedFilter(&filter, context),
+                };
+                added |= result.is_ok();
+            }
+            if !added {
                 return;
             }
             let handler = WebResourceRequestedEventHandler::create(Box::new(move |_, args| {

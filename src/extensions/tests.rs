@@ -552,12 +552,15 @@ fn zip(files: &[(&str, &[u8])]) -> Vec<u8> {
     out
 }
 
-/// De bout en bout : un `.crx` (version 3) choisi comme fichier est vérifié,
-/// décompressé, rangé, et reçoit sa clé.
+/// De bout en bout : un `.crx` (version 3) choisi comme fichier est lu,
+/// vérifié, décompressé, rangé, et reçoit sa clé.
 #[test]
 fn fichier_crx_installe() {
-    let crx = base64_decode(SIGNED_CRX).unwrap();
-    let ext = prepare(Request::File { name: "essai.crx".into(), bytes: crx }).unwrap();
+    let dir = std::env::temp_dir().join(format!("feather-fichier-{}", stamp()));
+    fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("Essai.crx");
+    fs::write(&file, base64_decode(SIGNED_CRX).unwrap()).unwrap();
+    let ext = prepare(Request::File(file)).unwrap();
     assert_eq!(ext.id, SIGNED_ID);
     assert_eq!(ext.name, "Essai");
     assert_eq!(ext.source, Source::Fichier);
@@ -571,7 +574,16 @@ fn fichier_crx_installe() {
     fs::remove_dir_all(root().unwrap().join(ext.dir.split('/').next().unwrap())).unwrap();
 
     // Pas une extension : refusé, sans rien laisser derrière.
-    assert!(prepare(Request::File { name: "x.zip".into(), bytes: zip(&[("a.txt", b"a")]) }).is_err());
+    let other = dir.join("x.zip");
+    fs::write(&other, zip(&[("a.txt", b"a")])).unwrap();
+    assert!(prepare(Request::File(other)).is_err());
     let left = fs::read_dir(root().unwrap()).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with(".nouvelle")).count();
     assert_eq!(left, 0);
+
+    // Trop gros : refusé avant d'être lu (fichier creux, rien n'est écrit sur le disque).
+    let big = dir.join("gros.crx");
+    fs::File::create(&big).unwrap().set_len(MAX_ARCHIVE as u64 + 1).unwrap();
+    assert_eq!(read_archive(&big).unwrap_err(), "fichier trop gros");
+    assert!(prepare(Request::File(dir.join("absent.crx"))).is_err());
+    fs::remove_dir_all(&dir).unwrap();
 }

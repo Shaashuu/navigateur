@@ -1,5 +1,7 @@
 //! Linux : WebKitGTK ne sait pas faire tourner d'extensions ; rien à faire.
 
+use std::path::PathBuf;
+
 use tao::event_loop::EventLoopProxy;
 use wry::{WebView, WebViewBuilder};
 
@@ -18,6 +20,7 @@ pub fn prepare_builder<'a>(builder: WebViewBuilder<'a>, _attach: bool, _url: &st
 
 pub fn start(_chrome: &WebView, _list: &[Extension], _proxy: &EventLoopProxy<UserEvent>) {}
 
+pub fn choose_archive(_chrome: &WebView, _chosen: impl Fn(PathBuf) + 'static) {}
 
 pub fn add(_ext: &Extension, _proxy: &EventLoopProxy<UserEvent>) {}
 

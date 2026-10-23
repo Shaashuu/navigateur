@@ -348,6 +348,8 @@ impl App {
                 eprintln!("texte des pages non enregistré : {err}");
             }
         }
+        self.fulltext.release(now);
+        self.tabs.forget_souvenirs(now);
         self.probe_media();
         // Un bloqueur en extension qui a fini de se préparer prend le relais.
         let before = self.extensions.ad_blocker().is_some();

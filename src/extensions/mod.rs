@@ -21,6 +21,7 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -170,8 +171,8 @@ pub enum Origin {
 
 pub enum Request {
     Origin(Origin),
-    /// Fichier choisi dans le panneau : son nom et son contenu.
-    File { name: String, bytes: Vec<u8> },
+    /// Fichier choisi dans la fenêtre « Ouvrir » du système.
+    File(PathBuf),
 }
 
 /// Dossier des extensions, dans le dossier de configuration.
@@ -332,11 +333,9 @@ fn prepare_in(request: Request, root: &Path, tmp: &Path) -> Result<Extension, St
             copy_dir(&path, tmp)?;
             (Source::Dossier, path.display().to_string(), None)
         }
-        Request::File { name, bytes } => {
-            if bytes.len() > MAX_ARCHIVE {
-                return Err("fichier trop gros".into());
-            }
-            let key = unpack(&bytes, tmp)?;
+        Request::File(path) => {
+            let key = unpack(&read_archive(&path)?, tmp)?;
+            let name = path.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
             (Source::Fichier, name, key)
         }
     };
@@ -510,6 +509,22 @@ fn crx3_key(header: &[u8], zip: &[u8]) -> Result<Option<Vec<u8>>, String> {
         }
     }
     Ok(proofs.into_iter().map(|(key, _)| key).find(|key| Sha256::digest(key).get(..16) == Some(crx_id)).map(<[u8]>::to_vec))
+}
+
+/// Lit un fichier d'extension choisi par l'utilisateur, sans dépasser `MAX_ARCHIVE`.
+fn read_archive(path: &Path) -> Result<Vec<u8>, String> {
+    let file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let size = file.metadata().map_err(|e| e.to_string())?.len();
+    if size > MAX_ARCHIVE as u64 {
+        return Err("fichier trop gros".into());
+    }
+    let mut bytes = Vec::with_capacity(size as usize);
+    // Le fichier peut grossir entre-temps : la lecture s'arrête juste après la limite.
+    file.take(MAX_ARCHIVE as u64 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() > MAX_ARCHIVE {
+        return Err("fichier trop gros".into());
+    }
+    Ok(bytes)
 }
 
 /// Décompresse l'extension dans `dest` et renvoie la clé du `.crx`.
@@ -799,7 +814,8 @@ pub fn base64_encode(bytes: &[u8]) -> String {
     out
 }
 
-/// Décode du base64 (fichier choisi dans le panneau, envoyé en `data:` URL).
+/// Décode du base64 (signatures des mises à jour, voir `update.rs`).
+#[cfg(any(windows, target_os = "macos", test))]
 pub fn base64_decode(text: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(text.len() / 4 * 3);
     let mut acc = 0u32;
@@ -1435,16 +1451,28 @@ impl crate::App {
         }
     }
 
-    /// Fichier choisi dans le panneau, reçu en `data:` URL.
-    pub(crate) fn install_extension_file(&mut self, name: &str, data: &str) {
-        let bytes = data.split_once(',').map_or(data, |(_, b)| b);
-        match base64_decode(bytes) {
-            Some(bytes) if bytes.len() <= MAX_ARCHIVE => {
-                self.start_prepare(Request::File { name: name.to_lowercase(), bytes }, "Installation du fichier…");
-            }
-            Some(_) => self.extensions.error = Some("Fichier trop gros.".into()),
-            None => self.extensions.error = Some("Fichier illisible.".into()),
+    /// « Choisir un fichier » dans le panneau : la fenêtre « Ouvrir » du
+    /// système ; le fichier choisi arrive par `UserEvent::ExtensionFileChosen`
+    /// (voir `extension_file_chosen`). Avant, le panneau l'envoyait en entier,
+    /// en `data:` URL : le temps du transfert, la mémoire prenait près de
+    /// quatre fois sa taille.
+    pub(crate) fn pick_extension_file(&mut self) {
+        if let Err(reason) = support() {
+            self.extensions.error = Some(reason.into());
+            return;
         }
+        if self.extensions.busy.is_some() {
+            return;
+        }
+        let proxy = self.proxy.clone();
+        engine::choose_archive(&self.chrome, move |path| {
+            let _ = proxy.send_event(crate::UserEvent::ExtensionFileChosen(path));
+        });
+    }
+
+    /// Fichier choisi : il est lu sur le disque et installé en arrière-plan.
+    pub(crate) fn extension_file_chosen(&mut self, path: PathBuf) {
+        self.start_prepare(Request::File(path), "Installation du fichier…");
     }
 
     /// Confie au moteur les extensions installées, une seule fois : après la

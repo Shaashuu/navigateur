@@ -1,5 +1,5 @@
 //! macOS : menu Fichier (Enregistrer la page, Exporter en PDF, Ouvrir un
-//! fichier, Partager).
+//! fichier, Partager), et fenêtre « Ouvrir » des extensions.
 //!
 //! WebKit fait lui-même l'archive de la page (`.webarchive`, celle de Safari)
 //! et le PDF de toute la page. Les fichiers sont rangés dans le dossier des
@@ -12,7 +12,7 @@ use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{AllocAnyThread, MainThreadMarker};
-use objc2_app_kit::{NSModalResponseOK, NSOpenPanel, NSSharingServicePicker};
+use objc2_app_kit::{NSModalResponse, NSModalResponseOK, NSOpenPanel, NSSharingServicePicker};
 use objc2_foundation::{NSArray, NSData, NSError, NSPoint, NSRect, NSRectEdge, NSSize, NSString, NSURL};
 use tao::event_loop::EventLoopProxy;
 use wry::{WebView, WebViewExtMacOS};
@@ -68,18 +68,31 @@ pub fn export(webview: &WebView, kind: Export, path: PathBuf, proxy: EventLoopPr
     }
 }
 
-/// Fenêtre « Ouvrir » de macOS : l'adresse `file://` du fichier choisi.
-pub fn choose_file() -> Option<String> {
-    let mtm = MainThreadMarker::new()?;
+/// Fenêtre « Ouvrir » de macOS, en feuille sur la fenêtre de Feather : le
+/// fichier choisi est passé à `chosen` plus tard (rien si l'utilisateur
+/// annule). Pas de `runModal` : la boucle d'événements attendrait au milieu
+/// d'un de ses rappels, et un dessin de la fenêtre pendant ce temps (passage
+/// en mode sombre…) la bloquerait, tao reprenant le même verrou.
+pub fn choose(webview: &WebView, chosen: impl Fn(&NSURL) + 'static) {
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    let Some(window) = webview.webview().window() else { return };
+    // Déjà ouverte (double clic) : pas une deuxième derrière.
+    if window.attachedSheet().is_some() {
+        return;
+    }
     let panel = NSOpenPanel::openPanel(mtm);
     panel.setCanChooseFiles(true);
     panel.setCanChooseDirectories(false);
     panel.setAllowsMultipleSelection(false);
-    if panel.runModal() != NSModalResponseOK {
-        return None;
-    }
-    let url = panel.URLs().firstObject()?;
-    url.absoluteString().map(|s| s.to_string())
+    let answered = panel.clone();
+    let done = RcBlock::new(move |response: NSModalResponse| {
+        if response == NSModalResponseOK
+            && let Some(url) = answered.URLs().firstObject()
+        {
+            chosen(&url);
+        }
+    });
+    panel.beginSheetModalForWindow_completionHandler(&window, &done);
 }
 
 /// Charge le fichier choisi dans la page. WebKit ne lit un fichier de
