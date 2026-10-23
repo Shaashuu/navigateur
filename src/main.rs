@@ -23,6 +23,8 @@ mod import;
 mod layers;
 mod library;
 #[cfg(target_os = "macos")]
+mod mac_file;
+#[cfg(target_os = "macos")]
 mod mac_menu;
 #[cfg(target_os = "macos")]
 mod mac_mouse;
@@ -92,6 +94,9 @@ pub enum UserEvent {
     LoadFailed { id: TabId, url: String, kind: errorpage::ErrorKind },
     /// `window.open` ; `private` : la page qui l'a demandé est privée.
     OpenInNewTab { url: String, private: bool },
+    /// Menu Historique du Mac : rouvrir cet onglet fermé.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    ReopenClosed(String),
     /// Suggestions du moteur de recherche pour ce texte de la barre (voir `suggest`).
     EngineSuggestions { query: String, items: Vec<String> },
     Update(UpdateEvent),
@@ -112,6 +117,9 @@ pub enum UserEvent {
     TimerDone { seconds: u64, label: String },
     /// Fin d'une capture de page : le fichier écrit (`None` : copiée), ou l'erreur.
     Captured(Result<Option<PathBuf>, String>),
+    /// Menu Fichier du Mac : la page enregistrée ou exportée en PDF (ou l'erreur).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Exported(Result<PathBuf, String>),
     /// Listes du bloqueur lues (ou leur état seul : téléchargement, erreur).
     AdFilters(Option<Box<adblock::Filters>>, adblock::Status),
     /// macOS : les listes compilées par WebKit sont prêtes à être posées sur les pages.
@@ -349,6 +357,9 @@ fn main() -> wry::Result<()> {
     };
     // Les extensions sont confiées au moteur après la première page (voir `start_extensions`).
     adblock::set_replaced(app.extensions.ad_blocker().is_some());
+    // Le menu Historique et le menu Favoris du Mac relisent la bibliothèque à leur ouverture.
+    #[cfg(target_os = "macos")]
+    mac_menu::set_library(app.library.clone());
     adblock::set_enabled(app.settings().blocks_ads());
     adblock::set_sites_off(app.sites.read().map(|s| s.ads_off()).unwrap_or_default());
     adblock::load(app.proxy.clone(), false);
@@ -623,6 +634,13 @@ impl App {
                     self.open_tab(&url, private);
                 }
             }
+            UserEvent::ReopenClosed(url) => {
+                if network::is_web(&url) {
+                    self.tabs.take_closed(&url);
+                    self.closed_changed();
+                    self.open_tab(&url, false);
+                }
+            }
             UserEvent::EngineSuggestions { query, items } => {
                 let data = serde_json::json!({ "query": query, "items": items });
                 self.chrome_call(&format!("navigateur.setEngineSuggestions({data})"));
@@ -662,6 +680,7 @@ impl App {
             }
             UserEvent::TimerDone { seconds, label } => self.timer_done(seconds, &label),
             UserEvent::Captured(result) => self.captured(result),
+            UserEvent::Exported(result) => self.exported(result),
             UserEvent::AdFilters(filters, status) => self.ad_filters(filters, status),
             UserEvent::AdRulesReady => {
                 self.reapply_ads();
@@ -1160,6 +1179,7 @@ impl App {
             Shortcut::ZoomReset => self.zoom(0),
             Shortcut::ReopenTab => {
                 if let Some(url) = self.tabs.pop_closed() {
+                    self.closed_changed();
                     self.open_tab(&url, false);
                 }
             }
@@ -1190,6 +1210,59 @@ impl App {
             Shortcut::Bookmarks => self.focus_chrome("navigateur.openLibrary('bookmarks')"),
             Shortcut::Import => self.focus_chrome("navigateur.openImport()"),
             Shortcut::Extensions => self.focus_chrome("navigateur.openExtensions()"),
+            Shortcut::Reader => self.toggle_reader(),
+            Shortcut::Home => {
+                let url = self.settings().start_url();
+                self.load_in_active(&url);
+            }
+            Shortcut::PinTab => {
+                if let Some(tab) = id.and_then(|id| self.tabs.get(id)) {
+                    let (id, pinned) = (tab.id, !tab.pinned);
+                    self.tabs.set_pinned(id, pinned);
+                }
+            }
+            Shortcut::DuplicateTab => {
+                if let Some(tab) = id.and_then(|id| self.tabs.get(id)) {
+                    let (url, private) = (tab.url().to_string(), tab.private);
+                    self.open_tab(&url, private);
+                }
+            }
+            Shortcut::CloseOtherTabs => {
+                let others: Vec<TabId> = self.tabs.iter().filter(|t| Some(t.id) != id && !t.pinned).map(|t| t.id).collect();
+                for other in others {
+                    self.close_tab(other);
+                }
+            }
+            Shortcut::GroupTab => self.focus_chrome("navigateur.groupActive()"),
+            Shortcut::FindNext => self.focus_chrome("navigateur.findStep(false)"),
+            Shortcut::FindPrevious => self.focus_chrome("navigateur.findStep(true)"),
+            Shortcut::BookmarkAll => self.bookmark_all(),
+            Shortcut::ReportIssue => self.open_tab(ui::ISSUES_URL, false),
+            #[cfg(target_os = "macos")]
+            Shortcut::SavePage => self.export_page(mac_file::Export::Archive),
+            #[cfg(target_os = "macos")]
+            Shortcut::ExportPdf => self.export_page(mac_file::Export::Pdf),
+            #[cfg(target_os = "macos")]
+            Shortcut::OpenFile => {
+                if let Some(url) = mac_file::choose_file() {
+                    self.open_tab(&url, false);
+                    if let Some(w) = self.tabs.active().and_then(|t| t.webview()) {
+                        mac_file::load_file(w, &url);
+                    }
+                }
+            }
+            #[cfg(target_os = "macos")]
+            Shortcut::Share => {
+                if let Some(tab) = self.tabs.active()
+                    && network::is_web(tab.url())
+                    && let Some(w) = tab.webview()
+                {
+                    mac_file::share(w, tab.url());
+                }
+            }
+            // Seulement dans les menus du Mac.
+            #[cfg(not(target_os = "macos"))]
+            Shortcut::SavePage | Shortcut::ExportPdf | Shortcut::OpenFile | Shortcut::Share => {}
             Shortcut::Fullscreen => {
                 let full = self.window.fullscreen().is_some();
                 self.window.set_fullscreen((!full).then_some(tao::window::Fullscreen::Borderless(None)));
@@ -1344,6 +1417,7 @@ impl App {
             articles.remove(&id);
         }
         self.tabs.close(id, self.page_visible());
+        self.closed_changed();
         self.schedule_reap();
         if self.tabs.is_empty() {
             self.open_new_tab();
@@ -1422,6 +1496,25 @@ impl App {
         let Some(tab) = self.tabs.get(id) else { return };
         if let Ok(mut lib) = self.library.write() {
             lib.toggle_bookmark(tab.url(), &tab.title, tab.icon.as_deref());
+        }
+        self.reload_home_tabs();
+        self.push_state();
+    }
+
+    /// La liste des onglets fermés a changé : le menu Historique du Mac la relira.
+    fn closed_changed(&self) {
+        #[cfg(target_os = "macos")]
+        mac_menu::set_closed(self.tabs.closed());
+    }
+
+    /// Tous les onglets ouverts dans les favoris, sans doublon ni onglet privé.
+    fn bookmark_all(&mut self) {
+        if let Ok(mut lib) = self.library.write() {
+            for tab in self.tabs.iter().filter(|t| !t.private) {
+                if !lib.is_bookmarked(tab.url()) {
+                    lib.toggle_bookmark(tab.url(), &tab.title, tab.icon.as_deref());
+                }
+            }
         }
         self.reload_home_tabs();
         self.push_state();

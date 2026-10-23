@@ -623,21 +623,51 @@ impl App {
         capture::capture(w, target, self.proxy.clone());
     }
 
+    /// Un fichier fait par Feather (capture, page enregistrée) rejoint la
+    /// liste des téléchargements ; renvoie son nom.
+    fn add_made_file(&mut self, path: PathBuf) -> String {
+        let id = self.next_download_id;
+        self.next_download_id += 1;
+        let mut d = Download::new(id, String::new(), path);
+        d.state = State::Done;
+        d.probe();
+        d.speed = None;
+        let name = d.name.clone();
+        self.downloads.push(d);
+        self.push_state();
+        name
+    }
+
+    /// Menu Fichier du Mac : archive ou PDF de la page affichée, dans le
+    /// dossier des téléchargements.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn export_page(&mut self, kind: crate::mac_file::Export) {
+        let Some(name) = self.capture_name() else { return };
+        let Some(tab) = self.tabs.active() else { return };
+        if !network::is_web(tab.url()) {
+            self.chrome_call(&format!("navigateur.showNotice({})", js("Seule une page web peut être enregistrée")));
+            return;
+        }
+        let Some(w) = tab.webview() else { return };
+        let name = Path::new(&name).with_extension(kind.extension());
+        let dir = self.settings().download_dir.clone();
+        let path = downloads::destination(&name, &dir);
+        crate::mac_file::export(w, kind, path, self.proxy.clone());
+    }
+
+    /// La page est enregistrée (ou l'erreur).
+    pub(crate) fn exported(&mut self, result: Result<PathBuf, String>) {
+        let text = match result {
+            Ok(path) => format!("Page enregistrée : {}", self.add_made_file(path)),
+            Err(e) => e,
+        };
+        self.chrome_call(&format!("navigateur.showNotice({})", js(&text)));
+    }
+
     /// La capture est faite : elle rejoint la liste des téléchargements.
     pub(crate) fn captured(&mut self, result: Result<Option<PathBuf>, String>) {
         let text = match result {
-            Ok(Some(path)) => {
-                let id = self.next_download_id;
-                self.next_download_id += 1;
-                let mut d = Download::new(id, String::new(), path);
-                d.state = State::Done;
-                d.probe();
-                d.speed = None;
-                let text = format!("Capture enregistrée : {}", d.name);
-                self.downloads.push(d);
-                self.push_state();
-                text
-            }
+            Ok(Some(path)) => format!("Capture enregistrée : {}", self.add_made_file(path)),
             Ok(None) => "Capture copiée dans le presse-papiers".to_string(),
             Err(e) => e,
         };

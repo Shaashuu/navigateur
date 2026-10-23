@@ -4,24 +4,44 @@
 //! copier-coller ne marchait nulle part. Ces entrées envoient l'action
 //! standard (`copy:`, `paste:`…) à ce qui a le focus (page, barre d'adresse).
 //!
-//! Les menus Fichier, Présentation, Historique, Favoris, Téléchargements et
-//! Fenêtre lancent les actions de Feather : chaque entrée passe par la même
+//! Les menus Fichier, Présentation, Historique, Favoris, Onglet, Fenêtre et
+//! Aide lancent les actions de Feather : chaque entrée passe par la même
 //! file que les raccourcis des pages (`Shortcut`), donc fait exactement la même
 //! chose. Les touches affichées sont celles que page.js et l'interface lisent
 //! déjà : quand une page a le focus, page.js traite la touche (et l'arrête),
 //! le menu ne la reçoit pas en double. Le menu prend le relais là où page.js
 //! ne tourne pas (fenêtre d'une extension, page qui n'a pas encore chargé).
+//!
+//! Comme dans Safari, Historique liste les dernières pages et les onglets
+//! fermés, Favoris les favoris : ces entrées sont refaites à chaque ouverture
+//! du menu (`menuNeedsUpdate:`), rien n'est tenu à jour en arrière-plan.
 
 use std::cell::RefCell;
+use std::sync::{Arc, RwLock};
 
 use objc2::rc::Retained;
-use objc2::runtime::{NSObject, Sel};
+use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject, Sel};
 use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
-use objc2_app_kit::{NSApplication, NSEventModifierFlags, NSMenu, NSMenuItem};
+use objc2_app_kit::{
+    NSAlert, NSAlertFirstButtonReturn, NSAlertStyle, NSApplication, NSEventModifierFlags, NSMenu, NSMenuDelegate, NSMenuItem,
+};
 use objc2_foundation::NSString;
 use tao::event_loop::EventLoopProxy;
 
 use crate::UserEvent;
+use crate::library::Library;
+
+/// Pages récentes dans le menu Historique, favoris dans le menu Favoris.
+const RECENT: usize = 15;
+const BOOKMARKS: usize = 40;
+/// Longueur d'un titre dans un menu, au-delà coupé par « … ».
+const TITLE_CHARS: usize = 60;
+
+/// Les entrées refaites à chaque ouverture ont un `tag` à partir de ces
+/// valeurs (une plage par liste) ; les entrées fixes ont un `tag` plus petit.
+const LIST_HISTORY: isize = 10_000;
+const LIST_CLOSED: isize = 20_000;
+const LIST_BOOKMARKS: isize = 30_000;
 
 /// Ce que fait une entrée.
 #[derive(Clone, Copy)]
@@ -36,11 +56,38 @@ enum Action {
 /// modification. `None` dans une liste : un séparateur.
 type Entry = (&'static str, Action, &'static str, NSEventModifierFlags);
 
+/// Pas un raccourci : l'historique s'efface après une confirmation (voir `confirm`).
+const CLEAR_HISTORY: &str = "clear_history";
+
 thread_local! {
     /// Où envoyer les actions de Feather (fil principal seulement).
     static PROXY: RefCell<Option<EventLoopProxy<UserEvent>>> = const { RefCell::new(None) };
     /// Noms des raccourcis, rangés selon le `tag` de leur entrée.
     static ACTIONS: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+    /// Historique et favoris, relus à l'ouverture des menus.
+    static LIBRARY: RefCell<Option<Arc<RwLock<Library>>>> = const { RefCell::new(None) };
+    /// Onglets fermés, le plus ancien d'abord (copiés par `set_closed`).
+    static CLOSED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Adresses des entrées refaites à l'ouverture, par liste (même ordre que les `tag`).
+    static LISTS: RefCell<[Vec<String>; 3]> = const { RefCell::new([Vec::new(), Vec::new(), Vec::new()]) };
+}
+
+/// La bibliothèque lue par les menus Historique et Favoris.
+pub fn set_library(library: Arc<RwLock<Library>>) {
+    LIBRARY.with_borrow_mut(|l| *l = Some(library));
+}
+
+/// Les onglets fermés ont changé (fermeture, réouverture).
+pub fn set_closed(closed: &[String]) {
+    CLOSED.with_borrow_mut(|c| *c = closed.to_vec());
+}
+
+fn send(event: UserEvent) {
+    PROXY.with_borrow(|p| {
+        if let Some(proxy) = p {
+            let _ = proxy.send_event(event);
+        }
+    });
 }
 
 define_class!(
@@ -58,11 +105,42 @@ define_class!(
             let Some(name) = ACTIONS.with_borrow(|a| usize::try_from(tag).ok().and_then(|i| a.get(i).copied())) else {
                 return;
             };
-            PROXY.with_borrow(|p| {
-                if let Some(proxy) = p {
-                    let _ = proxy.send_event(UserEvent::Chrome(format!(r#"{{"type":"shortcut","shortcut":"{name}"}}"#)));
+            let message = if name == CLEAR_HISTORY {
+                if !confirm(self.mtm(), "Effacer tout l'historique ?", "Les pages visitées et leur texte gardé pour la recherche seront effacés. Les favoris restent.", "Effacer") {
+                    return;
                 }
-            });
+                r#"{"type":"clear_history"}"#.to_string()
+            } else {
+                format!(r#"{{"type":"shortcut","shortcut":"{name}"}}"#)
+            };
+            send(UserEvent::Chrome(message));
+        }
+
+        /// Une page de l'historique, un onglet fermé ou un favori a été choisi.
+        #[unsafe(method(featherOpen:))]
+        fn feather_open(&self, sender: &NSMenuItem) {
+            let tag = sender.tag();
+            let list = ((tag - LIST_HISTORY) / 10_000) as usize;
+            let index = ((tag - LIST_HISTORY) % 10_000) as usize;
+            let Some(url) = LISTS.with_borrow(|l| l.get(list).and_then(|l| l.get(index)).cloned()) else {
+                return;
+            };
+            if (LIST_CLOSED..LIST_BOOKMARKS).contains(&tag) {
+                send(UserEvent::ReopenClosed(url));
+            } else {
+                let message = serde_json::json!({ "type": "open_url", "url": url });
+                send(UserEvent::Chrome(message.to_string()));
+            }
+        }
+    }
+
+    unsafe impl NSObjectProtocol for Target {}
+
+    unsafe impl NSMenuDelegate for Target {
+        /// Juste avant l'ouverture du menu Historique ou Favoris : ses listes sont refaites.
+        #[unsafe(method(menuNeedsUpdate:))]
+        fn menu_needs_update(&self, menu: &NSMenu) {
+            refresh(self.mtm(), menu, self);
         }
     }
 );
@@ -75,7 +153,106 @@ impl Target {
     }
 }
 
-/// Les menus, dans l'ordre de la barre ; le dernier est la liste des fenêtres.
+/// Refait les listes du menu Historique ou Favoris, juste avant son ouverture.
+fn refresh(mtm: MainThreadMarker, menu: &NSMenu, target: &Target) {
+    // Les entrées de la fois précédente partent (les fixes ont un `tag` plus petit).
+    for i in (0..menu.numberOfItems()).rev() {
+        if menu.itemAtIndex(i).is_some_and(|item| item.tag() >= LIST_HISTORY) {
+            menu.removeItemAtIndex(i);
+        }
+    }
+    let Some(library) = LIBRARY.with_borrow(|l| l.clone()) else { return };
+    let Ok(library) = library.read() else { return };
+    // Le marqueur des séparateurs et du sous-menu : jamais une adresse.
+    let marker = LIST_BOOKMARKS + 9_999;
+    match menu.title().to_string().as_str() {
+        "Historique" => {
+            let closed: Vec<String> = CLOSED.with_borrow(|c| c.iter().rev().take(RECENT).cloned().collect());
+            if !closed.is_empty() {
+                let sub = self::menu(mtm, "Onglets fermés récemment");
+                for (i, url) in closed.iter().enumerate() {
+                    let title = library.title_of(url).unwrap_or(url);
+                    sub.addItem(&list_item(mtm, title, url, LIST_CLOSED + i as isize, target));
+                }
+                add_marked(menu, NSMenuItem::separatorItem(mtm), marker);
+                let holder = NSMenuItem::new(mtm);
+                holder.setTitle(&NSString::from_str("Onglets fermés récemment"));
+                holder.setSubmenu(Some(&sub));
+                add_marked(menu, holder, marker);
+            }
+            let mut recent: Vec<(String, String)> = Vec::new();
+            for visit in library.search_history("", RECENT * 4) {
+                if recent.len() < RECENT && !recent.iter().any(|(u, _)| *u == visit.url) {
+                    recent.push((visit.url.clone(), visit.title.clone()));
+                }
+            }
+            if !recent.is_empty() {
+                add_marked(menu, NSMenuItem::separatorItem(mtm), marker);
+            }
+            for (i, (url, title)) in recent.iter().enumerate() {
+                menu.addItem(&list_item(mtm, title, url, LIST_HISTORY + i as isize, target));
+            }
+            LISTS.with_borrow_mut(|l| {
+                l[0] = recent.into_iter().map(|(u, _)| u).collect();
+                l[1] = closed;
+            });
+        }
+        "Favoris" => {
+            let marks: Vec<_> = library.bookmarks().iter().take(BOOKMARKS).collect();
+            if !marks.is_empty() {
+                add_marked(menu, NSMenuItem::separatorItem(mtm), marker);
+            }
+            for (i, b) in marks.iter().enumerate() {
+                menu.addItem(&list_item(mtm, &b.title, &b.url, LIST_BOOKMARKS + i as isize, target));
+            }
+            LISTS.with_borrow_mut(|l| l[2] = marks.iter().map(|b| b.url.clone()).collect());
+        }
+        _ => {}
+    }
+}
+
+fn add_marked(menu: &NSMenu, item: Retained<NSMenuItem>, tag: isize) {
+    item.setTag(tag);
+    menu.addItem(&item);
+}
+
+/// Une page à ouvrir : son titre (ou son adresse), coupé s'il est trop long.
+fn list_item(mtm: MainThreadMarker, title: &str, url: &str, tag: isize, target: &Target) -> Retained<NSMenuItem> {
+    let title = if title.trim().is_empty() { url } else { title.trim() };
+    let label: String = if title.chars().count() > TITLE_CHARS {
+        title.chars().take(TITLE_CHARS - 1).chain(['…']).collect()
+    } else {
+        title.to_string()
+    };
+    // SAFETY : `featherOpen:` de `Target`, qui attend une entrée de menu.
+    let item = unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            NSMenuItem::alloc(mtm),
+            &NSString::from_str(&label),
+            Some(sel!(featherOpen:)),
+            &NSString::from_str(""),
+        )
+    };
+    item.setTag(tag);
+    item.setToolTip(Some(&NSString::from_str(url)));
+    // SAFETY : `Target` répond à `featherOpen:` et vit jusqu'à la fin.
+    unsafe { item.setTarget(Some(target)) };
+    item
+}
+
+/// Fenêtre de confirmation de macOS : `true` si l'utilisateur choisit `action`.
+fn confirm(mtm: MainThreadMarker, title: &str, text: &str, action: &str) -> bool {
+    let alert = NSAlert::new(mtm);
+    alert.setAlertStyle(NSAlertStyle::Warning);
+    alert.setMessageText(&NSString::from_str(title));
+    alert.setInformativeText(&NSString::from_str(text));
+    alert.addButtonWithTitle(&NSString::from_str(action));
+    alert.addButtonWithTitle(&NSString::from_str("Annuler"));
+    alert.runModal() == NSAlertFirstButtonReturn
+}
+
+/// Les menus, dans l'ordre de la barre ; « Fenêtre » reçoit la liste des
+/// fenêtres, « Aide » la recherche dans les menus.
 fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
     let cmd = NSEventModifierFlags::Command;
     let shift = NSEventModifierFlags::Shift;
@@ -90,6 +267,8 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
         Some(("Paramètres…", App("settings"), ",", cmd)),
         Some(("Extensions…", App("extensions"), "", none)),
         None,
+        Some(("Effacer l'historique…", App(CLEAR_HISTORY), "", none)),
+        None,
         Some(("Masquer Feather", Std(sel!(hide:)), "h", cmd)),
         Some(("Masquer les autres", Std(sel!(hideOtherApplications:)), "h", cmd | alt)),
         Some(("Tout afficher", Std(sel!(unhideAllApplications:)), "", none)),
@@ -102,8 +281,13 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
         Some(("Nouvel onglet", App("new_tab"), "t", cmd)),
         Some(("Nouvel onglet privé", App("new_private_tab"), "n", cmd | shift)),
         Some(("Ouvrir une adresse…", App("focus_bar"), "l", cmd)),
+        Some(("Ouvrir un fichier…", App("open_file"), "o", cmd)),
         None,
         Some(("Fermer l'onglet", App("close_tab"), "w", cmd)),
+        None,
+        Some(("Enregistrer la page", App("save_page"), "s", cmd)),
+        Some(("Exporter en PDF", App("export_pdf"), "", none)),
+        Some(("Partager…", App("share"), "", none)),
         None,
         Some(("Importer des favoris…", App("import"), "", none)),
         None,
@@ -122,9 +306,12 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
         Some(("Tout sélectionner", Std(sel!(selectAll:)), "a", cmd)),
         None,
         Some(("Rechercher dans la page…", App("find"), "f", cmd)),
+        Some(("Occurrence suivante", App("find_next"), "g", cmd)),
+        Some(("Occurrence précédente", App("find_previous"), "g", cmd | shift)),
     ];
     let view = vec![
         Some(("Actualiser la page", App("reload"), "r", cmd)),
+        Some(("Mode lecture", App("reader"), "r", cmd | shift)),
         None,
         Some(("Zoom avant", App("zoom_in"), "+", cmd)),
         Some(("Zoom arrière", App("zoom_out"), "-", cmd)),
@@ -132,8 +319,12 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
         None,
         Some(("Mode concentration", App("focus"), "f", cmd | shift)),
         Some(("Plein écran", Std(sel!(toggleFullScreen:)), "f", cmd | ctrl)),
+        None,
+        // Comme Safari : pas de menu Téléchargements, la liste est ici.
+        Some(("Afficher les téléchargements", App("downloads"), "l", cmd | alt)),
     ];
     let history = vec![
+        Some(("Accueil", App("home"), "h", cmd | shift)),
         Some(("Précédent", App("back"), "[", cmd)),
         Some(("Suivant", App("forward"), "]", cmd)),
         None,
@@ -143,12 +334,20 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
     ];
     let bookmarks = vec![
         Some(("Ajouter aux favoris", App("toggle_bookmark"), "d", cmd)),
+        Some(("Ajouter tous les onglets aux favoris", App("bookmark_all"), "d", cmd | shift)),
         None,
         Some(("Afficher les favoris", App("bookmarks"), "b", cmd | alt)),
         Some(("Importer des favoris…", App("import"), "", none)),
     ];
-    let downloads = vec![
-        Some(("Afficher les téléchargements", App("downloads"), "l", cmd | alt)),
+    // Comme le menu Onglet de Chrome.
+    let tab = vec![
+        Some(("Épingler ou détacher l'onglet", App("pin_tab"), "", none)),
+        Some(("Dupliquer l'onglet", App("duplicate_tab"), "", none)),
+        Some(("Ranger dans un groupe…", App("group_tab"), "", none)),
+        None,
+        Some(("Couper le son de l'onglet", App("toggle_mute"), "m", ctrl)),
+        None,
+        Some(("Fermer les autres onglets", App("close_other_tabs"), "", none)),
     ];
     let window = vec![
         Some(("Réduire", Std(sel!(performMiniaturize:)), "m", cmd)),
@@ -158,8 +357,11 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
         Some(("Onglet suivant", App("next_tab"), "}", cmd)),
         Some(("Onglet précédent", App("previous_tab"), "{", cmd)),
         None,
-        Some(("Couper le son de l'onglet", App("toggle_mute"), "m", ctrl)),
         Some(("Utilisation de la mémoire", App("task_manager"), "\u{1b}", shift)),
+    ];
+    // macOS ajoute seul, en tête, la recherche dans tous les menus.
+    let help = vec![
+        Some(("Signaler un problème…", App("report_issue"), "", none)),
     ];
 
     vec![
@@ -170,8 +372,9 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
         ("Présentation", view),
         ("Historique", history),
         ("Favoris", bookmarks),
-        ("Téléchargements", downloads),
+        ("Onglet", tab),
         ("Fenêtre", window),
+        ("Aide", help),
     ]
 }
 
@@ -182,17 +385,18 @@ pub fn install(proxy: EventLoopProxy<UserEvent>) {
     // Gardée en vie jusqu'à la fin : les entrées ne retiennent pas leur cible.
     let target = Target::new(mtm);
     let bar = menu(mtm, "");
-    let mut windows = None;
+    let ns_app = NSApplication::sharedApplication(mtm);
     for (title, entries) in menus() {
         let sub = menu_with(mtm, title, &entries, &target);
         add_submenu(mtm, &bar, &sub);
-        windows = Some(sub);
+        match title {
+            "Fenêtre" => ns_app.setWindowsMenu(Some(&sub)),
+            "Aide" => ns_app.setHelpMenu(Some(&sub)),
+            "Historique" | "Favoris" => sub.setDelegate(Some(ProtocolObject::from_ref(&*target))),
+            _ => {}
+        }
     }
-
-    let ns_app = NSApplication::sharedApplication(mtm);
     ns_app.setMainMenu(Some(&bar));
-    // macOS ajoute la liste des fenêtres ouvertes au dernier menu (Fenêtre).
-    ns_app.setWindowsMenu(windows.as_deref());
     std::mem::forget(target);
 }
 
@@ -259,7 +463,9 @@ mod tests {
         let mut n = 0;
         for (_, entries) in menus() {
             for (label, action, _, _) in entries.into_iter().flatten() {
-                if let Action::App(name) = action {
+                if let Action::App(name) = action
+                    && name != CLEAR_HISTORY
+                {
                     let json = format!("\"{name}\"");
                     assert!(serde_json::from_str::<Shortcut>(&json).is_ok(), "{label} : « {name} » inconnu");
                     n += 1;

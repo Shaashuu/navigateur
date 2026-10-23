@@ -41,6 +41,10 @@
     else if (mac && e.metaKey && !e.altKey && !e.shiftKey && code === 'KeyY') a = 'history';
     else if (mac && e.metaKey && e.altKey && !e.shiftKey && code === 'KeyL') a = 'downloads';
     else if (mac && e.metaKey && e.altKey && !e.shiftKey && code === 'KeyB') a = 'bookmarks';
+    // Menus du Mac : mode lecture, tous les onglets en favoris, accueil.
+    else if (mac && e.metaKey && e.shiftKey && !e.altKey && code === 'KeyR') a = 'reader';
+    else if (mac && e.metaKey && e.shiftKey && !e.altKey && code === 'KeyD') a = 'bookmark_all';
+    else if (mac && e.metaKey && e.shiftKey && !e.altKey && code === 'KeyH') a = 'home';
     else if (!mac && ctrl && !e.shiftKey && k === 'h') a = 'history';
     else if (!mac && ctrl && !e.shiftKey && k === 'j') a = 'downloads';
     else if (!mac && ctrl && e.shiftKey && k === 'o') a = 'bookmarks';

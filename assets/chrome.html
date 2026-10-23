@@ -4418,6 +4418,9 @@
       if (e.metaKey && !e.altKey && !e.shiftKey && code === 'KeyY') return 'history';
       if (e.metaKey && e.altKey && !e.shiftKey && code === 'KeyL') return 'downloads';
       if (e.metaKey && e.altKey && !e.shiftKey && code === 'KeyB') return 'bookmarks';
+      if (e.metaKey && e.shiftKey && !e.altKey && code === 'KeyR') return 'reader';
+      if (e.metaKey && e.shiftKey && !e.altKey && code === 'KeyD') return 'bookmark_all';
+      if (e.metaKey && e.shiftKey && !e.altKey && code === 'KeyH') return 'home';
       return null;
     }
     if (ctrl && !e.shiftKey && k === 'h') return 'history';
@@ -4536,6 +4539,10 @@
     openExtensions() { if (mode !== 'extensions') openExtensions(); },
     // Menu Fichier → Importer des favoris (macOS).
     openImport() { if (mode !== 'import') openImport(); },
+    // Menu Onglet → Ranger dans un groupe (macOS ; pas pour un onglet épinglé).
+    groupActive() { const t = activeTab(); if (t && !t.pinned) openGroupSheet(t); },
+    // Menu Édition → ⌘G / ⇧⌘G : la recherche s'ouvre d'abord si besoin.
+    findStep(backwards) { if (findOpen && $('find-input').value) findStep(backwards); else openFind(); },
     closePanel,
     // Position de la souris lue par Rust pendant qu'un panneau est ouvert.
     pointer: nativePointer,
