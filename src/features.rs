@@ -39,6 +39,9 @@ const HUGE_MB: u32 = 1500;
 /// La bulle « Alléger » revient si la page est redescendue sous ce poids, puis remonte.
 const HUGE_RESET_MB: u32 = 1000;
 const HUGE_SLEEP: Duration = Duration::from_secs(60);
+/// L'onglet affiché et très lourd est allégé tout seul après ce temps sans geste
+/// dans la page (rien de perdu : formulaire, son, caméra l'en empêchent).
+const HUGE_IDLE: Duration = Duration::from_secs(2 * 60);
 
 /// Au-delà de ce nombre de questions en attente, un onglet essuie un refus
 /// (une page ne peut pas noyer l'utilisateur sous les demandes).
@@ -330,6 +333,7 @@ impl App {
             self.sync_ad_blocker();
             changed |= self.extensions.ad_blocker().is_some() != before;
             changed |= self.sample_weights();
+            self.auto_lighten();
             self.soft_sleep();
             changed |= self.auto_sleep();
         } else if self.memory_watched && self.ticks.is_multiple_of(2) {
@@ -373,6 +377,30 @@ impl App {
             offer_lighten(tab, shown, memory);
         }
         changed
+    }
+
+    /// Onglet affiché très lourd et laissé sans geste depuis `HUGE_IDLE` : sa page
+    /// est recréée à neuf, sans attendre « Alléger » (historique et position
+    /// gardés sous macOS 12 ou plus). Une page de journaux en direct (GitHub
+    /// Actions) que l'on regarde sans y toucher grossit sans fin sinon.
+    fn auto_lighten(&mut self) {
+        let Some(id) = self.tabs.active_id() else { return };
+        let downloading = self.downloading();
+        let Some(tab) = self.tabs.get(id) else { return };
+        let Some(memory) = tab.weight.memory_mb.filter(|&mb| mb >= HUGE_MB) else { return };
+        if tab.private || tab.last_input.elapsed() < HUGE_IDLE {
+            return;
+        }
+        let sites = std::sync::Arc::clone(&self.sites);
+        if keep_awake(tab, sites.read().ok().as_deref(), downloading) {
+            return;
+        }
+        if self.tabs.detach(id) {
+            self.schedule_reap();
+            self.wake_active();
+            let text = format!("Page allégée : elle utilisait {:.1} Go.", f64::from(memory) / 1024.0).replace('.', ",");
+            self.chrome_call(&format!("navigateur.showNotice({})", js(&text)));
+        }
     }
 
     /// Bouton « Alléger » de la bulle : la page de l'onglet affiché est recréée

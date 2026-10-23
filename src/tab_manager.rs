@@ -94,6 +94,8 @@ pub struct Tab {
     pub reader_asked: bool,
     /// La bulle « Alléger » est affichée dans la page (voir `App::offer_lighten`).
     pub lighten_offered: bool,
+    /// Dernier geste dans la page (clic, touche, molette) ou retour sur l'onglet.
+    pub last_input: Instant,
     /// Clé secrète de l'onglet, connue du seul script de Feather dans la page :
     /// elle distingue ses messages de ceux du site (voir `ui::split_key`).
     key: String,
@@ -275,6 +277,7 @@ impl TabManager {
             ads: None,
             reader_asked: false,
             lighten_offered: false,
+            last_input: Instant::now(),
             key: new_key(),
             host: Arc::default(),
             souvenir: None,
@@ -440,6 +443,9 @@ impl TabManager {
             // L'onglet qu'on quitte compte comme vu à l'instant.
             if Some(tab.id) == self.active || tab.id == id {
                 tab.last_active = now;
+            }
+            if tab.id == id {
+                tab.last_input = now;
             }
             if let Some(w) = &tab.webview {
                 // L'onglet qui revient retrouve sa mémoire normale et se dégèle.

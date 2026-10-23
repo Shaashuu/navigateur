@@ -1089,6 +1089,11 @@ impl App {
         if message.lighten {
             self.lighten(id);
         }
+        if (message.input || message.pressed)
+            && let Some(tab) = self.tabs.get_mut(id)
+        {
+            tab.last_input = std::time::Instant::now();
+        }
         // Seule la page d'accueil intégrée a le droit d'utiliser sa barre de recherche.
         let Some(tab) = self.tabs.get(id) else { return };
         if !network::is_home(tab.url()) {

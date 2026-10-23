@@ -429,6 +429,20 @@
     toastTimer = setTimeout(() => { toastHost.box.style.opacity = '0'; }, 1600);
   });
 
+  // Gestes dans la page (au plus un message toutes les 20 s) : Feather n'allège
+  // pas tout seul une page très lourde que l'on est en train d'utiliser.
+  if (window.top === window) {
+    let lastInput = 0;
+    const touched = (e) => {
+      if (!e.isTrusted) return;
+      const now = Date.now();
+      if (now - lastInput < 20000) return;
+      lastInput = now;
+      post({ input: true });
+    };
+    for (const type of ['keydown', 'wheel', 'pointerdown']) window.addEventListener(type, touched, { capture: true, passive: true });
+  }
+
   // Page très lourde (plus de 1,5 Go, voir `offer_lighten` dans features.rs) :
   // une bulle par-dessus la page propose de la recréer à neuf. Rien ne se passe
   // sans un vrai clic ; Rust vérifie aussi que la bulle a bien été proposée.
