@@ -388,6 +388,10 @@ pub struct PageMessage {
     pub store_install: Option<String>,
     /// Position dans la page, envoyée quand l'onglet est caché (voir `Tab::scroll`).
     pub scroll: Option<ScrollPosition>,
+    /// Bouton « Alléger » de la bulle d'une page très lourde (voir `App::lighten`).
+    pub lighten: bool,
+    /// Geste dans la page (au plus un message toutes les 20 s, voir `Tab::last_input`).
+    pub input: bool,
 }
 
 /// Position dans une page, en pixels CSS.

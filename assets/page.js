@@ -429,6 +429,54 @@
     toastTimer = setTimeout(() => { toastHost.box.style.opacity = '0'; }, 1600);
   });
 
+  // Gestes dans la page (au plus un message toutes les 20 s) : Feather n'allège
+  // pas tout seul une page très lourde que l'on est en train d'utiliser.
+  if (window.top === window) {
+    let lastInput = 0;
+    const touched = (e) => {
+      if (!e.isTrusted) return;
+      const now = Date.now();
+      if (now - lastInput < 20000) return;
+      lastInput = now;
+      post({ input: true });
+    };
+    for (const type of ['keydown', 'wheel', 'pointerdown']) window.addEventListener(type, touched, { capture: true, passive: true });
+  }
+
+  // Page très lourde (plus de 1,5 Go, voir `offer_lighten` dans features.rs) :
+  // une bulle par-dessus la page propose de la recréer à neuf. Rien ne se passe
+  // sans un vrai clic ; Rust vérifie aussi que la bulle a bien été proposée.
+  let heavyHost = null;
+  expose('__featherHeavy', (label) => {
+    if (window.top !== window || !document.documentElement) return;
+    if (heavyHost) heavyHost.remove();
+    heavyHost = document.createElement('feather-heavy');
+    const host = heavyHost;
+    const root = host.attachShadow({ mode: 'closed' });
+    root.innerHTML = `<style>
+      :host { all: initial; position: fixed; z-index: 2147483647; right: 20px; bottom: 20px; }
+      div { display: flex; align-items: center; gap: 10px; max-width: 360px; padding: 10px 10px 10px 16px;
+        border-radius: 14px; background: rgba(28,28,32,.92); color: #fff; box-shadow: 0 8px 24px rgba(0,0,0,.3);
+        font: 13px/1.35 -apple-system, "Segoe UI", system-ui, sans-serif; }
+      span { flex: 1; }
+      button { all: unset; cursor: pointer; border-radius: 8px; }
+      .go { padding: 6px 12px; background: #fff; color: #1c1c20; font-weight: 600; }
+      .go:hover { background: #e8e8ec; }
+      .x { padding: 2px 6px; color: rgba(255,255,255,.7); font-size: 18px; line-height: 1; }
+      .x:hover { color: #fff; }
+    </style><div><span></span><button type="button" class="go">Alléger</button>
+      <button type="button" class="x" aria-label="Fermer">&times;</button></div>`;
+    root.querySelector('span').textContent = 'Cette page utilise ' + label + '. Alléger la recrée à neuf et rend cette mémoire.';
+    root.querySelector('.go').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!e.isTrusted) return;
+      host.remove();
+      post({ lighten: true });
+    });
+    root.querySelector('.x').addEventListener('click', (e) => { e.stopPropagation(); if (e.isTrusted) host.remove(); });
+    document.documentElement.appendChild(host);
+  });
+
   // Recherche dans la page (Ctrl+F). Les occurrences sont repérées dans les nœuds
   // de texte visibles ; la courante est sélectionnée (partout) et toutes sont
   // surlignées quand le moteur connaît l'API « CSS Custom Highlight ».

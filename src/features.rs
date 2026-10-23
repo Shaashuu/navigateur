@@ -32,6 +32,16 @@ const ZOOMS: [f64; 13] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 
 const HEAVY_SLEEP: Duration = Duration::from_secs(5 * 60);
 /// « Actualiser » recrée à neuf une page qui pèse au moins autant (Mo).
 const FRESH_RELOAD_MB: u32 = 300;
+/// Page très lourde (Mo) : affichée, elle propose « Alléger » ; cachée, elle
+/// est mise en veille après `HUGE_SLEEP`. Un site qui ne recharge jamais sa
+/// page (GitHub Actions et ses journaux en direct) l'atteint en quelques heures.
+const HUGE_MB: u32 = 1500;
+/// La bulle « Alléger » revient si la page est redescendue sous ce poids, puis remonte.
+const HUGE_RESET_MB: u32 = 1000;
+const HUGE_SLEEP: Duration = Duration::from_secs(60);
+/// L'onglet affiché et très lourd est allégé tout seul après ce temps sans geste
+/// dans la page (rien de perdu : formulaire, son, caméra l'en empêchent).
+const HUGE_IDLE: Duration = Duration::from_secs(2 * 60);
 
 /// Au-delà de ce nombre de questions en attente, un onglet essuie un refus
 /// (une page ne peut pas noyer l'utilisateur sous les demandes).
@@ -323,6 +333,7 @@ impl App {
             self.sync_ad_blocker();
             changed |= self.extensions.ad_blocker().is_some() != before;
             changed |= self.sample_weights();
+            self.auto_lighten();
             self.soft_sleep();
             changed |= self.auto_sleep();
         } else if self.memory_watched && self.ticks.is_multiple_of(2) {
@@ -352,6 +363,7 @@ impl App {
     /// pendant que le panneau de la mémoire est ouvert.
     fn sample_weights(&mut self) -> bool {
         let watched = self.memory_watched;
+        let active = self.tabs.active_id();
         let mut changed = false;
         for tab in self.tabs.iter_mut() {
             let Some(w) = tab.webview() else { continue };
@@ -361,8 +373,47 @@ impl App {
             tab.weight.cpu = cpu;
             tab.weight.update_level();
             changed |= tab.weight.level != before.level || (watched && tab.weight.memory_mb != before.memory_mb);
+            let shown = Some(tab.id) == active;
+            offer_lighten(tab, shown, memory);
         }
         changed
+    }
+
+    /// Onglet affiché très lourd et laissé sans geste depuis `HUGE_IDLE` : sa page
+    /// est recréée à neuf, sans attendre « Alléger » (historique et position
+    /// gardés sous macOS 12 ou plus). Une page de journaux en direct (GitHub
+    /// Actions) que l'on regarde sans y toucher grossit sans fin sinon.
+    fn auto_lighten(&mut self) {
+        let Some(id) = self.tabs.active_id() else { return };
+        let downloading = self.downloading();
+        let Some(tab) = self.tabs.get(id) else { return };
+        let Some(memory) = tab.weight.memory_mb.filter(|&mb| mb >= HUGE_MB) else { return };
+        if tab.private || tab.last_input.elapsed() < HUGE_IDLE {
+            return;
+        }
+        let sites = std::sync::Arc::clone(&self.sites);
+        if keep_awake(tab, sites.read().ok().as_deref(), downloading) {
+            return;
+        }
+        if self.tabs.detach(id) {
+            self.schedule_reap();
+            self.wake_active();
+            let text = format!("Page allégée : elle utilisait {:.1} Go.", f64::from(memory) / 1024.0).replace('.', ",");
+            self.chrome_call(&format!("navigateur.showNotice({})", js(&text)));
+        }
+    }
+
+    /// Bouton « Alléger » de la bulle : la page de l'onglet affiché est recréée
+    /// à neuf, comme « Actualiser » sur une page lourde (voir `reload`).
+    pub(crate) fn lighten(&mut self, id: TabId) {
+        let Some(tab) = self.tabs.get(id) else { return };
+        if Some(id) != self.tabs.active_id() || tab.private || !tab.lighten_offered {
+            return;
+        }
+        if self.tabs.detach(id) {
+            self.schedule_reap();
+            self.wake_active();
+        }
     }
 
     /// Veille douce (Windows, macOS 12 ou plus) : allège puis gèle les onglets
@@ -423,7 +474,9 @@ impl App {
             .filter(|t| !keep_awake(t, sites.as_deref(), downloading))
             .filter(|t| {
                 let hidden = t.last_active.elapsed();
-                hidden >= idle || (t.weight.level >= 2 && hidden >= HEAVY_SLEEP)
+                hidden >= idle
+                    || (t.weight.level >= 2 && hidden >= HEAVY_SLEEP)
+                    || (t.weight.memory_mb.is_some_and(|mb| mb >= HUGE_MB) && hidden >= HUGE_SLEEP)
             })
             .map(|t| t.id)
             .collect();
@@ -888,6 +941,21 @@ impl App {
         }
         json!(items)
     }
+}
+
+/// Bulle « Alléger » dans la page affichée quand elle dépasse `HUGE_MB`, une
+/// fois (elle revient si la page est redescendue sous `HUGE_RESET_MB`). Rien
+/// pour un onglet privé : le recréer effacerait sa session.
+fn offer_lighten(tab: &mut crate::tab_manager::Tab, active: bool, memory: u32) {
+    if memory < HUGE_RESET_MB {
+        tab.lighten_offered = false;
+    }
+    if !active || tab.private || tab.lighten_offered || memory < HUGE_MB {
+        return;
+    }
+    tab.lighten_offered = true;
+    let label = format!("{:.1} Go", f64::from(memory) / 1024.0).replace('.', ",");
+    tab.eval(&format!("window.__featherHeavy && __featherHeavy({})", js(&label)));
 }
 
 /// Un onglet qui ne doit pas être détruit par la veille (ni gelé) : il est
