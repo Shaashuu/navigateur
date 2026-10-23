@@ -30,10 +30,11 @@ on:
 permissions:
   contents: write
 
-# Une nouvelle compilation de la même branche arrête la précédente, devenue
-# inutile. Jamais pour une publication.
+# Une nouvelle vérification rapide de la même branche arrête la précédente,
+# devenue inutile. Une compilation complète ou une publication n'est jamais
+# arrêtée et n'arrête rien (groupe à elle seule).
 concurrency:
-  group: construire-${{ (inputs.version != '' || startsWith(github.ref, 'refs/tags/')) && github.run_id || github.head_ref || github.ref_name }}
+  group: construire-${{ (inputs.version != '' || inputs.complet || startsWith(github.ref, 'refs/tags/')) && github.run_id || github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 env:
