@@ -32,6 +32,9 @@ pub struct Settings {
     /// La recherche de la pastille à la loupe s'ouvre dans un nouvel onglet
     /// (sinon dans l'onglet actif).
     pub search_new_tab: bool,
+    /// Proposer sous la barre les suggestions du moteur de recherche pendant
+    /// la frappe (le texte tapé est alors envoyé au moteur, jamais en privé).
+    pub search_suggestions: bool,
     /// Les favoris s'affichent sous la recherche de la page d'accueil.
     pub bookmarks_on_home: bool,
     /// Les dernières pages visitées (« Reprendre ») s'affichent sur la page d'accueil.
@@ -107,6 +110,7 @@ impl Default for Settings {
             startup: Startup::Home,
             history_days: 90,
             search_new_tab: false,
+            search_suggestions: true,
             bookmarks_on_home: true,
             recent_on_home: true,
             download_dir: String::new(),

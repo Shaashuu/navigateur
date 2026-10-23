@@ -345,7 +345,8 @@ pub enum LibraryKind {
 pub struct PageMessage {
     pub shortcut: Option<Shortcut>,
     pub navigate: Option<String>,
-    /// Texte commençant par « / » : ouvrir la barre des commandes.
+    /// Texte tapé dans la recherche de l'accueil : il passe dans la barre
+    /// (« / » : ses commandes ; sinon les suggestions).
     pub open_bar: Option<String>,
     /// Nouvel ordre des vignettes de favoris, après un glisser-déposer sur l'accueil.
     pub reorder_bookmarks: Option<Vec<String>>,

@@ -40,3 +40,11 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 strip = true
+
+# Vérification rapide des PR et tests (voir .github/workflows/build.yml) : même
+# optimisation que la publication, sans LTO ni compilation en un seul bloc,
+# bien plus rapide à compiler. Les versions publiées restent en « release ».
+[profile.verif]
+inherits = "release"
+lto = false
+codegen-units = 16

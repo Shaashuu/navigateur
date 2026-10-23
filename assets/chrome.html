@@ -405,6 +405,7 @@
   #command-list li .name.page { color: var(--text); font-weight: 400; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #command-list li .desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #command-list li .mark { color: #e8a317; flex: none; }
+  #command-list li .mark.q { color: var(--muted); align-self: center; width: 13px; }
   #cmd-result {
     margin-top: 10px; width: min(660px, 100%); padding: 14px 18px; border-radius: 16px;
     background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); user-select: text;
@@ -1271,6 +1272,8 @@
               <option value="google">Google</option>
               <option value="bing">Bing</option>
             </select></div>
+          <div class="srow"><label class="lab" for="s-suggest">Suggestions du moteur<small>Pendant la frappe, le texte tapé est envoyé au moteur choisi pour proposer des recherches ; jamais dans un onglet privé, ni pour une adresse complète</small></label>
+            <input type="checkbox" class="tg" id="s-suggest"></div>
           <div class="srow"><span class="lab">Recherche de la loupe<small>Où s'ouvre ce qu'on cherche depuis la pastille à la loupe</small></span>
             <div class="choices" id="s-searchtab">
               <button type="button" data-value="active">Dans l'onglet actif</button>
@@ -1386,6 +1389,7 @@
   let state = { tabs: [], settings: {}, version: '', update: { state: 'idle' }, can_back: false, can_forward: false,
     permissions: [], permission_prompt: null, native_commands: [] };
   let suggestions = [];     // pages proposées sous la barre (favoris, historique)
+  let engineSugg = { query: '', items: [] };  // recherches proposées par le moteur
   let lastActive = null;    // onglet actif au dernier dessin
   let drag = null;          // onglet en cours de déplacement
   const badIcons = new Set(); // icônes introuvables : on garde le point gris
@@ -2216,7 +2220,9 @@
           inp.placeholder = 'Aller à, chercher, ou taper / pour une commande';
           inp.addEventListener('pointerdown', (e) => e.stopPropagation());
           inp.addEventListener('input', () => {
-            if (inp.value.startsWith('/')) { const v = inp.value; editing = false; openBar(v, true); }
+            // Ce qui est tapé passe dans la palette, pour les suggestions et les commandes.
+            const v = inp.value;
+            if (v.trim() && v !== (tab.home ? '' : tab.url)) { editing = false; typeInBar(v); }
           });
           inp.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
@@ -2540,6 +2546,20 @@
           closeBar(false);
           send(newTab ? { type: 'navigate', input: p.url, new_tab: true } : { type: 'open_url', url: p.url, new_tab: false });
         } }));
+      // Puis les recherches proposées par le moteur. Celles d'un texte plus
+      // court restent affichées tant qu'elles commencent par ce qui est tapé :
+      // la liste ne clignote pas entre deux réponses.
+      const typed = raw.toLowerCase();
+      const fresh = engineSugg.query.toLowerCase() === typed;
+      const engine = ($('s-engine').querySelector(`option[value="${state.settings.search_engine || 'duckduckgo'}"]`) || {}).textContent || '';
+      for (const q of engineSugg.items) {
+        if (!fresh && !q.toLowerCase().startsWith(typed)) continue;
+        matches.push({ name: q, desc: engine, search: true, run: () => {
+          const newTab = searchNewTab();
+          closeBar(false);
+          send({ type: 'navigate', input: q, new_tab: newTab });
+        } });
+      }
       if (selected >= matches.length) selected = -1;
     }
     const ul = $('command-list');
@@ -2547,9 +2567,9 @@
     matches.forEach((c, i) => {
       const li = document.createElement('li');
       if (i === selected) li.className = 'selected';
-      li.innerHTML = (c.bookmark ? '<span class="mark">★</span>' : '') + '<span class="name"></span><span class="desc"></span>';
+      li.innerHTML = (c.bookmark ? '<span class="mark">★</span>' : c.search ? LOUPE : '') + '<span class="name"></span><span class="desc"></span>';
       li.querySelector('.name').textContent = c.name;
-      li.querySelector('.name').classList.toggle('page', !!c.page);
+      li.querySelector('.name').classList.toggle('page', !!(c.page || c.search));
       li.querySelector('.desc').textContent = c.page ? host(c.desc) : c.desc;
       li.addEventListener('mousedown', (e) => { e.preventDefault(); runCommand(c); });
       ul.appendChild(li);
@@ -2599,8 +2619,23 @@
   function requestSuggestions() {
     clearTimeout(suggestTimer);
     const text = input.value.trim();
-    if (!text || text.startsWith('/')) { suggestions = []; return; }
+    if (!text || text.startsWith('/')) { suggestions = []; engineSugg = { query: '', items: [] }; return; }
     suggestTimer = setTimeout(() => send({ type: 'suggest', query: text }), 60);
+  }
+  // Petite loupe devant une recherche proposée par le moteur.
+  const LOUPE = '<svg class="mark q" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+
+  // Un texte tapé ailleurs (adresse de la barre, page d'accueil) passe dans la
+  // palette, curseur à la fin, avec les suggestions.
+  function typeInBar(text) {
+    // Touches arrivées avant que la palette ait pris la main : elles suivent le texte déjà là.
+    if (mode === 'bar' && !searchOnly) text = input.value + text;
+    openBar(text, true);
+    $('bar-acts').classList.remove('on');
+    input.setSelectionRange(text.length, text.length);
+    selected = text.trim().startsWith('/') ? 0 : -1;
+    requestSuggestions();
+    renderCommands();
   }
 
   // Ouvre la barre par-dessus la page, avec l'adresse actuelle (ou un texte donné).
@@ -2629,6 +2664,7 @@
     input.value = text || (!searchOnly && tab && !tab.home ? tab.url : '');
     selected = 0;
     suggestions = [];
+    engineSugg = { query: '', items: [] };
     showResult(null);
     renderCommands();
     requestPreview();
@@ -2643,6 +2679,7 @@
     searchOnly = false;
     input.value = '';
     suggestions = [];
+    engineSugg = { query: '', items: [] };
     showResult(null);
     renderCommands();
     setMode(null);
@@ -2650,7 +2687,7 @@
   }
 
   function runCommand(c) {
-    if (c.native || c.page) { c.run(); return; }
+    if (c.native || c.page || c.search) { c.run(); return; }
     closeBar(c.name !== '/parametres' && c.name !== '/chercher' && c.name !== '/extensions');
     c.run();
   }
@@ -2674,6 +2711,7 @@
     const set = (id, v) => { if ($(id) !== active) $(id).value = v; };
     set('s-name', s.name || '');
     $('s-engine').value = s.search_engine || 'duckduckgo';
+    $('s-suggest').checked = s.search_suggestions !== false;
     set('s-home', s.home_page || '');
     $('s-autoupdate').checked = s.auto_update_check !== false;
     $('s-history').value = String(s.history_days ?? 90);
@@ -2822,6 +2860,7 @@
       auto_update_check: $('s-autoupdate').checked,
       startup: chosen('s-startup'),
       search_new_tab: chosen('s-searchtab') === 'new',
+      search_suggestions: $('s-suggest').checked,
       history_days: Number($('s-history').value),
       bookmarks_on_home: $('s-bmhome').checked,
       recent_on_home: $('s-recent').checked,
@@ -2937,7 +2976,7 @@
   });
   input.addEventListener('keydown', (e) => {
     if (matches.length) {
-      const first = matches[0].page ? -1 : 0;
+      const first = matches[0].page || matches[0].search ? -1 : 0;
       const span = matches.length - first;
       if (e.key === 'ArrowDown') { selected = (selected - first + 1) % span + first; renderCommands(); e.preventDefault(); return; }
       if (e.key === 'ArrowUp') { selected = (selected - first - 1 + span) % span + first; renderCommands(); e.preventDefault(); return; }
@@ -3052,12 +3091,7 @@
       if (!text.trim()) return;
       inp.value = '';
       renderAddr(activeTab());
-      openBar(text, true);
-      $('bar-acts').classList.remove('on');
-      input.setSelectionRange(text.length, text.length);
-      selected = text.trim().startsWith('/') ? 0 : -1;
-      requestSuggestions();
-      renderCommands();
+      typeInBar(text);
     });
     inp.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -3627,7 +3661,7 @@
   for (const q of document.querySelectorAll('#ov-quick input')) {
     q.addEventListener('change', () => { $(q.dataset.for).checked = q.checked; saveSettings(); renderOverview(); });
   }
-  for (const id of ['s-engine', 's-history', 's-sleep', 's-bmhome', 's-recent', 's-trackers', 's-ads', 's-index', 's-economy', 's-autoupdate']) {
+  for (const id of ['s-engine', 's-suggest', 's-history', 's-sleep', 's-bmhome', 's-recent', 's-trackers', 's-ads', 's-index', 's-economy', 's-autoupdate']) {
     $(id).addEventListener('change', saveSettings);
   }
   // Champs de texte : enregistrés en quittant le champ ou avec Entrée.
@@ -4453,6 +4487,15 @@
       selected = -1;
       renderCommands();
     },
+    // Réponse du moteur : ignorée si le texte a changé entre-temps et ne la prolonge plus.
+    setEngineSuggestions(data) {
+      if (mode !== 'bar') return;
+      const typed = input.value.trim().toLowerCase();
+      if (!typed || !typed.startsWith(data.query.toLowerCase())) return;
+      engineSugg = { query: data.query, items: data.items || [] };
+      renderCommands();
+    },
+    typeInBar,
     setCommandResult(r) {
       if (mode !== 'bar') return;
       if (r && !r.run && !isNative(input.value)) return;

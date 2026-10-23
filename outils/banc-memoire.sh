@@ -19,6 +19,9 @@
 # Avec --extensions, un troisième lancement installe Proton Pass et uBlock
 # Origin Lite, puis vérifie que leur page s'affiche sans message d'erreur ; un
 # quatrième relance Feather avec ces extensions (mémoire et démarrage).
+# Pendant le troisième, deux pages de connexion (une page locale, puis celle
+# de GitHub) sont ouvertes : on clique dans le champ de l'identifiant et on
+# regarde si Proton Pass y a posé son icône et son menu.
 # Réservé aux machines de compilation : elles restent installées ensuite.
 #
 # Utilisation : outils/banc-memoire.sh [--extensions] chemin/vers/feather [secondes d'attente]
@@ -143,20 +146,43 @@ scenario_extensions() {
   local banc="$temp/extensions.txt"
   local ids="" e
   for e in "${extensions_testees[@]}"; do ids="$ids${ids:+,}${e%% *}"; done
-  FEATHER_BANC_EXTENSIONS=$ids FEATHER_BANC=$banc "$programme" >/dev/null 2>&1 &
+  # Page de connexion servie en local, pour l'essai du menu de Proton Pass.
+  mkdir -p "$temp/site"
+  cat > "$temp/site/connexion.html" <<'PAGE'
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Connexion</title></head>
+<body>
+<h1>Connexion</h1>
+<form method="post" action="/connecte.html">
+  <label>Adresse e-mail <input type="email" name="email" autocomplete="username"></label>
+  <label>Mot de passe <input type="password" name="password" autocomplete="current-password"></label>
+  <button type="submit">Se connecter</button>
+</form>
+</body></html>
+PAGE
+  python3 -m http.server 8765 --bind 127.0.0.1 --directory "$temp/site" >/dev/null 2>&1 &
+  local serveur=$!
+  FEATHER_BANC_CONNEXION="http://127.0.0.1:8765/connexion.html,https://github.com/login" \
+    FEATHER_BANC_EXTENSIONS=$ids FEATHER_BANC=$banc "$programme" >/dev/null 2>&1 &
   local pid=$!
-  # Jusqu'à 3 minutes : téléchargement, chargement, 30 s avant la lecture de la page.
+  # Jusqu'à 4 minutes : téléchargement, chargement, 30 s avant la lecture de la
+  # page, puis les deux pages de connexion (environ 1 minute).
   local debut=$SECONDS fini
-  while [ $((SECONDS - debut)) -lt 180 ]; do
+  while [ $((SECONDS - debut)) -lt 240 ]; do
     sleep 5
     grep -q '^extensions indisponibles' "$banc" 2>/dev/null && break
     fini=1
     for e in "${extensions_testees[@]}"; do
       grep -Eq "^(fenetre ${e%% *} |extension ${e%% *} erreur)" "$banc" 2>/dev/null || fini=0
     done
+    # Proton Pass chargé : on attend aussi la fin de l'essai des pages de connexion.
+    if grep -q "^fenetre ${extensions_testees[0]%% *} " "$banc" 2>/dev/null; then
+      grep -q "^journal " "$banc" 2>/dev/null || fini=0
+    fi
     [ "$fini" = 1 ] && break
   done
   fermer "$pid"
+  kill "$serveur" 2>/dev/null || true
   echo
   echo "| Extension | Installée | Chargée | Page | Texte de la page | Erreurs du moteur |"
   echo "| --- | :---: | :---: | :---: | --- | --- |"
@@ -190,6 +216,17 @@ scenario_extensions() {
       echo "Extension $nom (macOS) : installée $installee, chargée $chargee, page $page. ${texte} Erreurs du moteur : $moteur." >> "$alertes"
     fi
   done
+  # Menu de Proton Pass dans les pages de connexion (lignes « connexion … »).
+  if grep -Eq '^(connexion|journal|script refusé) ' "$banc" 2>/dev/null; then
+    echo
+    echo "Proton Pass dans les pages de connexion (1 : page locale, 2 : GitHub) :"
+    echo
+    grep -E '^(connexion|journal|script refusé) ' "$banc" | cut -c1-3000 | sed 's/^/    /'
+    # `protonpass-root` : le script de Proton tourne ; `protonpass-control` : l'icône du champ.
+    if ! grep -E '^connexion [0-9]+ page ' "$banc" | grep -q 'protonpass-control'; then
+      echo "Proton Pass (macOS) : aucune icône dans les champs des pages de connexion." >> "$alertes"
+    fi
+  fi
   # Relance avec les extensions déjà installées : c'est le démarrage de tous
   # les jours pour qui en a (piste 8 : elles ne doivent pas le retarder).
   if [ -n "$indispo" ]; then return; fi
