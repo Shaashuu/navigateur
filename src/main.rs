@@ -92,6 +92,9 @@ pub enum UserEvent {
     LoadFailed { id: TabId, url: String, kind: errorpage::ErrorKind },
     /// `window.open` ; `private` : la page qui l'a demandé est privée.
     OpenInNewTab { url: String, private: bool },
+    /// Menu Historique du Mac : rouvrir cet onglet fermé.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    ReopenClosed(String),
     /// Suggestions du moteur de recherche pour ce texte de la barre (voir `suggest`).
     EngineSuggestions { query: String, items: Vec<String> },
     Update(UpdateEvent),
@@ -349,6 +352,9 @@ fn main() -> wry::Result<()> {
     };
     // Les extensions sont confiées au moteur après la première page (voir `start_extensions`).
     adblock::set_replaced(app.extensions.ad_blocker().is_some());
+    // Le menu Historique et le menu Favoris du Mac relisent la bibliothèque à leur ouverture.
+    #[cfg(target_os = "macos")]
+    mac_menu::set_library(app.library.clone());
     adblock::set_enabled(app.settings().blocks_ads());
     adblock::set_sites_off(app.sites.read().map(|s| s.ads_off()).unwrap_or_default());
     adblock::load(app.proxy.clone(), false);
@@ -621,6 +627,13 @@ impl App {
             UserEvent::OpenInNewTab { url, private } => {
                 if network::is_web(&url) {
                     self.open_tab(&url, private);
+                }
+            }
+            UserEvent::ReopenClosed(url) => {
+                if network::is_web(&url) {
+                    self.tabs.take_closed(&url);
+                    self.closed_changed();
+                    self.open_tab(&url, false);
                 }
             }
             UserEvent::EngineSuggestions { query, items } => {
@@ -1160,6 +1173,7 @@ impl App {
             Shortcut::ZoomReset => self.zoom(0),
             Shortcut::ReopenTab => {
                 if let Some(url) = self.tabs.pop_closed() {
+                    self.closed_changed();
                     self.open_tab(&url, false);
                 }
             }
@@ -1372,6 +1386,7 @@ impl App {
             articles.remove(&id);
         }
         self.tabs.close(id, self.page_visible());
+        self.closed_changed();
         self.schedule_reap();
         if self.tabs.is_empty() {
             self.open_new_tab();
@@ -1453,6 +1468,12 @@ impl App {
         }
         self.reload_home_tabs();
         self.push_state();
+    }
+
+    /// La liste des onglets fermés a changé : le menu Historique du Mac la relira.
+    fn closed_changed(&self) {
+        #[cfg(target_os = "macos")]
+        mac_menu::set_closed(self.tabs.closed());
     }
 
     /// Tous les onglets ouverts dans les favoris, sans doublon ni onglet privé.

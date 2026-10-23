@@ -420,6 +420,19 @@ impl TabManager {
         self.closed.pop()
     }
 
+    /// Cet onglet fermé (menu Historique du Mac) : retiré de la liste s'il y est.
+    pub fn take_closed(&mut self, url: &str) -> bool {
+        let before = self.closed.len();
+        self.closed.retain(|u| u != url);
+        self.closed.len() != before
+    }
+
+    /// Les onglets fermés, le plus ancien d'abord.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn closed(&self) -> &[String] {
+        &self.closed
+    }
+
     /// Détruit les pages fermées depuis un moment.
     pub fn reap(&mut self) {
         self.closing
