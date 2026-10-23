@@ -16,5 +16,11 @@
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPhotoLibraryAddUsageDescription</key><string>Feather ajoute à Photos les images que vous enregistrez depuis une page.</string>
+  <!-- Caméra, micro et position : sans ces textes, macOS refuse l'accès (ou ferme Feather)
+       dès qu'un site autorisé les demande, par exemple pour un appel vidéo. -->
+  <key>NSCameraUsageDescription</key><string>Les sites que vous autorisez peuvent utiliser la caméra, par exemple pour un appel vidéo.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Les sites que vous autorisez peuvent utiliser le micro, par exemple pour un appel.</string>
+  <key>NSLocationUsageDescription</key><string>Les sites que vous autorisez peuvent connaître votre position, par exemple pour une carte.</string>
+  <key>NSLocationWhenInUseUsageDescription</key><string>Les sites que vous autorisez peuvent connaître votre position, par exemple pour une carte.</string>
 </dict>
 </plist>
