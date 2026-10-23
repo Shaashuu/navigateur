@@ -27,8 +27,10 @@ on:
         type: boolean
         default: false
 
+# Jeton de GitHub en lecture seule pour la vérification et la compilation :
+# seul le job « publier » peut écrire (release), voir plus bas.
 permissions:
-  contents: write
+  contents: read
 
 # Une nouvelle vérification rapide de la même branche arrête la précédente,
 # devenue inutile. Une compilation complète ou une publication n'est jamais
@@ -50,9 +52,13 @@ jobs:
     # Dernier filet si une machine se fige (6 h par défaut sinon).
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       # Tests sans LTO (profil « verif » de Cargo.toml) : même code, bien
       # plus rapide à compiler, et partagé avec la vérification rapide.
       - run: cargo test --profile verif
@@ -98,7 +104,7 @@ jobs:
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           cp target/release/feather.exe "Feather-$version-windows.exe"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: env.COMPLET == 'true'
         with:
           name: windows
@@ -109,11 +115,14 @@ jobs:
     # et celle-ci construit aussi la version Apple Silicon (fichier universel).
     runs-on: macos-15-intel
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
           targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: cargo test --profile verif
       # En vérification rapide, seulement Intel (la machine) : le code Mac est
       # le même pour Apple Silicon, seule la publication a besoin des deux.
@@ -151,7 +160,7 @@ jobs:
           ln -s /Applications dmg/Applications
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           hdiutil create -volname Feather -srcfolder dmg -ov -format UDZO "Feather-$version-macos.dmg"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: env.COMPLET == 'true'
         with:
           name: macos
@@ -161,9 +170,14 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
     needs: [windows, macos]
     runs-on: ubuntu-latest
+    # Seul job qui écrit : la release (dans ce dépôt si RELEASES_TOKEN manque).
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v7
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           path: fichiers
           merge-multiple: true
@@ -213,7 +227,7 @@ jobs:
             dedans { exit }
           ' README.md > notes.md
           cat notes.md
-      - uses: softprops/action-gh-release@v3
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           # Avec le secret RELEASES_TOKEN, la release va dans le dépôt public
           # feather-releases, d'où Feather lit ses mises à jour.
