@@ -299,7 +299,8 @@ mod tests {
         let items = parse_html(html);
         assert_eq!(items.len(), 3);
         assert_eq!(items[0].0, "https://fr.wikipedia.org/");
-        assert_eq!(items[0].1, "Wikip&eacute;dia & co");
+        // Entités nommées décodées (avant, « &eacute; » restait tel quel).
+        assert_eq!(items[0].1, "Wikipédia & co");
         assert_eq!(items[1], ("https://exemple.fr/?a=1&b=2".into(), "Exemple gras".into()));
         assert_eq!(items[2].0, "https://sans-guillemets.fr/");
     }
