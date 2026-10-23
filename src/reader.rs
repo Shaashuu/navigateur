@@ -25,6 +25,15 @@ const READER_HTML: &str = include_str!("../assets/reader.html");
 /// Taille maximale d'un article gardé (texte HTML).
 const MAX_CONTENT: usize = 2_000_000;
 
+/// Balises interdites dans l'article : redirection (`<meta http-equiv=refresh>`,
+/// que la règle de sécurité de la page n'arrête pas), cadres, objets,
+/// formulaires, scripts et styles. Readability n'en rend pas d'habitude, mais
+/// l'article vient de la page, qui peut envoyer ce qu'elle veut.
+const BLOCKED_TAGS: &[&str] = &[
+    "meta", "base", "link", "iframe", "frame", "frameset", "object", "embed", "applet", "form", "script", "style",
+    "noscript", "template",
+];
+
 #[cfg(windows)]
 const READER_URL: &str = "http://navigateur.lecture/";
 #[cfg(not(windows))]
@@ -50,6 +59,7 @@ pub type Store = Arc<RwLock<HashMap<TabId, (String, Article)>>>;
 /// Script injecté au clic : extrait l'article d'une copie de la page (la page
 /// elle-même n'est pas modifiée) et l'envoie à Feather.
 pub fn extraction_script() -> String {
+    let blocked = BLOCKED_TAGS.join(",");
     // `module` local : sinon un site qui définit `window.module` recevrait Readability.
     format!(
         r#"(() => {{
@@ -59,8 +69,13 @@ pub fn extraction_script() -> String {
   try {{
     const a = new Readability(document.cloneNode(true), {{ charThreshold: 400 }}).parse();
     if (!a || !a.content) {{ post({{ reader_failed: true }}); return; }}
+    // Sans ce qui charge, redirige ou s'exécute (vidéos intégrées comprises) :
+    // copie inerte, rien n'est chargé ni lancé pendant le tri.
+    const copy = document.createElement('template');
+    copy.innerHTML = a.content;
+    copy.content.querySelectorAll('{blocked}').forEach((n) => n.remove());
     post({{ reader: {{ title: a.title || document.title, byline: a.byline, site: a.siteName,
-      content: a.content, length: a.length || 0, lang: a.lang || document.documentElement.lang || '' }} }});
+      content: copy.innerHTML, length: a.length || 0, lang: a.lang || document.documentElement.lang || '' }} }});
   }} catch (e) {{ post({{ reader_failed: true }}); }}
 }})();"#
     )
@@ -116,7 +131,37 @@ pub fn clean(mut article: Article) -> Option<Article> {
     article.byline = article.byline.map(|b| short(&b, 200)).filter(|b| !b.trim().is_empty());
     article.site = article.site.map(|s| short(&s, 100)).filter(|s| !s.trim().is_empty());
     article.lang = article.lang.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(12).collect();
+    article.content = neutralize(&article.content);
     Some(article)
+}
+
+/// Rend inerte toute balise interdite (`BLOCKED_TAGS`) : son « < » devient
+/// « &lt; », et elle s'affiche comme du texte au lieu d'agir. Pas besoin
+/// d'analyser tout le HTML pour que ce soit sûr : retirer un « < » ne peut
+/// jamais créer de balise (au contraire d'un morceau retiré, qui peut recoller
+/// « <scr » et « ipt> »), et dans une valeur d'attribut ou un commentaire,
+/// « &lt; » ne change rien. Le nom est comparé comme le fait le moteur : sans
+/// tenir compte des majuscules (ASCII), jusqu'à une espace, « / » ou « > ».
+pub fn neutralize(html: &str) -> String {
+    let bytes = html.as_bytes();
+    let mut out = String::with_capacity(html.len());
+    let mut copied = 0;
+    for (at, _) in html.match_indices('<') {
+        let name = &bytes[at + 1..];
+        let name = name.strip_prefix(b"/").unwrap_or(name);
+        let blocked = BLOCKED_TAGS.iter().any(|tag| {
+            name.len() >= tag.len()
+                && name[..tag.len()].eq_ignore_ascii_case(tag.as_bytes())
+                && name.get(tag.len()).is_none_or(|c| matches!(c, b'\t' | b'\n' | b'\x0c' | b'\r' | b' ' | b'/' | b'>'))
+        });
+        if blocked {
+            out.push_str(&html[copied..at]);
+            out.push_str("&lt;");
+            copied = at + 1;
+        }
+    }
+    out.push_str(&html[copied..]);
+    out
 }
 
 /// La page de lecture. `article` : celui de l'onglet s'il correspond à l'adresse
@@ -203,6 +248,31 @@ mod tests {
         assert!(!html.contains("{{"));
         let missing = render(&url, None, &Settings::default());
         assert!(missing.contains("Article plus disponible"));
+    }
+
+    #[test]
+    fn balises_interdites_inertes() {
+        let hostile = r#"<p>Texte</p><META HTTP-EQUIV="refresh" content="0;url=https://piege.fr"><meta/x>
+<iframe src="https://a.fr"></iframe></IFRAME><scr<meta>ipt>alert(1)</script><Style>*{display:none}</style>"#;
+        let inert = neutralize(hostile);
+        for tag in ["<meta", "<META", "<iframe", "</IFRAME", "<script", "</script", "<Style", "</style"] {
+            assert!(!inert.contains(tag), "{tag} dans {inert}");
+        }
+        // « <scr<meta>ipt> » ne devient pas « <script> » : seul le « < » de meta change.
+        assert!(inert.contains("<scr&lt;meta>ipt>"));
+        assert!(inert.starts_with("<p>Texte</p>&lt;META HTTP-EQUIV="));
+        // Le reste ne bouge pas : balises proches, attributs, texte.
+        let ok = r#"<p title="a < b"><img src="x.png" alt="<meta>"> <metadata> <links> <formulaire> <a href="/b">lien</a></p>"#;
+        let same = neutralize(ok);
+        assert_eq!(same, ok.replace(r#"alt="<meta>""#, r#"alt="&lt;meta>""#));
+        assert_eq!(neutralize("fin <meta"), "fin &lt;meta");
+        assert_eq!(neutralize("sans balise"), "sans balise");
+        // L'article gardé est neutralisé, et la page de lecture n'accepte pas de style du site.
+        let a = clean(Article { content: "<p>a</p><meta http-equiv=refresh>".into(), ..Default::default() }).unwrap();
+        assert_eq!(a.content, "<p>a</p>&lt;meta http-equiv=refresh>");
+        let html = render(&reader_url(1, "https://exemple.fr/a"), Some(&a), &Settings::default());
+        assert!(!html.contains("unsafe-inline"));
+        assert!(html.contains("<style nonce=\""));
     }
 
     #[test]

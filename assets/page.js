@@ -135,8 +135,17 @@
     try { document.execCommand('copy'); } catch (_) {}
     t.remove();
   };
+  // Cadre d'un autre site que la page (publicité, lecteur intégré ; seulement
+  // sous Windows, où ce script entre dans chaque cadre) : Feather n'enregistre
+  // pas ses images (voir `PageMessage::for_other_frame`), le menu ne les propose
+  // donc pas. Avant, « Enregistrer l'image » s'y affichait et ne faisait rien.
+  const foreignFrame = (() => {
+    if (window.top === window) return false;
+    try { return !window.top.location.href; } catch (_) { return true; }
+  })();
   // Image sous le clic droit (http ou https seulement : l'image est téléchargée par Feather).
   const imageOf = (e) => {
+    if (foreignFrame) return null;
     const img = e.target && e.target.closest ? e.target.closest('img') : null;
     const src = img && (img.currentSrc || img.src);
     return src && /^https?:/i.test(src) ? src : null;

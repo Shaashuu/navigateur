@@ -171,18 +171,107 @@ fn strip_tags(text: &str) -> String {
     out
 }
 
+/// Les entités HTML d'un titre ou d'une adresse, en un seul passage :
+/// numériques (`&#233;`, `&#xE9;`) et nommées courantes (`&eacute;`, `&nbsp;`…).
+/// Une entité inconnue reste telle quelle. Avant, seules six étaient connues :
+/// un favori de Firefox ou de Safari gardait « &eacute; » dans son titre.
 fn decode_entities(text: &str) -> String {
-    text.replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&#x27;", "'")
-        .replace("&amp;", "&")
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find('&') {
+        out.push_str(&rest[..start]);
+        rest = &rest[start..];
+        // « & », un nom d'au plus 10 octets, « ; » (cherché dans ces 11 octets seulement).
+        let end = rest.bytes().skip(1).take(11).position(|b| b == b';');
+        let decoded = end.and_then(|end| Some((entity(rest.get(1..1 + end)?)?, end + 2)));
+        match decoded {
+            Some((c, len)) => {
+                out.push(c);
+                rest = &rest[len..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Le caractère d'une entité (sans « & » ni « ; »).
+fn entity(name: &str) -> Option<char> {
+    if let Some(number) = name.strip_prefix('#') {
+        let code = match number.strip_prefix(['x', 'X']) {
+            Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+            None => number.parse().ok()?,
+        };
+        return char::from_u32(code).filter(|c| !c.is_control() || c.is_whitespace());
+    }
+    Some(match name {
+        "amp" => '&',
+        "lt" => '<',
+        "gt" => '>',
+        "quot" => '"',
+        "apos" => '\'',
+        "nbsp" => '\u{a0}',
+        "eacute" => 'é',
+        "egrave" => 'è',
+        "ecirc" => 'ê',
+        "euml" => 'ë',
+        "Eacute" => 'É',
+        "Egrave" => 'È',
+        "Ecirc" => 'Ê',
+        "agrave" => 'à',
+        "acirc" => 'â',
+        "auml" => 'ä',
+        "Agrave" => 'À',
+        "Acirc" => 'Â',
+        "ccedil" => 'ç',
+        "Ccedil" => 'Ç',
+        "icirc" => 'î',
+        "iuml" => 'ï',
+        "ocirc" => 'ô',
+        "ouml" => 'ö',
+        "ugrave" => 'ù',
+        "ucirc" => 'û',
+        "uuml" => 'ü',
+        "oelig" => 'œ',
+        "OElig" => 'Œ',
+        "laquo" => '«',
+        "raquo" => '»',
+        "hellip" => '…',
+        "ndash" => '–',
+        "mdash" => '—',
+        "lsquo" => '‘',
+        "rsquo" => '’',
+        "ldquo" => '“',
+        "rdquo" => '”',
+        "middot" => '·',
+        "euro" => '€',
+        "copy" => '©',
+        "reg" => '®',
+        "trade" => '™',
+        "deg" => '°',
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn entites_html() {
+        assert_eq!(decode_entities("Caf&eacute; &amp; th&#233; &#xE9;t&#xe9; &lt;b&gt;"), "Café & thé été <b>");
+        assert_eq!(decode_entities("A&nbsp;B&hellip;"), "A\u{a0}B…");
+        // Un seul passage : « &amp;lt; » donne « &lt; », pas « < ».
+        assert_eq!(decode_entities("&amp;lt;"), "&lt;");
+        // Inconnues ou incomplètes : laissées telles quelles.
+        assert_eq!(decode_entities("a & b &inconnu; &#0; &#xZZ; &eacute"), "a & b &inconnu; &#0; &#xZZ; &eacute");
+        assert_eq!(decode_entities("https://a.fr/?x=1&amp;y=2"), "https://a.fr/?x=1&y=2");
+        assert_eq!(decode_entities("&é;&"), "&é;&");
+    }
 
     #[test]
     fn favoris_chrome() {

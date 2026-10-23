@@ -11,6 +11,17 @@ use crate::storage::{read_json, write_json};
 /// Au-delà, les visites les plus anciennes sont oubliées.
 const MAX_VISITS: usize = 5000;
 
+/// Longueur gardée d'un titre de page ou de favori, en caractères.
+const MAX_TITLE: usize = 300;
+
+/// Un titre tel que Feather le garde : sans caractères de contrôle, et coupé à
+/// `MAX_TITLE` caractères. Le titre vient de la page : sans limite, un site
+/// pouvait en imposer un de plusieurs mégaoctets, gardé dans l'historique, la
+/// session et chaque état envoyé à l'interface.
+pub fn clean_title(title: &str) -> String {
+    title.chars().filter(|c| !c.is_control()).take(MAX_TITLE).collect()
+}
+
 /// Secondes écoulées depuis le 1er janvier 1970.
 pub fn now() -> u64 {
     SystemTime::now()
@@ -217,7 +228,7 @@ impl Library {
             if !is_web(url) || self.is_bookmarked(url) {
                 continue;
             }
-            let title: String = title.chars().filter(|c| !c.is_control()).take(300).collect();
+            let title = clean_title(title);
             self.bookmarks.push(Bookmark {
                 url: url.clone(),
                 title: if title.trim().is_empty() { url.clone() } else { title.trim().to_string() },
@@ -328,6 +339,13 @@ pub fn save_session(session: &Session) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn titres_bornes() {
+        assert_eq!(clean_title("Le\nMonde\u{7}"), "LeMonde");
+        assert_eq!(clean_title(&"é".repeat(10_000)).chars().count(), MAX_TITLE);
+        assert_eq!(clean_title(""), "");
+    }
 
     #[test]
     fn rechargement_sans_doublon() {

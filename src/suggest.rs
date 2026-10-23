@@ -30,6 +30,18 @@ struct Attente {
 
 static ATTENTE: Mutex<Attente> = Mutex::new(Attente { busy: false, pending: None });
 
+impl Attente {
+    /// La demande suivante pour le fil qui vient d'en finir une, `None` s'il n'y
+    /// en a plus : la main est alors rendue (`busy` à faux) sous le même verrou.
+    /// Rendue après coup, comme avant, une frappe arrivée entre les deux restait
+    /// en attente sans que personne ne la traite.
+    fn next(&mut self) -> Option<(SearchEngine, String)> {
+        let next = self.pending.take();
+        self.busy = next.is_some();
+        next
+    }
+}
+
 /// Adresse du service de suggestions du moteur (format OpenSearch, en français).
 fn endpoint(engine: SearchEngine, query: &str) -> String {
     let q: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
@@ -107,15 +119,16 @@ pub fn request(proxy: &EventLoopProxy<UserEvent>, engine: SearchEngine, query: &
     let proxy = proxy.clone();
     let mut next = Some((engine, query.to_string()));
     std::thread::spawn(move || {
-        while let Some((engine, query)) = next.take() {
+        while let Some((engine, query)) = next {
             let items = fetch(engine, &query);
-            if proxy.send_event(UserEvent::EngineSuggestions { query, items }).is_err() {
-                break;
-            }
+            let sent = proxy.send_event(UserEvent::EngineSuggestions { query, items }).is_ok();
             let mut attente = ATTENTE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-            next = attente.pending.take();
+            // Feather se ferme (plus de boucle d'événements) : on s'arrête là.
+            if !sent {
+                attente.pending = None;
+            }
+            next = attente.next();
         }
-        ATTENTE.lock().unwrap_or_else(std::sync::PoisonError::into_inner).busy = false;
     });
 }
 
@@ -145,6 +158,20 @@ fn fetch(engine: SearchEngine, query: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aucune_frappe_perdue() {
+        // Plus rien en attente : le fil rend la main.
+        let mut attente = Attente { busy: true, pending: None };
+        assert!(attente.next().is_none());
+        assert!(!attente.busy);
+        // Une frappe arrivée pendant la demande : le fil la prend et garde la main.
+        let mut attente = Attente { busy: true, pending: Some((SearchEngine::Qwant, "lem".into())) };
+        assert_eq!(attente.next().map(|(_, q)| q).as_deref(), Some("lem"));
+        assert!(attente.busy);
+        assert!(attente.next().is_none());
+        assert!(!attente.busy);
+    }
 
     #[test]
     fn opensearch() {
