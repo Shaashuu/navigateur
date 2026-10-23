@@ -216,6 +216,14 @@ PAGE
       echo "Extension $nom (macOS) : installée $installee, chargée $chargee, page $page. ${texte} Erreurs du moteur : $moteur." >> "$alertes"
     fi
   done
+  # Autorisations demandées en cours de route (lignes « demande … ») : le banc
+  # les accepte sans question, l'utilisateur, lui, les voit dans le bandeau.
+  if grep -q '^demande ' "$banc" 2>/dev/null; then
+    echo
+    echo "Autorisations demandées par les extensions (acceptées pendant le banc) :"
+    echo
+    grep '^demande ' "$banc" | cut -c1-300 | sed 's/^/    /'
+  fi
   # Menu de Proton Pass dans les pages de connexion (lignes « connexion … »).
   if grep -Eq '^(connexion|journal|script refusé) ' "$banc" 2>/dev/null; then
     echo

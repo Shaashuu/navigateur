@@ -33,6 +33,7 @@ mod media;
 mod network;
 mod placement;
 mod reader;
+mod rsa;
 mod settings;
 mod siteclear;
 mod sitedata;
@@ -137,6 +138,9 @@ pub enum UserEvent {
     ExtensionLoaded { id: String, result: Result<Option<String>, String> },
     /// Le moteur a noté de nouvelles erreurs d'extension (macOS).
     ExtensionErrors,
+    /// Une extension demande une autorisation de plus (macOS) : numéro de la
+    /// demande chez le moteur, extension, autorisations et motifs de sites.
+    ExtensionAsks { number: u32, id: String, items: Vec<String> },
     /// Message de la petite fenêtre d'une extension (Windows).
     ExtensionPopup(String),
     /// Lien ouvert depuis la fenêtre d'une extension (Windows), ou onglet
@@ -718,6 +722,7 @@ impl App {
                 self.push_state();
             }
             UserEvent::ExtensionErrors => self.extension_errors(),
+            UserEvent::ExtensionAsks { number, id, items } => self.extension_asks(number, id, items),
             UserEvent::ExtensionPopup(raw) => self.extension_popup_message(&raw),
             UserEvent::ExtensionOpen(url) => self.extension_open(&url),
         }
@@ -987,6 +992,7 @@ impl App {
             ChromeMessage::CloseExtensionPopup => self.close_extension_popup(),
             ChromeMessage::ClearExtensionError => self.extensions.error = None,
             ChromeMessage::ConfirmExtension { accept } => self.confirm_extension(accept),
+            ChromeMessage::ExtensionAnswer { request, allow } => self.answer_extension(request, allow),
         }
         // L'interface a pu changer sa copie de l'état sans attendre (réglages,
         // liste vidée…) : on lui renvoie tout, pour qu'elle reparte du vrai.

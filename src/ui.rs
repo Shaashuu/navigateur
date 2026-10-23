@@ -313,6 +313,11 @@ pub enum ChromeMessage {
     ConfirmExtension {
         accept: bool,
     },
+    /// Réponse à une extension qui demande une autorisation de plus.
+    ExtensionAnswer {
+        request: u32,
+        allow: bool,
+    },
     /// Annule un téléchargement en cours.
     CancelDownload {
         id: u32,

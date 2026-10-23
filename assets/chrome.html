@@ -4291,17 +4291,25 @@
   let notice = null;
   let noticeTimer = 0;
   let stripOpen = false;
+  // Question d'une extension qui demande une autorisation de plus (macOS).
+  const extensionAsk = () => (state.extensions || {}).ask || null;
   function renderStrip() {
-    const prompt = state.permission_prompt;
+    const prompt = state.permission_prompt || extensionAsk();
     const show = prompt ? 'perm' : findOpen ? 'find' : notice ? 'notice' : null;
     for (const k of ['find', 'perm', 'notice']) $('st-' + k).classList.toggle('on', show === k);
     if (prompt) {
       const msg = $('perm-msg');
       msg.textContent = '';
       const b = document.createElement('b');
-      b.textContent = prompt.host;
-      msg.append(b, ' veut utiliser ' + prompt.label + '.');
-      $('perm-remember').parentNode.hidden = !!(activeTab() || {}).private;
+      if (state.permission_prompt) {
+        b.textContent = prompt.host;
+        msg.append(b, ' veut utiliser ' + prompt.label + '.');
+      } else {
+        b.textContent = prompt.name || 'Une extension';
+        const items = prompt.items.map((t) => t.charAt(0).toLowerCase() + t.slice(1));
+        msg.append(b, ' (extension) demande en plus : ' + items.join(' ; ') + '.');
+      }
+      $('perm-remember').parentNode.hidden = !state.permission_prompt || !!(activeTab() || {}).private;
     }
     if (notice) $('notice-msg').textContent = notice;
     document.body.classList.toggle('strip', !!show);
@@ -4344,9 +4352,14 @@
   $('find-close').addEventListener('click', closeFind);
   const answer = (allow) => {
     const p = state.permission_prompt;
-    if (!p) return;
-    send({ type: 'permission_answer', request: p.request, allow, remember: $('perm-remember').checked });
-    state.permission_prompt = null;
+    const x = extensionAsk();
+    if (p) {
+      send({ type: 'permission_answer', request: p.request, allow, remember: $('perm-remember').checked });
+      state.permission_prompt = null;
+    } else if (x) {
+      send({ type: 'extension_answer', request: x.request, allow });
+      state.extensions.ask = null;
+    } else return;
     renderStrip();
     send({ type: 'focus_page' });
   };
