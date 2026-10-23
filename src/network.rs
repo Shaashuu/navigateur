@@ -4,6 +4,7 @@
 //! fait aucune requête, il décide seulement « adresse ou recherche ? ».
 
 use std::net::IpAddr;
+use std::path::PathBuf;
 
 use url::Url;
 
@@ -84,11 +85,58 @@ pub fn launch_urls(args: impl IntoIterator<Item = String>) -> Vec<String> {
         .collect()
 }
 
-/// Un programme lancé en arrière-plan (`curl`…). Sous Windows, sans la fenêtre
-/// de console qui clignoterait à chaque fois.
+/// Chemin complet d'un outil du système (`curl`, `explorer`, `tar`…).
+///
+/// Sous Windows, un nom seul est cherché d'abord dans le dossier de
+/// `feather.exe`, avant System32 : un faux `curl.exe` posé à côté de Feather
+/// (par un téléchargement, si Feather est lui-même dans Téléchargements) serait
+/// lancé à la place du vrai. On donne donc toujours le chemin complet. Sous
+/// macOS, ces outils sont tous dans /usr/bin. Sous Linux, leur place change
+/// d'une distribution à l'autre : le nom seul suit `PATH`.
+pub fn system_program(name: &str) -> PathBuf {
+    #[cfg(windows)]
+    {
+        // L'Explorateur est dans le dossier de Windows, les autres outils dans System32.
+        if name == "explorer" {
+            windows_dir(false).join("explorer.exe")
+        } else {
+            windows_dir(true).join(format!("{name}.exe"))
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        PathBuf::from("/usr/bin").join(name)
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        PathBuf::from(name)
+    }
+}
+
+/// Dossier de Windows (`C:\Windows`) ou System32, demandé au système plutôt
+/// qu'à une variable d'environnement.
+#[cfg(windows)]
+fn windows_dir(system32: bool) -> PathBuf {
+    use std::os::windows::ffi::OsStringExt;
+    use windows::Win32::System::SystemInformation::{GetSystemDirectoryW, GetSystemWindowsDirectoryW};
+    let mut buffer = [0u16; 260];
+    // SAFETY : tampon valide ; la longueur rendue est vérifiée avant usage.
+    let len = unsafe {
+        if system32 { GetSystemDirectoryW(Some(&mut buffer)) } else { GetSystemWindowsDirectoryW(Some(&mut buffer)) }
+    } as usize;
+    if len > 0 && len < buffer.len() {
+        return PathBuf::from(std::ffi::OsString::from_wide(&buffer[..len]));
+    }
+    let root = std::env::var_os("SystemRoot").map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);
+    if system32 { root.join("System32") } else { root }
+}
+
+/// Un outil du système lancé en arrière-plan (`curl`…), par son chemin complet
+/// (voir `system_program`). Sous Windows, sans la fenêtre de console qui
+/// clignoterait à chaque fois.
 pub fn command(program: &str) -> std::process::Command {
     #[allow(unused_mut)]
-    let mut cmd = std::process::Command::new(program);
+    let mut cmd = std::process::Command::new(system_program(program));
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -187,6 +235,36 @@ fn looks_like_domain(host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Les outils du système sont toujours lancés par leur chemin complet, et
+    /// ce chemin existe (sur les machines de GitHub, comme chez l'utilisateur).
+    #[test]
+    fn outils_par_chemin_complet() {
+        #[cfg(windows)]
+        {
+            for name in ["curl", "tar"] {
+                let path = system_program(name);
+                assert!(path.is_absolute(), "{path:?}");
+                assert_eq!(path.file_name().and_then(|n| n.to_str()), Some(format!("{name}.exe").as_str()));
+                let dir = path.parent().and_then(|d| d.file_name()).and_then(|d| d.to_str()).unwrap_or("");
+                assert!(dir.eq_ignore_ascii_case("system32"), "{path:?}");
+                assert!(path.exists(), "{path:?}");
+            }
+            let explorer = system_program("explorer");
+            assert!(explorer.is_absolute() && explorer.ends_with("explorer.exe") && explorer.exists(), "{explorer:?}");
+        }
+        #[cfg(target_os = "macos")]
+        for name in ["curl", "ditto", "hdiutil", "xattr", "open"] {
+            let path = system_program(name);
+            assert_eq!(path, PathBuf::from("/usr/bin").join(name));
+            assert!(path.exists(), "{path:?}");
+        }
+        #[cfg(not(any(windows, target_os = "macos")))]
+        assert_eq!(system_program("curl"), PathBuf::from("curl"));
+        // Toujours par `command`, qui ne lance jamais un nom seul (sauf Linux).
+        let cmd = command("curl");
+        assert_eq!(std::path::Path::new(cmd.get_program()), system_program("curl"));
+    }
 
     #[test]
     fn interface_jamais_remplacee() {

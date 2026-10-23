@@ -474,14 +474,13 @@ fn unpack(bytes: &[u8], dest: &Path) -> Result<Option<Vec<u8>>, String> {
 fn extract(zip: &Path, dest: &Path) -> Result<(), String> {
     #[cfg(windows)]
     let mut cmd = {
-        let system = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
-        let mut cmd = crate::network::command(&system.join("System32").join("tar.exe").to_string_lossy());
+        let mut cmd = crate::network::command("tar");
         cmd.arg("-xf").arg(zip).arg("-C").arg(dest);
         cmd
     };
     #[cfg(target_os = "macos")]
     let mut cmd = {
-        let mut cmd = crate::network::command("/usr/bin/ditto");
+        let mut cmd = crate::network::command("ditto");
         cmd.args(["-x", "-k"]).arg(zip).arg(dest);
         cmd
     };

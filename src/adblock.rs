@@ -470,7 +470,9 @@ fn download(url: &str, path: &Path) -> Result<(), String> {
     let tmp = path.with_extension("tmp");
     let mut cmd = crate::network::command("curl");
     // Les redirections aussi restent en https (`--proto` seul ne vaut que pour la première adresse).
-    cmd.args(["-sSL", "--fail", "--max-time", "60", "--proto", "=https", "--proto-redir", "=https", "-o"])
+    cmd.args(["-sSL", "--fail", "--max-time", "60", "--proto", "=https", "--proto-redir", "=https"])
+        // Une liste plus grosse ne serait de toute façon pas lue (voir `read_lists`).
+        .args(["--max-filesize", &MAX_FILE.to_string(), "-o"])
         .arg(&tmp)
         .arg(url);
     let out = cmd.output().map_err(|e| format!("curl introuvable : {e}"))?;

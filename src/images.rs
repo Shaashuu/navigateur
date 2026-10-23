@@ -3,7 +3,8 @@
 //!
 //! L'image est téléchargée par `curl`, comme la mise à jour : pas de
 //! bibliothèque HTTP de plus. Les cookies du site ne sont pas envoyés, mais
-//! l'adresse de la page l'est (« Referer »), que demandent certains sites.
+//! la page d'origine l'est (« Referer »), que demandent certains sites, et
+//! seulement ce que le moteur enverrait lui-même (voir `referer_for`).
 
 use std::path::{Path, PathBuf};
 
@@ -74,7 +75,7 @@ pub fn fetch(url: &str, referer: &str, dest: &Path) -> Result<(), String> {
     }
     let mut cmd = crate::network::command("curl");
     cmd.args(["-sSL", "--fail", "--max-time", "120", "--max-filesize", "104857600", "--proto", "=http,https", "--proto-redir", "=http,https"]);
-    if crate::network::is_web(referer) {
+    if let Some(referer) = referer_for(url, referer) {
         cmd.arg("-e").arg(referer);
     }
     cmd.arg("-o").arg(dest).arg(url);
@@ -84,6 +85,28 @@ pub fn fetch(url: &str, referer: &str, dest: &Path) -> Result<(), String> {
         return Err("le téléchargement de l'image a échoué".into());
     }
     Ok(())
+}
+
+/// Le « Referer » envoyé avec l'image, comme le ferait le moteur (règle par
+/// défaut des navigateurs, `strict-origin-when-cross-origin`) : l'adresse
+/// complète de la page pour une image du même site, seulement le site
+/// (« https://exemple.fr/ ») pour une image d'ailleurs, et rien du tout d'une
+/// page https vers une image http. L'adresse de la page peut contenir une
+/// recherche ou un identifiant : elle ne part pas chez un autre site.
+fn referer_for(image: &str, page: &str) -> Option<String> {
+    if !crate::network::is_web(page) {
+        return None;
+    }
+    let mut page = url::Url::parse(page).ok()?;
+    let image = url::Url::parse(image).ok()?;
+    if page.scheme() == "https" && image.scheme() != "https" {
+        return None;
+    }
+    page.set_fragment(None);
+    if page.origin() == image.origin() {
+        return Some(page.to_string());
+    }
+    Some(format!("{}/", page.origin().ascii_serialization()))
 }
 
 /// Les premiers octets du fichier.
@@ -198,6 +221,23 @@ mod photos {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn referer_comme_le_moteur() {
+        let page = "https://exemple.fr/compte?jeton=123#photos";
+        // Même site : l'adresse complète, sans le fragment.
+        assert_eq!(referer_for("https://exemple.fr/img/a.png", page).as_deref(), Some("https://exemple.fr/compte?jeton=123"));
+        // Autre site : seulement l'origine de la page.
+        assert_eq!(referer_for("https://cdn.images.fr/a.png", page).as_deref(), Some("https://exemple.fr/"));
+        assert_eq!(referer_for("https://exemple.fr:8443/a.png", page).as_deref(), Some("https://exemple.fr/"));
+        // De https vers http : rien.
+        assert_eq!(referer_for("http://exemple.fr/a.png", page), None);
+        // D'une page http, l'origine reste envoyée vers un autre site.
+        assert_eq!(referer_for("https://cdn.fr/a.png", "http://site.fr/p?q=1").as_deref(), Some("http://site.fr/"));
+        // Pas une page web (accueil, fichier) : rien.
+        assert_eq!(referer_for("https://cdn.fr/a.png", "file:///Users/moi/page.html"), None);
+        assert_eq!(referer_for("https://cdn.fr/a.png", crate::network::HOME_URL), None);
+    }
 
     #[test]
     fn formats_reconnus() {

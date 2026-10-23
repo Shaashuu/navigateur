@@ -153,12 +153,15 @@ pub fn pick_release(release: &Value, current: &str, suffix: Option<&str>) -> Opt
 /// Demande à GitHub la dernière version. `Ok(None)` : on est à jour.
 pub fn check() -> Result<Option<Available>, String> {
     let url = api_url();
-    let mut cmd = Command::new("curl");
+    let mut cmd = crate::network::command("curl");
     cmd.args([
         "-sSL",
         "--fail",
         "--max-time",
         "20",
+        // La réponse fait quelques dizaines de Ko : au-delà, ce n'est pas GitHub.
+        "--max-filesize",
+        "1048576",
         "--proto",
         proto(),
         "--proto-redir",
@@ -272,25 +275,25 @@ fn install_for_os(update: &Available, sha256: &str, exe: &Path) -> Result<Restar
     let result = (|| {
         download(update, &dmg, sha256)?;
         fs::create_dir_all(&mount).map_err(|e| e.to_string())?;
-        let mut attach = Command::new("hdiutil");
+        let mut attach = crate::network::command("hdiutil");
         attach
             .args(["attach", "-nobrowse", "-readonly", "-quiet", "-mountpoint"])
             .arg(&mount)
             .arg(&dmg);
         run(attach, "l'ouverture de l'image disque")?;
         let copy = (|| {
-            let mut ditto = Command::new("ditto");
+            let mut ditto = crate::network::command("ditto");
             ditto.arg(mount.join("Feather.app")).arg(&new_bundle);
             run(ditto, "la copie de l'application")?;
             // Un fichier téléchargé par Feather n'est pas en quarantaine, mais au cas où.
-            let mut xattr = Command::new("xattr");
+            let mut xattr = crate::network::command("xattr");
             xattr.args(["-dr", "com.apple.quarantine"]).arg(&new_bundle);
             let _ = run(xattr, "xattr");
             swap_executable(&bundle, &new_bundle).map_err(|e| {
                 format!("impossible de remplacer l'application ({e}). Copiez-la à la main depuis la page de la version.")
             })
         })();
-        let mut detach = Command::new("hdiutil");
+        let mut detach = crate::network::command("hdiutil");
         detach.args(["detach", "-quiet", "-force"]).arg(&mount);
         let _ = run(detach, "la fermeture de l'image disque");
         copy
@@ -301,7 +304,7 @@ fn install_for_os(update: &Available, sha256: &str, exe: &Path) -> Result<Restar
     }
     result?;
     Ok(Restart {
-        program: PathBuf::from("open"),
+        program: crate::network::system_program("open"),
         args: vec!["-n".into(), bundle.into_os_string()],
     })
 }
@@ -384,7 +387,7 @@ pub fn verify_signature(name: &str, sha256: &str, signature: &str, key: &str) ->
 #[cfg(any(windows, target_os = "macos"))]
 fn download(update: &Available, dest: &Path, sha256: &str) -> Result<(), String> {
     let url = &update.url;
-    let mut cmd = Command::new("curl");
+    let mut cmd = crate::network::command("curl");
     cmd.args([
         "-sSL",
         "--fail",
@@ -408,7 +411,7 @@ fn download(update: &Available, dest: &Path, sha256: &str) -> Result<(), String>
         return Err("le fichier téléchargé est corrompu (empreinte différente)".into());
     }
     // La signature, quelques dizaines d'octets, lue directement.
-    let mut sig = Command::new("curl");
+    let mut sig = crate::network::command("curl");
     sig.args(["-sSL", "--fail", "--max-time", "30", "--max-filesize", "4096", "--proto", "=https", "--proto-redir", "=https"])
         .arg(&update.signature_url);
     let signature = run(sig, "le téléchargement de la signature")?;
@@ -437,7 +440,7 @@ pub fn file_sha256(path: &Path) -> io::Result<String> {
 fn run(mut cmd: Command, what: &str) -> Result<Output, String> {
     hide_window(&mut cmd);
     // « Pas de connexion ? » n'a de sens que pour curl, pas pour hdiutil ou ditto.
-    let network = cmd.get_program() == "curl";
+    let network = Path::new(cmd.get_program()).file_stem().is_some_and(|name| name == "curl");
     let output = cmd
         .output()
         .map_err(|_| format!("{what} a échoué (outil système introuvable)"))?;

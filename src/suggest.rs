@@ -7,7 +7,6 @@
 //! pendant qu'elle attend, seul le dernier texte est demandé ensuite.
 //! Jamais dans un onglet privé, ni pour une adresse complète (voir `worth_asking`).
 
-use std::process::Command;
 use std::sync::Mutex;
 
 use serde_json::Value;
@@ -122,7 +121,7 @@ pub fn request(proxy: &EventLoopProxy<UserEvent>, engine: SearchEngine, query: &
 
 /// Une demande, courte : au bout de 3 secondes, tant pis pour les suggestions.
 fn fetch(engine: SearchEngine, query: &str) -> Vec<String> {
-    let mut cmd = Command::new("curl");
+    let mut cmd = crate::network::command("curl");
     cmd.args([
         "-sS",
         "--fail",
@@ -137,7 +136,6 @@ fn fetch(engine: SearchEngine, query: &str) -> Vec<String> {
         "Accept: application/json",
     ])
     .arg(endpoint(engine, query));
-    crate::update::hide_window(&mut cmd);
     match cmd.output() {
         Ok(out) if out.status.success() => parse(&out.stdout, query),
         _ => Vec::new(),

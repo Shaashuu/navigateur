@@ -148,13 +148,13 @@ pub fn unique(dir: &Path, name: &str) -> PathBuf {
 /// Montre le fichier dans le Finder ou l'Explorateur.
 pub fn reveal(path: &Path) {
     #[cfg(target_os = "macos")]
-    let _ = Command::new("open").arg("-R").arg(path).spawn();
+    let _ = Command::new(crate::network::system_program("open")).arg("-R").arg(path).spawn();
     // L'Explorateur attend /select,"chemin" : passé par `arg`, Rust entourait tout
     // l'argument de guillemets et un chemin avec des espaces n'était pas trouvé.
     #[cfg(windows)]
     let _ = {
         use std::os::windows::process::CommandExt;
-        Command::new("explorer").raw_arg(format!("/select,\"{}\"", path.display())).spawn()
+        Command::new(crate::network::system_program("explorer")).raw_arg(format!("/select,\"{}\"", path.display())).spawn()
     };
     #[cfg(all(not(target_os = "macos"), not(windows)))]
     if let Some(dir) = path.parent() {
@@ -165,9 +165,9 @@ pub fn reveal(path: &Path) {
 /// Ouvre le fichier avec l'application prévue par le système.
 pub fn open(path: &Path) {
     #[cfg(target_os = "macos")]
-    let _ = Command::new("open").arg(path).spawn();
+    let _ = Command::new(crate::network::system_program("open")).arg(path).spawn();
     #[cfg(windows)]
-    let _ = Command::new("explorer").arg(path).spawn();
+    let _ = Command::new(crate::network::system_program("explorer")).arg(path).spawn();
     #[cfg(all(not(target_os = "macos"), not(windows)))]
     let _ = Command::new("xdg-open").arg(path).spawn();
 }

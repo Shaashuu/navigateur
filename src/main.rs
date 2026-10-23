@@ -233,7 +233,21 @@ struct App {
     placement: placement::Placement,
 }
 
+/// Windows : tao charge `uxtheme.dll` par son seul nom, et Windows le
+/// chercherait d'abord dans le dossier de feather.exe, souvent Téléchargements,
+/// où un site peut déposer un fichier. Chargé ici depuis System32 avant tout le
+/// reste, il est ensuite retrouvé déjà en mémoire. Les DLL dont feather.exe
+/// dépend directement ne viennent, elles, que de System32 (voir build.rs).
+#[cfg(windows)]
+fn load_system_dlls() {
+    use windows::Win32::System::LibraryLoader::{LoadLibraryExW, LOAD_LIBRARY_SEARCH_SYSTEM32};
+    // SAFETY : nom constant terminé par un zéro ; le module reste chargé jusqu'à la fin.
+    let _ = unsafe { LoadLibraryExW(windows::core::w!("uxtheme.dll"), None, LOAD_LIBRARY_SEARCH_SYSTEM32) };
+}
+
 fn main() -> wry::Result<()> {
+    #[cfg(windows)]
+    load_system_dlls();
     // Zéro du temps de démarrage mesuré par le banc (voir banc.rs).
     banc::init();
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
