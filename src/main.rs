@@ -11,7 +11,6 @@
 //! les commandes natives, la mise en veille et le suivi des téléchargements.
 
 mod adblock;
-mod archive;
 mod banc;
 mod capture;
 mod clock;
@@ -147,6 +146,7 @@ pub enum UserEvent {
     /// demande chez le moteur, extension, autorisations et motifs de sites.
     ExtensionAsks { number: u32, id: String, items: Vec<String> },
     /// Message de la petite fenêtre d'une extension (Windows).
+    #[cfg(windows)]
     ExtensionPopup(String),
     /// Lien ouvert depuis la fenêtre d'une extension (Windows), ou onglet
     /// demandé par une extension (macOS).
@@ -306,7 +306,7 @@ fn main() -> wry::Result<()> {
     // L'interface est créée en premier pour rester sous les pages.
     let chrome_proxy = proxy.clone();
     let nav_proxy = proxy.clone();
-    // Sous Windows, toutes les webviews ont le même réglage des extensions (voir extensions.rs).
+    // Sous Windows, toutes les webviews ont le même réglage des extensions (voir extensions/windows.rs).
     let chrome = surface.attach(
         extensions::prepare_builder(WebViewBuilder::new()
             .with_bounds(ui::chrome_bounds(&window))
@@ -717,6 +717,7 @@ impl App {
             }
             UserEvent::ExtensionErrors => self.extension_errors(),
             UserEvent::ExtensionAsks { number, id, items } => self.extension_asks(number, id, items),
+            #[cfg(windows)]
             UserEvent::ExtensionPopup(raw) => self.extension_popup_message(&raw),
             UserEvent::ExtensionOpen(url) => self.extension_open(&url),
         }
@@ -1826,6 +1827,7 @@ impl App {
 
     fn flush_state(&self) {
         if self.state_dirty.replace(false) {
+            #[cfg(target_os = "macos")]
             self.sync_extension_tabs();
             self.send_state();
         }

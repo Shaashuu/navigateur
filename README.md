@@ -337,9 +337,11 @@ Pour lancer les tests : `cargo test`.
 | Fichier | Rôle |
 | --- | --- |
 | `src/main.rs` | Création de la fenêtre, boucle d'événements, réaction aux messages. |
+| `src/clock.rs` | Horloge unique : les réveils prévus (enregistrement, minuteurs, relevés) ; la boucle dort jusqu'au plus proche. |
 | `src/tab_manager.rs` | Les onglets : une webview par onglet, ouverture, changement, fermeture. |
 | `src/settings.rs` | Lecture et écriture des paramètres en JSON (serde). |
 | `src/ui.rs` | Messages échangés avec l'interface et les pages, placement des zones, page d'accueil. |
+| `src/shortcuts.rs` | La table des raccourcis clavier : pages, interface, menu du Mac et aide en dérivent (calcul dans `assets/shortcuts.js`). |
 | `src/network.rs` | Décide si la saisie est une adresse ou une recherche. |
 | `src/library.rs` | Historique, favoris et onglets de la dernière session (fichiers JSON). |
 | `src/downloads.rs` | Où ranger les téléchargements, leur progression, les montrer dans le dossier. |
@@ -356,7 +358,7 @@ Pour lancer les tests : `cargo test`.
 | `src/reader.rs` | Mode lecture : extraction de l'article et page `navigateur://lecture/`. |
 | `src/import.rs` | Import des favoris (Chrome, Edge, Brave, fichier HTML). |
 | `src/capture.rs` | Capture de la page visible (WebView2, WebKit). |
-| `src/extensions.rs` | Extensions : téléchargement, décompression, manifeste, moteur (WebView2, WebKit), petite fenêtre. |
+| `src/extensions/` | Extensions : téléchargement, manifeste, mises à jour, petite fenêtre (`mod.rs`) ; décompression (`archive.rs`) et vérification des paquets Chrome (`src/rsa.rs`) ; moteur de chaque système (`windows.rs` : WebView2, `mac.rs` : WebKit, `linux.rs`) ; compléments pour WebKit (`compat.rs`). |
 | `outils/banc-memoire.*` | Banc de mesure (macOS et Windows) : mémoire, démarrage, extensions ; références dans `outils/banc-reference.txt`. |
 | `src/banc.rs` | Mode banc de Feather (`FEATHER_BANC`) : temps de démarrage, installation et vérification des extensions. |
 | `src/layers.rs` | Panneaux par-dessus la page : l'interface passe devant, découpée à leur forme. |
