@@ -1190,6 +1190,34 @@ impl App {
             Shortcut::Bookmarks => self.focus_chrome("navigateur.openLibrary('bookmarks')"),
             Shortcut::Import => self.focus_chrome("navigateur.openImport()"),
             Shortcut::Extensions => self.focus_chrome("navigateur.openExtensions()"),
+            Shortcut::Reader => self.toggle_reader(),
+            Shortcut::Home => {
+                let url = self.settings().start_url();
+                self.load_in_active(&url);
+            }
+            Shortcut::PinTab => {
+                if let Some(tab) = id.and_then(|id| self.tabs.get(id)) {
+                    let (id, pinned) = (tab.id, !tab.pinned);
+                    self.tabs.set_pinned(id, pinned);
+                }
+            }
+            Shortcut::DuplicateTab => {
+                if let Some(tab) = id.and_then(|id| self.tabs.get(id)) {
+                    let (url, private) = (tab.url().to_string(), tab.private);
+                    self.open_tab(&url, private);
+                }
+            }
+            Shortcut::CloseOtherTabs => {
+                let others: Vec<TabId> = self.tabs.iter().filter(|t| Some(t.id) != id && !t.pinned).map(|t| t.id).collect();
+                for other in others {
+                    self.close_tab(other);
+                }
+            }
+            Shortcut::GroupTab => self.focus_chrome("navigateur.groupActive()"),
+            Shortcut::FindNext => self.focus_chrome("navigateur.findStep(false)"),
+            Shortcut::FindPrevious => self.focus_chrome("navigateur.findStep(true)"),
+            Shortcut::BookmarkAll => self.bookmark_all(),
+            Shortcut::ReportIssue => self.open_tab(ui::ISSUES_URL, false),
             Shortcut::Fullscreen => {
                 let full = self.window.fullscreen().is_some();
                 self.window.set_fullscreen((!full).then_some(tao::window::Fullscreen::Borderless(None)));
@@ -1422,6 +1450,19 @@ impl App {
         let Some(tab) = self.tabs.get(id) else { return };
         if let Ok(mut lib) = self.library.write() {
             lib.toggle_bookmark(tab.url(), &tab.title, tab.icon.as_deref());
+        }
+        self.reload_home_tabs();
+        self.push_state();
+    }
+
+    /// Tous les onglets ouverts dans les favoris, sans doublon ni onglet privé.
+    fn bookmark_all(&mut self) {
+        if let Ok(mut lib) = self.library.write() {
+            for tab in self.tabs.iter().filter(|t| !t.private) {
+                if !lib.is_bookmarked(tab.url()) {
+                    lib.toggle_bookmark(tab.url(), &tab.title, tab.icon.as_deref());
+                }
+            }
         }
         self.reload_home_tabs();
         self.push_state();

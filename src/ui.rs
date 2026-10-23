@@ -28,6 +28,9 @@ pub const PAGE_GAP: f64 = 8.0;
 /// Mode concentration : il ne reste qu'un mince rail d'onglets.
 pub const FOCUS_RAIL: f64 = 14.0;
 
+/// Menu Aide (macOS) : où signaler un problème.
+pub const ISSUES_URL: &str = "https://github.com/Shaashuu/feather-releases/issues";
+
 pub const CHROME_HTML: &str = include_str!("../assets/chrome.html");
 const HOME_HTML: &str = include_str!("../assets/home.html");
 
@@ -565,6 +568,25 @@ pub enum Shortcut {
     Import,
     /// Menu Fenêtre (macOS) : la fenêtre des extensions.
     Extensions,
+    /// Menus macOS : mode lecture (⇧⌘R).
+    Reader,
+    /// Menu Historique (macOS) : page d'accueil dans l'onglet affiché (⇧⌘H).
+    Home,
+    /// Menu Onglet (macOS) : épingler ou détacher l'onglet affiché.
+    PinTab,
+    /// Menu Onglet (macOS) : le même site dans un nouvel onglet.
+    DuplicateTab,
+    /// Menu Onglet (macOS) : ferme les autres onglets (sauf les épinglés).
+    CloseOtherTabs,
+    /// Menu Onglet (macOS) : ranger l'onglet affiché dans un groupe.
+    GroupTab,
+    /// Menu Édition (macOS) : occurrence suivante (⌘G) ou précédente (⇧⌘G).
+    FindNext,
+    FindPrevious,
+    /// Menu Favoris (macOS) : tous les onglets dans les favoris (⇧⌘D).
+    BookmarkAll,
+    /// Menu Aide (macOS) : la page des problèmes signalés de Feather.
+    ReportIssue,
 }
 
 impl Shortcut {

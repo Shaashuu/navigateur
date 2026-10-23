@@ -4,8 +4,8 @@
 //! copier-coller ne marchait nulle part. Ces entrées envoient l'action
 //! standard (`copy:`, `paste:`…) à ce qui a le focus (page, barre d'adresse).
 //!
-//! Les menus Fichier, Présentation, Historique, Favoris, Téléchargements et
-//! Fenêtre lancent les actions de Feather : chaque entrée passe par la même
+//! Les menus Fichier, Présentation, Historique, Favoris, Onglet, Fenêtre et
+//! Aide lancent les actions de Feather : chaque entrée passe par la même
 //! file que les raccourcis des pages (`Shortcut`), donc fait exactement la même
 //! chose. Les touches affichées sont celles que page.js et l'interface lisent
 //! déjà : quand une page a le focus, page.js traite la touche (et l'arrête),
@@ -17,7 +17,7 @@ use std::cell::RefCell;
 use objc2::rc::Retained;
 use objc2::runtime::{NSObject, Sel};
 use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
-use objc2_app_kit::{NSApplication, NSEventModifierFlags, NSMenu, NSMenuItem};
+use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn, NSAlertStyle, NSApplication, NSEventModifierFlags, NSMenu, NSMenuItem};
 use objc2_foundation::NSString;
 use tao::event_loop::EventLoopProxy;
 
@@ -35,6 +35,9 @@ enum Action {
 /// Une entrée : titre, action, touche (vide : pas de raccourci) et touches de
 /// modification. `None` dans une liste : un séparateur.
 type Entry = (&'static str, Action, &'static str, NSEventModifierFlags);
+
+/// Pas un raccourci : l'historique s'efface après une confirmation (voir `confirm`).
+const CLEAR_HISTORY: &str = "clear_history";
 
 thread_local! {
     /// Où envoyer les actions de Feather (fil principal seulement).
@@ -58,9 +61,17 @@ define_class!(
             let Some(name) = ACTIONS.with_borrow(|a| usize::try_from(tag).ok().and_then(|i| a.get(i).copied())) else {
                 return;
             };
+            let message = if name == CLEAR_HISTORY {
+                if !confirm(self.mtm(), "Effacer tout l'historique ?", "Les pages visitées et leur texte gardé pour la recherche seront effacés. Les favoris restent.", "Effacer") {
+                    return;
+                }
+                r#"{"type":"clear_history"}"#.to_string()
+            } else {
+                format!(r#"{{"type":"shortcut","shortcut":"{name}"}}"#)
+            };
             PROXY.with_borrow(|p| {
                 if let Some(proxy) = p {
-                    let _ = proxy.send_event(UserEvent::Chrome(format!(r#"{{"type":"shortcut","shortcut":"{name}"}}"#)));
+                    let _ = proxy.send_event(UserEvent::Chrome(message));
                 }
             });
         }
@@ -75,7 +86,19 @@ impl Target {
     }
 }
 
-/// Les menus, dans l'ordre de la barre ; le dernier est la liste des fenêtres.
+/// Fenêtre de confirmation de macOS : `true` si l'utilisateur choisit `action`.
+fn confirm(mtm: MainThreadMarker, title: &str, text: &str, action: &str) -> bool {
+    let alert = NSAlert::new(mtm);
+    alert.setAlertStyle(NSAlertStyle::Warning);
+    alert.setMessageText(&NSString::from_str(title));
+    alert.setInformativeText(&NSString::from_str(text));
+    alert.addButtonWithTitle(&NSString::from_str(action));
+    alert.addButtonWithTitle(&NSString::from_str("Annuler"));
+    alert.runModal() == NSAlertFirstButtonReturn
+}
+
+/// Les menus, dans l'ordre de la barre ; « Fenêtre » reçoit la liste des
+/// fenêtres, « Aide » la recherche dans les menus.
 fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
     let cmd = NSEventModifierFlags::Command;
     let shift = NSEventModifierFlags::Shift;
@@ -89,6 +112,8 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
         None,
         Some(("Paramètres…", App("settings"), ",", cmd)),
         Some(("Extensions…", App("extensions"), "", none)),
+        None,
+        Some(("Effacer l'historique…", App(CLEAR_HISTORY), "", none)),
         None,
         Some(("Masquer Feather", Std(sel!(hide:)), "h", cmd)),
         Some(("Masquer les autres", Std(sel!(hideOtherApplications:)), "h", cmd | alt)),
@@ -122,9 +147,12 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
         Some(("Tout sélectionner", Std(sel!(selectAll:)), "a", cmd)),
         None,
         Some(("Rechercher dans la page…", App("find"), "f", cmd)),
+        Some(("Occurrence suivante", App("find_next"), "g", cmd)),
+        Some(("Occurrence précédente", App("find_previous"), "g", cmd | shift)),
     ];
     let view = vec![
         Some(("Actualiser la page", App("reload"), "r", cmd)),
+        Some(("Mode lecture", App("reader"), "r", cmd | shift)),
         None,
         Some(("Zoom avant", App("zoom_in"), "+", cmd)),
         Some(("Zoom arrière", App("zoom_out"), "-", cmd)),
@@ -132,8 +160,12 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
         None,
         Some(("Mode concentration", App("focus"), "f", cmd | shift)),
         Some(("Plein écran", Std(sel!(toggleFullScreen:)), "f", cmd | ctrl)),
+        None,
+        // Comme Safari : pas de menu Téléchargements, la liste est ici.
+        Some(("Afficher les téléchargements", App("downloads"), "l", cmd | alt)),
     ];
     let history = vec![
+        Some(("Accueil", App("home"), "h", cmd | shift)),
         Some(("Précédent", App("back"), "[", cmd)),
         Some(("Suivant", App("forward"), "]", cmd)),
         None,
@@ -143,12 +175,20 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
     ];
     let bookmarks = vec![
         Some(("Ajouter aux favoris", App("toggle_bookmark"), "d", cmd)),
+        Some(("Ajouter tous les onglets aux favoris", App("bookmark_all"), "d", cmd | shift)),
         None,
         Some(("Afficher les favoris", App("bookmarks"), "b", cmd | alt)),
         Some(("Importer des favoris…", App("import"), "", none)),
     ];
-    let downloads = vec![
-        Some(("Afficher les téléchargements", App("downloads"), "l", cmd | alt)),
+    // Comme le menu Onglet de Chrome.
+    let tab = vec![
+        Some(("Épingler ou détacher l'onglet", App("pin_tab"), "", none)),
+        Some(("Dupliquer l'onglet", App("duplicate_tab"), "", none)),
+        Some(("Ranger dans un groupe…", App("group_tab"), "", none)),
+        None,
+        Some(("Couper le son de l'onglet", App("toggle_mute"), "m", ctrl)),
+        None,
+        Some(("Fermer les autres onglets", App("close_other_tabs"), "", none)),
     ];
     let window = vec![
         Some(("Réduire", Std(sel!(performMiniaturize:)), "m", cmd)),
@@ -158,8 +198,11 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
         Some(("Onglet suivant", App("next_tab"), "}", cmd)),
         Some(("Onglet précédent", App("previous_tab"), "{", cmd)),
         None,
-        Some(("Couper le son de l'onglet", App("toggle_mute"), "m", ctrl)),
         Some(("Utilisation de la mémoire", App("task_manager"), "\u{1b}", shift)),
+    ];
+    // macOS ajoute seul, en tête, la recherche dans tous les menus.
+    let help = vec![
+        Some(("Signaler un problème…", App("report_issue"), "", none)),
     ];
 
     vec![
@@ -170,8 +213,9 @@ fn menus() -> Vec<(&'static str, Vec<Option<Entry>>)> {
         ("Présentation", view),
         ("Historique", history),
         ("Favoris", bookmarks),
-        ("Téléchargements", downloads),
+        ("Onglet", tab),
         ("Fenêtre", window),
+        ("Aide", help),
     ]
 }
 
@@ -182,17 +226,17 @@ pub fn install(proxy: EventLoopProxy<UserEvent>) {
     // Gardée en vie jusqu'à la fin : les entrées ne retiennent pas leur cible.
     let target = Target::new(mtm);
     let bar = menu(mtm, "");
-    let mut windows = None;
+    let ns_app = NSApplication::sharedApplication(mtm);
     for (title, entries) in menus() {
         let sub = menu_with(mtm, title, &entries, &target);
         add_submenu(mtm, &bar, &sub);
-        windows = Some(sub);
+        match title {
+            "Fenêtre" => ns_app.setWindowsMenu(Some(&sub)),
+            "Aide" => ns_app.setHelpMenu(Some(&sub)),
+            _ => {}
+        }
     }
-
-    let ns_app = NSApplication::sharedApplication(mtm);
     ns_app.setMainMenu(Some(&bar));
-    // macOS ajoute la liste des fenêtres ouvertes au dernier menu (Fenêtre).
-    ns_app.setWindowsMenu(windows.as_deref());
     std::mem::forget(target);
 }
 
@@ -259,7 +303,9 @@ mod tests {
         let mut n = 0;
         for (_, entries) in menus() {
             for (label, action, _, _) in entries.into_iter().flatten() {
-                if let Action::App(name) = action {
+                if let Action::App(name) = action
+                    && name != CLEAR_HISTORY
+                {
                     let json = format!("\"{name}\"");
                     assert!(serde_json::from_str::<Shortcut>(&json).is_ok(), "{label} : « {name} » inconnu");
                     n += 1;
