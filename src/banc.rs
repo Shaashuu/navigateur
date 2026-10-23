@@ -19,8 +19,7 @@
 //!   connexion, clique dans le champ de l'identifiant et regarde si Proton Pass
 //!   y a posé son icône et son menu. Lignes écrites : `connexion <n> champ …`
 //!   (le champ cliqué), `connexion <n> page {…}` (ce que Proton a ajouté à la
-//!   page), puis `journal <id> …`, les lignes du journal de Proton Pass qui
-//!   parlent des scripts de la page.
+//!   page), puis `journal <id> …`, les dernières lignes du journal de Proton Pass.
 //!
 //! - `FEATHER_BANC_ONGLETS=1` (avec `FEATHER_BANC`) : après le démarrage, ouvre
 //!   l'un après l'autre un onglet d'accueil puis deux onglets Netflix, comme un
@@ -88,8 +87,9 @@ const CLIC: &str = r#"(() => {
   return `${f.name || f.id || f.type} visible=${document.visibilityState} focus=${document.hasFocus()}`;
 })()"#;
 
-/// Ce que Proton Pass a ajouté à la page : ses balises (icône, menu), leurs
-/// rôles, les attributs posés sur les formulaires, les cadres de l'extension.
+/// Ce que Proton Pass a ajouté à la page : ses balises (`protonpass-root` dès
+/// que son script tourne, `protonpass-control` pour l'icône d'un champ), leurs
+/// rôles et attributs, les cadres de l'extension, et si la page a requestIdleCallback.
 const LECTURE: &str = r#"(() => {
   const tous = [...document.querySelectorAll('*')];
   const balises = tous.map((e) => e.tagName.toLowerCase()).filter((t) => t.startsWith('protonpass'));
@@ -97,7 +97,7 @@ const LECTURE: &str = r#"(() => {
   const attributs = new Set();
   for (const e of tous) for (const a of e.getAttributeNames()) if (a.includes('protonpass')) attributs.add(a);
   const cadres = [...document.querySelectorAll('iframe')].filter((f) => (f.src || '').startsWith('webkit-extension')).length;
-  return JSON.stringify({ balises, roles, attributs: [...attributs], cadres, visible: document.visibilityState });
+  return JSON.stringify({ balises, roles, attributs: [...attributs], cadres, visible: document.visibilityState, idle: typeof requestIdleCallback });
 })()"#;
 
 /// Demande le journal de l'extension (depuis l'une de ses pages) ; relu ensuite
@@ -107,9 +107,7 @@ const JOURNAL: &str = r#"(() => {
   chrome.storage.local.get('logs').then((r) => {
     let lignes = [];
     try { lignes = JSON.parse(r.logs || '[]'); } catch (e) { lignes = [String(r.logs)]; }
-    globalThis.featherJournal = `${lignes.length} lignes : ` + lignes
-      .filter((l) => /content|inject|client|orchestr|frame|register|element|error|erreur/i.test(l))
-      .slice(0, 40).join(' ¶ ');
+    globalThis.featherJournal = `${lignes.length} lignes : ` + lignes.slice(0, 40).join(' ¶ ');
   }, (e) => { globalThis.featherJournal = 'refus ' + e; });
   return 'demande';
 })()"#;

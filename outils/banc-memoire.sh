@@ -222,8 +222,9 @@ PAGE
     echo "Proton Pass dans les pages de connexion (1 : page locale, 2 : GitHub) :"
     echo
     grep -E '^(connexion|journal|script refusé) ' "$banc" | cut -c1-3000 | sed 's/^/    /'
-    if ! grep -E '^connexion [0-9]+ page ' "$banc" | grep -q 'protonpass'; then
-      echo "Proton Pass (macOS) : aucune icône ni aucun menu dans les champs des pages de connexion." >> "$alertes"
+    # `protonpass-root` : le script de Proton tourne ; `protonpass-control` : l'icône du champ.
+    if ! grep -E '^connexion [0-9]+ page ' "$banc" | grep -q 'protonpass-control'; then
+      echo "Proton Pass (macOS) : aucune icône dans les champs des pages de connexion." >> "$alertes"
     fi
   fi
   # Relance avec les extensions déjà installées : c'est le démarrage de tous
