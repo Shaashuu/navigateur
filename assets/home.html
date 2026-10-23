@@ -39,6 +39,12 @@
   .fi { width: 56px; height: 56px; border-radius: 16px; background: var(--tile);
     display: grid; place-items: center; font-weight: 700; font-size: 20px; color: var(--text); overflow: hidden; transition: transform .12s; }
   .fav:hover .fi { transform: translateY(-2px); box-shadow: var(--shadow); }
+  /* Vignette qu'on déplace : soulevée, penchée, elle suit la souris (comme les onglets). */
+  #favs { position: relative; }
+  .fav { position: relative; touch-action: none; -webkit-user-drag: none; }
+  .fav.dragging { z-index: 2; cursor: grabbing; }
+  .fav.dragging .fi { transform: none; box-shadow: 0 12px 28px rgba(0,0,0,.24); }
+  [data-motion="off"] .fav.dragging, [data-motion="reduced"] .fav.dragging { opacity: .6; }
   .fi img { width: 28px; height: 28px; object-fit: contain; }
   .ft { font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #recent { width: min(620px, 100%); margin-top: 30px; }
@@ -134,6 +140,82 @@
   window.addEventListener('load', () => q.focus());
   // Place de chaque vignette dans la cascade d'arrivée (voir le CSS).
   document.querySelectorAll('.fav, .rc').forEach((el, i) => el.style.setProperty('--i', String(Math.min(i, 16))));
+  // Glisser-déposer des vignettes de favoris : maintenir le clic et déplacer.
+  // Les autres vignettes s'écartent en glissant (FLIP, comme les onglets) ;
+  // seuls transform et opacité bougent, rien ne tourne une fois posé.
+  const favs = document.getElementById('favs');
+  if (favs) {
+    const root = document.documentElement;
+    const full = () => root.dataset.motion === 'full' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const curve = (name) => getComputedStyle(root).getPropertyValue(name).trim() || 'ease-out';
+    const lift = (dx, dy) => `translate(${dx}px, ${dy}px) translateY(-3px) scale(1.06) rotate(-2.5deg)`;
+    let drag = null;
+    let swallow = false; // le clic qui suit un déplacement n'ouvre pas le site
+    favs.querySelectorAll('.fav, .fav img').forEach((el) => { el.draggable = false; });
+    favs.addEventListener('dragstart', (e) => e.preventDefault());
+    favs.addEventListener('pointerdown', (e) => {
+      const el = e.target.closest('.fav');
+      if (!el || e.button !== 0) return;
+      const r = el.getBoundingClientRect();
+      drag = { el, x: e.clientX, y: e.clientY, gx: e.clientX - r.left, gy: e.clientY - r.top, moved: false };
+      el.setPointerCapture(e.pointerId);
+    });
+    favs.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
+      const el = drag.el;
+      if (!drag.moved) {
+        drag.moved = true;
+        // L'arrivée en cascade est finie : on la retire pour que le transform écrit ici s'applique.
+        favs.querySelectorAll('.fav').forEach((f) => { f.style.animation = 'none'; });
+        el.classList.add('dragging');
+      }
+      // Vignette sous le pointeur : on se place avant elle en remontant, après en descendant.
+      // Cases mesurées sans les transform (offset*) : une vignette encore en train de
+      // glisser vers sa nouvelle case ne doit pas être prise pour celle d'avant.
+      const tiles = [...favs.querySelectorAll('.fav')];
+      const box = favs.getBoundingClientRect();
+      const px = e.clientX - box.left, py = e.clientY - box.top;
+      const over = tiles.find((t) => t !== el && px >= t.offsetLeft && px <= t.offsetLeft + t.offsetWidth
+        && py >= t.offsetTop && py <= t.offsetTop + t.offsetHeight);
+      if (over) {
+        const others = tiles.filter((t) => t !== el);
+        const was = full() ? new Map(others.map((t) => [t, t.getBoundingClientRect()])) : null;
+        favs.insertBefore(el, tiles.indexOf(over) < tiles.indexOf(el) ? over : over.nextSibling);
+        if (was) {
+          for (const [t, r] of was) {
+            const n = t.getBoundingClientRect();
+            const dx = r.left - n.left, dy = r.top - n.top;
+            if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) {
+              t.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 360, easing: curve('--snap') });
+            }
+          }
+        }
+      }
+      if (full()) {
+        el.style.transform = '';
+        const r = el.getBoundingClientRect();
+        el.style.transform = lift(e.clientX - drag.gx - r.left, e.clientY - drag.gy - r.top);
+      }
+    });
+    const end = () => {
+      if (!drag) return;
+      const { el, moved } = drag;
+      drag = null;
+      if (!moved) return;
+      swallow = true;
+      setTimeout(() => { swallow = false; }, 0);
+      el.classList.remove('dragging');
+      // La vignette retombe dans sa case, avec un petit rebond.
+      const from = el.style.transform;
+      el.style.transform = '';
+      if (from && full()) el.animate([{ transform: from }, { transform: 'none' }], { duration: 520, easing: curve('--bounce') });
+      send({ reorder_bookmarks: [...favs.querySelectorAll('.fav')].map((f) => f.getAttribute('href')) });
+    };
+    favs.addEventListener('pointerup', end);
+    favs.addEventListener('pointercancel', end);
+    favs.addEventListener('click', (e) => { if (swallow) { e.preventDefault(); e.stopPropagation(); swallow = false; } }, true);
+  }
   // Favori dont l'icône ne charge pas : on montre l'initiale du site.
   document.querySelectorAll('.fi img').forEach((img) => img.addEventListener('error', () => {
     img.parentNode.textContent = (img.closest('.fav').title || '?').charAt(0).toUpperCase();
