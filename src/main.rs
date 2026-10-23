@@ -508,19 +508,20 @@ impl App {
                 // message vient d'un script du site et ne garde presque rien.
                 let (keyed, json) = ui::split_key(&raw, tab.key());
                 if let Ok(message) = serde_json::from_str::<PageMessage>(json) {
-                    let message = if keyed { message } else { message.from_untrusted() };
+                    let message = if keyed { message } else { message.for_untrusted() };
                     // Sous macOS, tout cadre de la page (publicité comprise) peut écrire à
                     // Feather : seul un message du site affiché garde tous ses droits.
                     let page = tab.webview().and_then(|w| w.url().ok());
                     let message = if page.is_some_and(|p| network::same_origin(&frame, &p)) {
                         message
                     } else {
-                        message.from_other_frame()
+                        message.for_other_frame()
                     };
                     self.handle_page(id, message);
                 }
             }
             UserEvent::Title(id, title) => {
+                let title = library::clean_title(&title);
                 // Une page qu'on vient d'endormir passe par about:blank (voir `stop_page`) :
                 // son titre ne remplace pas celui de l'onglet.
                 if let Some(tab) = self.tabs.get_mut(id).filter(|t| !t.is_asleep()) {

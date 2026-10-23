@@ -603,7 +603,7 @@ impl App {
             .map(|d| d.as_secs())
             .unwrap_or_default();
         let host = if network::is_web(tab.url()) { tab.host() } else { "feather".to_string() };
-        Some(capture::file_name(&host, secs))
+        Some(capture::file_name(&host, secs.saturating_add_signed(capture::local_offset_secs(secs))))
     }
 
     /// Ctrl+Maj+S ou `/capture` : image de la partie visible de la page.

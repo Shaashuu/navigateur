@@ -45,7 +45,7 @@ pub fn page_script(key: &str) -> String {
 
 /// Sépare la clé de l'onglet du message d'une page. `true` : le message vient
 /// bien du script de Feather (`assets/page.js`), pas d'un script du site, qui ne
-/// connaît pas la clé. Sans elle, il ne garde que `PageMessage::from_untrusted`.
+/// connaît pas la clé. Sans elle, il ne garde que `PageMessage::for_untrusted`.
 pub fn split_key<'a>(raw: &'a str, key: &str) -> (bool, &'a str) {
     match raw.strip_prefix(key) {
         Some(rest) if !key.is_empty() => (true, rest),
@@ -411,7 +411,7 @@ impl PageMessage {
     /// panneau. Le reste (raccourcis, mode lecture, images, son, autorisations…)
     /// n'appartient qu'à la page : avant, un cadre pouvait fermer l'onglet ou
     /// faire télécharger une adresse du réseau local.
-    pub fn from_other_frame(self) -> Self {
+    pub fn for_other_frame(self) -> Self {
         Self { open_tab: self.open_tab, link: self.link, pressed: self.pressed, ..Self::default() }
     }
 
@@ -419,7 +419,7 @@ impl PageMessage {
     /// du site ou par un script que Feather lance à la demande : la barre de
     /// recherche et les vignettes de l'accueil (vérifiées ensuite : seulement sur l'accueil) et
     /// l'article du mode lecture (seulement après un clic sur le bouton livre).
-    pub fn from_untrusted(self) -> Self {
+    pub fn for_untrusted(self) -> Self {
         Self {
             navigate: self.navigate,
             open_bar: self.open_bar,
@@ -885,7 +885,7 @@ mod tests {
                 "navigate":"rust","reader_failed":true,"text":"abc"}"#,
         )
         .unwrap();
-        let m = m.from_untrusted();
+        let m = m.for_untrusted();
         assert!(m.shortcut.is_none() && m.link.is_none() && !m.pressed && m.text.is_none());
         assert!(m.navigate.as_deref() == Some("rust") && m.reader_failed);
     }
@@ -897,7 +897,7 @@ mod tests {
                 "open_tab":"https://exemple.fr/","pressed":true,"reader_failed":true}"#,
         )
         .unwrap();
-        let m = m.from_other_frame();
+        let m = m.for_other_frame();
         assert!(m.shortcut.is_none() && m.image.is_none() && m.audible.is_none() && !m.reader_failed);
         assert_eq!(m.open_tab.as_deref(), Some("https://exemple.fr/"));
         assert!(m.pressed);

@@ -2,12 +2,13 @@
 <html lang="{{LANG}}" data-theme="{{THEME}}">
 <head>
 <meta charset="utf-8">
-<!-- Le texte vient du site : aucun de ses scripts ne peut s'exécuter ici (seul
-     le script de Feather, qui porte le nonce, est permis). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src http: https: data:; media-src http: https:; style-src 'unsafe-inline'; script-src 'nonce-{{NONCE}}'; form-action 'none'; base-uri 'none'">
+<!-- Le texte vient du site : aucun de ses scripts ni de ses styles ne peut agir
+     ici (seuls le script et le style de Feather, qui portent le nonce, sont
+     permis), et Feather retire ses balises interdites (voir `reader::neutralize`). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src http: https: data:; media-src http: https:; style-src 'nonce-{{NONCE}}'; script-src 'nonce-{{NONCE}}'; form-action 'none'; base-uri 'none'">
 <meta name="referrer" content="no-referrer">
 <title>{{TITLE}}</title>
-<style>
+<style nonce="{{NONCE}}">
   :root { --bg: #f4f3ef; --surface: #ffffff; --text: #1d1d1f; --muted: #8a8a8e; --line: #e2e0da; --accent: #5b5bd6; --size: 19px; --font: Georgia, "Iowan Old Style", "Times New Roman", serif; }
   :root[data-look="sepia"] { --bg: #f4ecd8; --surface: #fbf5e6; --text: #4a3b2a; --muted: #8c7a63; --line: #e2d6bc; --accent: #a0662b; }
   :root[data-look="night"] { --bg: #17171a; --surface: #222226; --text: #dcdce0; --muted: #7d7d85; --line: #34343a; --accent: #8f8ff5; }

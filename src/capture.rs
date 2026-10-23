@@ -22,7 +22,45 @@ pub enum Target {
 /// Vrai si le système permet la capture.
 pub const SUPPORTED: bool = cfg!(any(windows, target_os = "macos"));
 
-/// Nom du fichier : « wikipedia.org-2026-10-20-142530.png » (heure UTC).
+/// Décalage de l'heure locale sur l'heure UTC, en secondes, à l'instant
+/// `epoch_secs` (heure d'été comprise). Le nom des captures porte ainsi l'heure
+/// de l'horloge de l'ordinateur : avant, une capture de 16 h à Paris était
+/// nommée 14 h (UTC).
+#[cfg(target_os = "macos")]
+pub fn local_offset_secs(epoch_secs: u64) -> i64 {
+    let time = epoch_secs as libc::time_t;
+    // SAFETY : `tm` est une structure C ordinaire, entièrement remplie par localtime_r.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    // SAFETY : pointeurs valides pendant l'appel ; localtime_r est réentrant.
+    if unsafe { libc::localtime_r(&time, &mut tm) }.is_null() {
+        return 0;
+    }
+    tm.tm_gmtoff
+}
+
+#[cfg(windows)]
+pub fn local_offset_secs(_epoch_secs: u64) -> i64 {
+    use windows::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION};
+    let mut zone = TIME_ZONE_INFORMATION::default();
+    // SAFETY : structure valide, remplie par le système.
+    let state = unsafe { GetTimeZoneInformation(&mut zone) };
+    // Biais en minutes (heure UTC = heure locale + biais) ; 1 : heure d'hiver, 2 : heure d'été.
+    let bias = zone.Bias
+        + match state {
+            1 => zone.StandardBias,
+            2 => zone.DaylightBias,
+            _ => 0,
+        };
+    -i64::from(bias) * 60
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+pub fn local_offset_secs(_epoch_secs: u64) -> i64 {
+    0
+}
+
+/// Nom du fichier : « wikipedia.org-2026-10-20-142530.png ». `epoch_secs` est
+/// déjà à l'heure locale (voir `local_offset_secs`).
 pub fn file_name(host: &str, epoch_secs: u64) -> String {
     let host: String = host
         .trim_start_matches("www.")
@@ -236,5 +274,13 @@ mod tests {
         assert_eq!(file_name("www.fr.wikipedia.org", 1_792_506_330), "fr.wikipedia.org-2026-10-20-142530.png");
         assert_eq!(file_name("", 0), "page-1970-01-01-000000.png");
         assert_eq!(file_name("a/b:c", 951_782_400), "a-b-c-2000-02-29-000000.png");
+    }
+
+    #[test]
+    fn decalage_horaire_plausible() {
+        // Entre UTC-12 et UTC+14, en quarts d'heure (fuseaux de l'Inde, du Népal…).
+        let offset = local_offset_secs(1_792_506_330);
+        assert!((-12 * 3600..=14 * 3600).contains(&offset), "{offset}");
+        assert_eq!(offset % 900, 0);
     }
 }

@@ -59,6 +59,9 @@ impl Sampler {
             let wall = now.duration_since(at).as_nanos() as f64;
             (wall > 0.0).then(|| ((cpu_ns.saturating_sub(before)) as f64 / wall * 100.0).round() as u32)
         });
+        // Les processus plus relevés depuis une minute (onglet fermé ou endormi)
+        // sortent de la table : avant, elle gardait une ligne par page disparue.
+        self.previous.retain(|_, (_, at)| now.duration_since(*at) < std::time::Duration::from_secs(60));
         Some(((resident / 1_048_576) as u32, cpu))
     }
 
