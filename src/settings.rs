@@ -32,6 +32,9 @@ pub struct Settings {
     /// La recherche de la pastille à la loupe s'ouvre dans un nouvel onglet
     /// (sinon dans l'onglet actif).
     pub search_new_tab: bool,
+    /// Proposer sous la barre les suggestions du moteur de recherche pendant
+    /// la frappe (le texte tapé est alors envoyé au moteur, jamais en privé).
+    pub search_suggestions: bool,
     /// Les favoris s'affichent sous la recherche de la page d'accueil.
     pub bookmarks_on_home: bool,
     /// Les dernières pages visitées (« Reprendre ») s'affichent sur la page d'accueil.
@@ -55,6 +58,31 @@ pub struct Settings {
     /// Mode économie : veille plus tôt, vidéos cachées en pause, lecture
     /// automatique bloquée, traqueurs bloqués (voir `sleep_after` et `assets/page.js`).
     pub economy: bool,
+    /// Animations de l'interface : complètes, réduites (fondus courts) ou aucune.
+    /// Le mode économie et le réglage « réduire les animations » du système
+    /// passent en réduites (voir `motion` dans chrome.html).
+    pub animations: Animations,
+}
+
+/// Réglage « Animations » (Apparence).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Animations {
+    #[default]
+    Full,
+    Reduced,
+    Off,
+}
+
+impl Animations {
+    /// Ce que joue la page d'accueil : `full`, `reduced` ou `off`.
+    pub fn effective(self, economy: bool) -> &'static str {
+        match self {
+            Animations::Full if !economy => "full",
+            Animations::Off => "off",
+            _ => "reduced",
+        }
+    }
 }
 
 /// Délai de veille par défaut d'un onglet caché, en minutes.
@@ -82,6 +110,7 @@ impl Default for Settings {
             startup: Startup::Home,
             history_days: 90,
             search_new_tab: false,
+            search_suggestions: true,
             bookmarks_on_home: true,
             recent_on_home: true,
             download_dir: String::new(),
@@ -93,6 +122,7 @@ impl Default for Settings {
             sidebar_width: SIDEBAR_MIN,
             sidebar_style: SidebarStyle::Palette,
             economy: false,
+            animations: Animations::Full,
         }
     }
 }
@@ -238,6 +268,17 @@ impl Settings {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn animations_selon_le_mode_economie() {
+        assert_eq!(Animations::Full.effective(false), "full");
+        assert_eq!(Animations::Full.effective(true), "reduced");
+        assert_eq!(Animations::Reduced.effective(false), "reduced");
+        assert_eq!(Animations::Off.effective(true), "off");
+        // Un fichier d'avant la 0.6 n'a pas la clé : animations complètes.
+        let s: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(s.animations, Animations::Full);
+    }
+
     use super::*;
 
     #[test]

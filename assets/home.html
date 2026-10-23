@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr" data-theme="{{THEME}}">
+<html lang="fr" data-theme="{{THEME}}" data-motion="{{MOTION}}">
 <head>
 <meta charset="utf-8">
 <title>Accueil</title>
@@ -52,6 +52,30 @@
   #hint { position: fixed; bottom: 16px; color: var(--muted); font-size: 12px; opacity: .8; }
   kbd { font: inherit; border: 1px solid var(--muted); border-radius: 4px; padding: 0 4px; }
   @media (max-height: 560px) { #hint { display: none; } }
+
+  /* Arrivée en cascade (réglage « Animations ») : la date, le bonjour, la
+     recherche puis les vignettes, chacune avec un petit rebond. Rien qu'en
+     CSS, joué une fois à l'ouverture de la page. */
+  :root { --snap: cubic-bezier(.3, 1.25, .5, 1); --bounce: cubic-bezier(.34, 1.56, .64, 1); }
+  @supports (animation-timing-function: linear(0, 1)) {
+    :root {
+      --snap: linear(0, 0.036, 0.123, 0.236, 0.359, 0.48, 0.592, 0.691, 0.774, 0.842, 0.896, 0.937, 0.968, 0.989, 1.004, 1.013, 1.018, 1.02, 1.02, 1.018, 1.016, 1.014, 1.011, 1.009, 1.007, 1.005, 1.004, 1.002, 1.002, 1.001, 1, 1, 1);
+      --bounce: linear(0, 0.077, 0.261, 0.493, 0.723, 0.919, 1.064, 1.153, 1.191, 1.19, 1.162, 1.119, 1.073, 1.032, 0.999, 0.977, 0.965, 0.962, 0.966, 0.973, 0.982, 0.99, 0.998, 1.003, 1.006, 1.007, 1.007, 1.006, 1.004, 1.003, 1.001, 1, 1);
+    }
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px) scale(.96); } }
+  @keyframes pop { from { opacity: 0; transform: translateY(16px) scale(.7); } }
+  @keyframes appear { from { opacity: 0; } }
+  [data-motion="full"] #date { animation: rise .45s var(--snap) .04s both; }
+  [data-motion="full"] #hello { animation: rise .45s var(--snap) .09s both; }
+  [data-motion="full"] #search { animation: rise .45s var(--snap) .14s both; }
+  [data-motion="full"] .fav, [data-motion="full"] .rc { animation: pop .78s var(--bounce) both; animation-delay: calc(.2s + var(--i, 0) * 35ms); }
+  [data-motion="reduced"] #date, [data-motion="reduced"] #hello, [data-motion="reduced"] #search,
+  [data-motion="reduced"] .fav, [data-motion="reduced"] .rc { animation: appear .14s linear both; }
+  @media (prefers-reduced-motion: reduce) {
+    [data-motion="full"] #date, [data-motion="full"] #hello, [data-motion="full"] #search,
+    [data-motion="full"] .fav, [data-motion="full"] .rc { animation: appear .14s linear both; }
+  }
 </style>
 <script>
   // Thème : « auto » suit le système, et change avec lui.
@@ -98,9 +122,10 @@
   // Appelé par Rust pour Ctrl+L.
   window.focusSearch = () => { q.focus(); q.select(); };
 
-  // « / » ouvre la liste des commandes de l'interface.
+  // Ce qui est tapé passe dans la barre de l'interface : « / » pour ses
+  // commandes, sinon pour les suggestions (favoris, historique, moteur).
   q.addEventListener('input', () => {
-    if (q.value.startsWith('/')) { send({ open_bar: q.value }); q.value = ''; }
+    if (q.value.trim()) { send({ open_bar: q.value }); q.value = ''; }
   });
   document.getElementById('search').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -108,6 +133,8 @@
     if (text) send({ navigate: text });
   });
   window.addEventListener('load', () => q.focus());
+  // Place de chaque vignette dans la cascade d'arrivée (voir le CSS).
+  document.querySelectorAll('.fav, .rc').forEach((el, i) => el.style.setProperty('--i', String(Math.min(i, 16))));
   // Favori dont l'icône ne charge pas : on montre l'initiale du site.
   document.querySelectorAll('.fi img').forEach((img) => img.addEventListener('error', () => {
     img.parentNode.textContent = (img.closest('.fav').title || '?').charAt(0).toUpperCase();

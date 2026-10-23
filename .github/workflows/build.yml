@@ -1,8 +1,16 @@
 name: Construire
 
+# Deux façons de compiler :
+# - vérification rapide (chaque PR, ou lancement à la main sans version) :
+#   tests et compilation sans LTO, Mac en Intel seulement, ni .dmg ni fichiers
+#   à télécharger, et banc seulement si on le demande ;
+# - compilation complète (publication, étiquette v*, ou case « complet ») :
+#   tout comme avant, fichier Mac universel, .dmg, banc et publication.
+# Plus de compilation après une fusion sur main : la PR a déjà été vérifiée
+# sur le même code, et la publication recompile tout de toute façon.
 on:
+  pull_request:
   push:
-    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -10,36 +18,88 @@ on:
         description: "Étiquette à publier (par exemple v0.1.0), vide pour ne rien publier"
         required: false
         default: ""
+      complet:
+        description: "Compilation complète sans publier (fichier Mac universel, .dmg, banc)"
+        type: boolean
+        default: false
+      banc:
+        description: "Lancer le banc pendant une vérification rapide"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
+# Une nouvelle vérification rapide de la même branche arrête la précédente,
+# devenue inutile. Une compilation complète ou une publication n'est jamais
+# arrêtée et n'arrête rien (groupe à elle seule).
+concurrency:
+  group: construire-${{ (inputs.version != '' || inputs.complet || startsWith(github.ref, 'refs/tags/')) && github.run_id || github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  # Compilation complète : publication, étiquette, ou case « complet ».
+  COMPLET: ${{ inputs.version != '' || inputs.complet || startsWith(github.ref, 'refs/tags/') }}
+  # Banc : toujours en complet ; en rapide, sur demande (case « banc » ou
+  # étiquette « banc » sur la PR).
+  BANC: ${{ inputs.version != '' || inputs.complet || inputs.banc || startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'banc') }}
+
 jobs:
   windows:
     runs-on: windows-latest
+    # Dernier filet si une machine se fige (6 h par défaut sinon).
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --release
-      - run: cargo build --release
+      # Tests sans LTO (profil « verif » de Cargo.toml) : même code, bien
+      # plus rapide à compiler, et partagé avec la vérification rapide.
+      - run: cargo test --profile verif
+      - name: Compiler
+        shell: bash
+        run: |
+          if [ "$COMPLET" = true ]; then
+            cargo build --release
+          else
+            cargo build --profile verif
+            mkdir -p target/release && cp target/verif/feather.exe target/release/feather.exe
+          fi
       # Banc de Feather : mémoire sur quelques sites, temps de démarrage, et
       # Proton Pass et uBlock Origin Lite (chargement, page sans erreur),
       # affichés dans le résumé de l'exécution. Un écart avec
       # outils/banc-reference.txt donne une alerte ; jamais d'échec de la
       # compilation ni de la publication.
+      # Le banc tourne dans un processus à part, arrêté au bout de 8 minutes
+      # (2 à 3 minutes d'habitude) : le 22/10, il s'est figé trois fois sur
+      # Windows et le délai de l'étape ne le coupait pas (plus de 30 minutes).
       - name: Banc (mémoire, démarrage, extensions)
+        if: env.BANC == 'true'
         continue-on-error: true
         timeout-minutes: 10
         shell: pwsh
-        run: ./outils/banc-memoire.ps1 -Programme target/release/feather.exe -Extensions
+        run: |
+          $banc = Start-Process pwsh -NoNewWindow -PassThru -ArgumentList @(
+            '-NoProfile', '-File', 'outils/banc-memoire.ps1',
+            '-Programme', 'target/release/feather.exe', '-Extensions')
+          $null = $banc.Handle  # garde le code de sortie lisible
+          $code = 0
+          if (-not $banc.WaitForExit(8 * 60 * 1000)) {
+            taskkill /T /F /PID $banc.Id | Out-Null
+            Write-Output "::warning title=Banc de Feather::Banc arrêté après 8 minutes (bloqué), mesures Windows incomplètes."
+          } else { $code = $banc.ExitCode }
+          # Feather et ses pages encore ouverts, quoi qu'il arrive.
+          Get-Process feather, msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          exit $code
       # La version vient de Cargo.toml : elle n'est plus recopiée à la main ici.
       - name: Nommer le fichier avec la version
+        if: env.COMPLET == 'true'
         shell: bash
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           cp target/release/feather.exe "Feather-$version-windows.exe"
       - uses: actions/upload-artifact@v6
+        if: env.COMPLET == 'true'
         with:
           name: windows
           path: Feather-*-windows.exe
@@ -54,17 +114,27 @@ jobs:
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --release
+      - run: cargo test --profile verif
+      # En vérification rapide, seulement Intel (la machine) : le code Mac est
+      # le même pour Apple Silicon, seule la publication a besoin des deux.
       - name: Construire pour Apple Silicon et Intel
         run: |
-          cargo build --release --target aarch64-apple-darwin
-          cargo build --release --target x86_64-apple-darwin
+          if [ "$COMPLET" = true ]; then
+            cargo build --release --target aarch64-apple-darwin
+            cargo build --release --target x86_64-apple-darwin
+          else
+            cargo build --profile verif
+            mkdir -p target/x86_64-apple-darwin/release
+            cp target/verif/feather target/x86_64-apple-darwin/release/feather
+          fi
       # Même banc que sous Windows (voir plus haut).
       - name: Banc (mémoire, démarrage, extensions)
+        if: env.BANC == 'true'
         continue-on-error: true
         timeout-minutes: 10
         run: bash outils/banc-memoire.sh --extensions target/x86_64-apple-darwin/release/feather
       - name: Créer l'application et le .dmg
+        if: env.COMPLET == 'true'
         run: |
           mkdir -p dmg/Feather.app/Contents/MacOS
           lipo -create -output dmg/Feather.app/Contents/MacOS/feather \
@@ -82,6 +152,7 @@ jobs:
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           hdiutil create -volname Feather -srcfolder dmg -ov -format UDZO "Feather-$version-macos.dmg"
       - uses: actions/upload-artifact@v6
+        if: env.COMPLET == 'true'
         with:
           name: macos
           path: Feather-*-macos.dmg
@@ -96,6 +167,17 @@ jobs:
         with:
           path: fichiers
           merge-multiple: true
+      # La version se pousse sans PR : on vérifie au moins que l'étiquette
+      # demandée est bien celle de Cargo.toml, sinon rien n'est publié.
+      - name: Vérifier le numéro de version
+        env:
+          ETIQUETTE: ${{ inputs.version || github.ref_name }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "$ETIQUETTE" != "v$version" ]; then
+            echo "::error::Étiquette $ETIQUETTE différente de la version de Cargo.toml (v$version) : publication refusée."
+            exit 1
+          fi
       # Signature de chaque fichier avec la clé du secret FEATHER_SIGNATURE (voir
       # outils/cle-signature.py) : Feather refuse une mise à jour sans signature
       # valide. Le texte signé est le nom du fichier (qui porte la version), un

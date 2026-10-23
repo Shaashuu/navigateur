@@ -245,6 +245,19 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   est à 15 minutes par défaut. Un bouton d'accueil apparaît, l'utilisation de la
   mémoire s'affiche en direct, et la pastille à la loupe ouvre une recherche au
   milieu de la page (dans l'onglet actif ou un nouvel onglet, au choix).
+- **Nouveau en 0.5.10** : Feather s'ouvre en grand au premier lancement,
+  puis retrouve la taille et la place de sa fenêtre. Sous macOS, le menu
+  Édition fait enfin marcher copier, coller et tout sélectionner, et ⌘Q
+  enregistre la session avant de quitter. De nouveaux raccourcis ouvrent le
+  n-ième onglet (Ctrl/⌘ + 1 à 9), l'historique, les téléchargements et les
+  favoris. L'interface s'anime : ouverture, fermeture et déplacement des
+  onglets, panneaux, menus et fiche d'aperçu au survol d'un onglet ; le
+  réglage « Animations » (Apparence) les garde complètes, les réduit ou les
+  coupe, et le mode économie les réduit. Le vrai plein écran (F11, ou ⌃⌘F
+  sous macOS) fait s'envoler la barre et donne toute la fenêtre à la page ;
+  la barre revient quand la souris touche le bord (pas sous Linux). Un clic
+  sur un lien, un favori ou une recherche montre le chargement tout de
+  suite, sans attendre la réponse du site.
 - **Nouveau en 0.5.9** : sous macOS, Proton Pass fonctionne. Sa fenêtre
   affichait « difficulties activating » et se relançait en boucle, car
   l'extension masquait les objets par lesquels le moteur du Mac lui parle.

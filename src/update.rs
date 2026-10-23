@@ -451,7 +451,7 @@ fn run(mut cmd: Command, what: &str) -> Result<Output, String> {
 }
 
 /// Sous Windows, évite qu'une fenêtre de console clignote.
-fn hide_window(cmd: &mut Command) {
+pub(crate) fn hide_window(cmd: &mut Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

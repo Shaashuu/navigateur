@@ -35,6 +35,7 @@ mod siteclear;
 mod sitedata;
 mod softsleep;
 mod storage;
+mod suggest;
 mod tab_manager;
 mod trackers;
 mod ui;
@@ -91,6 +92,8 @@ pub enum UserEvent {
     LoadFailed { id: TabId, url: String, kind: errorpage::ErrorKind },
     /// `window.open` ; `private` : la page qui l'a demandé est privée.
     OpenInNewTab { url: String, private: bool },
+    /// Suggestions du moteur de recherche pour ce texte de la barre (voir `suggest`).
+    EngineSuggestions { query: String, items: Vec<String> },
     Update(UpdateEvent),
     /// Les onglets fermés peuvent être détruits.
     Reap,
@@ -172,6 +175,11 @@ struct App {
     pointer_due: Option<Instant>,
     /// Mode concentration (Ctrl+Maj+F) : la barre se réduit à un rail.
     focus: bool,
+    /// La fenêtre est en plein écran (F11, ⌃⌘F).
+    fullscreen: bool,
+    /// Plein écran : l'interface a fait s'envoler la barre, la page prend toute
+    /// la fenêtre. La barre revient par-dessus quand la souris touche son bord.
+    bar_hidden: bool,
     /// L'interface passe au-dessus des pages quand un panneau est ouvert.
     layers: layers::Layers,
     /// Le bandeau du bas (recherche, question, minuteur) est ouvert : la page rétrécit.
@@ -310,6 +318,8 @@ fn main() -> wry::Result<()> {
         pointer_sent: None,
         pointer_due: None,
         focus: false,
+        fullscreen: false,
+        bar_hidden: false,
         layers: layers::Layers::default(),
         strip: false,
         update: UpdateState::Idle,
@@ -413,6 +423,7 @@ fn main() -> wry::Result<()> {
                 ..
             } => {
                 app.placement.track(&app.window);
+                app.sync_fullscreen();
                 app.relayout();
             }
             Event::WindowEvent { event: WindowEvent::Moved(_), .. } => app.placement.track(&app.window),
@@ -510,9 +521,7 @@ impl App {
                 // réveillait sur une page blanche.
                 let tab = self.tabs.get_mut(id).filter(|t| !t.is_asleep() && url != "about:blank");
                 if let Some(tab) = tab {
-                    if !loading {
-                        banc::page_chargee();
-                    }
+                    banc::chargement(id, loading);
                     // Nouvelle page : l'article demandé à la précédente n'est plus attendu.
                     if loading {
                         tab.reader_asked = false;
@@ -614,6 +623,10 @@ impl App {
                     self.open_tab(&url, private);
                 }
             }
+            UserEvent::EngineSuggestions { query, items } => {
+                let data = serde_json::json!({ "query": query, "items": items });
+                self.chrome_call(&format!("navigateur.setEngineSuggestions({data})"));
+            }
             UserEvent::Update(event) => self.handle_update(event),
             UserEvent::Reap => self.tabs.reap(),
             UserEvent::DownloadStarted { url, path, private } => self.download_started(url, path, private),
@@ -630,6 +643,8 @@ impl App {
                 self.persist();
             }
             UserEvent::Tick => {
+                // macOS : l'entrée en plein écran finit parfois après le dernier redimensionnement.
+                self.sync_fullscreen();
                 self.tick();
                 // Aucune page chargée après 5 s (hors ligne…) : les extensions démarrent quand même.
                 if self.ticks >= 5 {
@@ -761,6 +776,14 @@ impl App {
                 }
             }
             // Messages fréquents (à chaque image) : rien à redessiner dans l'interface.
+            ChromeMessage::BarHidden { hidden } => {
+                let hidden = hidden && self.fullscreen && layers::SUPPORTED;
+                if hidden != self.bar_hidden {
+                    self.bar_hidden = hidden;
+                    self.relayout();
+                }
+                return;
+            }
             ChromeMessage::Shape { rects } => {
                 self.layers.set_shape(&self.window, &self.chrome, rects);
                 return;
@@ -959,6 +982,13 @@ impl App {
             }
             self.push_state();
         }
+        // Le chargement se voit dès le clic, sans attendre la réponse du site.
+        if let Some(leaving) = message.leaving
+            && let Some(tab) = self.tabs.get_mut(id)
+        {
+            tab.loading = leaving;
+            self.push_state();
+        }
         if let Some(url) = message.open_tab
             && network::is_web(&url)
         {
@@ -1074,11 +1104,15 @@ impl App {
                 && let Some(w) = tab.webview()
             {
                 let _ = w.load_url(&url);
+                self.show_loading(Some(id));
             }
         }
         if let Some(text) = message.open_bar {
+            // « / » ouvre les commandes ; un autre texte passe dans la barre,
+            // qui propose alors les suggestions pendant la frappe.
+            let call = if text.starts_with('/') { "openBar" } else { "typeInBar" };
             let text = serde_json::to_string(&text).unwrap_or_default();
-            self.focus_chrome(&format!("navigateur.openBar({text})"));
+            self.focus_chrome(&format!("navigateur.{call}({text})"));
         }
     }
 
@@ -1176,6 +1210,7 @@ impl App {
             side: s.sidebar_width,
             strip: self.strip,
             focus: self.focus,
+            full: self.bar_hidden,
         };
         ui::page_bounds(&self.window, &frame)
     }
@@ -1189,7 +1224,8 @@ impl App {
     /// Démarre ou arrête la lecture de la souris. `fresh` : la position est
     /// renvoyée tout de suite, même inchangée.
     fn update_pointer_watch(&mut self, fresh: bool) {
-        let on = layers::SUPPORTED && (self.expanded || self.pointer_wanted);
+        // En plein écran, la souris est suivie pour faire revenir la barre.
+        let on = layers::SUPPORTED && (self.expanded || self.pointer_wanted || self.fullscreen);
         if !on {
             self.pointer_due = None;
         } else if fresh || self.pointer_due.is_none() {
@@ -1313,11 +1349,22 @@ impl App {
         });
     }
 
+    /// L'onglet affiché charge une adresse : l'indicateur part tout de suite. Le
+    /// moteur ne prévient qu'à l'arrivée de la réponse (0,6 à 0,9 s pour Netflix
+    /// au banc), et jusque-là le clic sur un favori semblait sans effet.
+    fn show_loading(&mut self, id: Option<TabId>) {
+        if let Some(tab) = id.and_then(|id| self.tabs.get_mut(id)) {
+            tab.loading = true;
+        }
+        self.push_state();
+    }
+
     fn load_in_active(&mut self, url: &str) {
         match self.tabs.active().and_then(|t| t.webview()) {
             Some(w) => {
                 let _ = w.load_url(url);
                 self.focus_page();
+                self.show_loading(self.tabs.active_id());
             }
             None => self.open_tab(url, false),
         }
@@ -1501,6 +1548,23 @@ impl App {
         self.settings.read().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// Entrée ou sortie du plein écran : l'interface fait s'envoler la barre
+    /// (puis répond `bar_hidden`), ou la fait revenir ; la page reprend sa place
+    /// tout de suite à la sortie.
+    fn sync_fullscreen(&mut self) {
+        let full = self.window.fullscreen().is_some();
+        if full == self.fullscreen {
+            return;
+        }
+        self.fullscreen = full;
+        if !full && self.bar_hidden {
+            self.bar_hidden = false;
+            self.relayout();
+        }
+        self.update_pointer_watch(full);
+        self.push_state();
+    }
+
     fn relayout(&mut self) {
         self.close_extension_popup();
         let _ = self.chrome.set_bounds(ui::chrome_bounds(&self.window));
@@ -1618,6 +1682,8 @@ impl App {
             // Extension qui bloque les publicités à la place du bloqueur intégré.
             "adblock_by": self.extensions.ad_blocker(),
             "focus": self.focus,
+            // Sous Linux, l'interface ne passe pas devant la page : la barre reste.
+            "fullscreen": self.fullscreen && layers::SUPPORTED,
             "extensions": self.extensions.snapshot(),
         });
         drop(lib);

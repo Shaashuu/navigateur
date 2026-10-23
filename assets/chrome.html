@@ -405,6 +405,7 @@
   #command-list li .name.page { color: var(--text); font-weight: 400; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #command-list li .desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #command-list li .mark { color: #e8a317; flex: none; }
+  #command-list li .mark.q { color: var(--muted); align-self: center; width: 13px; }
   #cmd-result {
     margin-top: 10px; width: min(660px, 100%); padding: 14px 18px; border-radius: 16px;
     background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); user-select: text;
@@ -892,6 +893,69 @@
   #ov-tiles .s { font-size: 13px; color: var(--muted); }
   #ov-quick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
   #ov-quick .srow:nth-last-child(-n+2) { border-bottom: 0; }
+
+  /* --- Animations (voir `motion` et `anim` dans le script) --- */
+  #pills { position: relative; }
+  .set-nav { position: relative; }
+  .set-nav .navbtn { position: relative; }
+  /* Bulle qui glisse sous l'onglet actif (5B) ou la catégorie des paramètres (7A) */
+  .bubble { position: absolute; z-index: 0; pointer-events: none; }
+  .bubble.tabb { background: var(--accent-soft); border-radius: 17px; }
+  .bubble.barb { background: var(--accent); border-radius: 2px; }
+  .bubble.navb { background: var(--accent-soft); border-radius: 10px; }
+  body[data-pos="top"] .tab.bubbling, .navbtn.bubbling { background: transparent !important; }
+  #pills .tab.bubbling::after { opacity: 0; }
+  /* Onglet soulevé (4A) : il suit la souris, avec une ombre */
+  .tab.dragging.lifted { opacity: 1; }
+  body[data-pos="top"] .tab.lifted { background: var(--surface); box-shadow: 0 10px 26px rgba(0, 0, 0, .26); }
+  body[data-pos="top"] .tab.active.lifted { background: var(--accent-soft); }
+  body:not([data-pos="top"]) #pills .tab.lifted .dot { box-shadow: 0 10px 24px rgba(0, 0, 0, .28); }
+  .tab.ghost { pointer-events: none; z-index: 0; }
+  /* Menu d'un onglet (8A) : un fond qui glisse de ligne en ligne */
+  #ctx .mhl { position: absolute; left: 5px; right: 5px; top: 0; height: 36px; border-radius: 9px; background: var(--accent-soft); opacity: 0; pointer-events: none; transition: transform .18s cubic-bezier(.2, .8, .2, 1), opacity .12s; }
+  #ctx .mhl.on { opacity: 1; }
+  #ctx button { position: relative; }
+  #ctx.slide button:hover { background: none; }
+  /* Fiche d'aperçu d'un onglet survolé (3B) */
+  #tipcard {
+    position: fixed; display: none; z-index: 41; width: 250px; padding: 10px 12px; pointer-events: none;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); font-size: 12.5px;
+  }
+  body.tip #tipcard, body.leave-tip #tipcard { display: block; }
+  #tip-arr { position: absolute; width: 14px; height: 7px; top: -7px; background: var(--surface); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+  #tipcard[data-side="left"] #tip-arr { left: -7px; width: 7px; height: 14px; clip-path: polygon(100% 0, 0 50%, 100% 100%); }
+  #tipcard[data-side="right"] #tip-arr { left: auto; right: -7px; width: 7px; height: 14px; clip-path: polygon(0 0, 100% 50%, 0 100%); }
+  #tip-t { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #tip-u { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #tip-u:empty, #tip-m:empty { display: none; }
+  #tip-m { margin-top: 6px; color: var(--muted); display: flex; gap: 6px; align-items: baseline; }
+  #tip-m::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: #2f9e5b; }
+  #tip-m.zz::before { background: var(--muted); }
+  /* Panneau qui part : il reste affiché le temps de son animation */
+  body.overlay.leaving { background: transparent; }
+  /* 9A · Plein écran : la barre s'est envolée, la page prend toute la fenêtre.
+     Elle revient par-dessus la page quand la souris touche son bord (« peek »). */
+  body.fs #sidebar, body.fs #banner { background: var(--bg); }
+  body.fs.peek #sidebar { box-shadow: var(--shadow); }
+  body.fs:not(.panel):not(.leaving) #sidebar, body.fs:not(.panel):not(.leaving) #banner { visibility: hidden; }
+  body.leave-library #library, body.leave-menu #ctx, body.leave-dlpop #dl-pop { display: block; }
+  body.leave-settings #settings, body.leave-bar #overlay, body.leave-site #site, body.leave-group #group,
+  body.leave-import #import, body.leave-extensions #extensions { display: flex; }
+  body.leave-library #pop-arrow.on, body.leave-extensions #pop-arrow.on { display: block; }
+  /* Tiroir (6B) : le panneau sort de dessous la barre */
+  body.drawer #sidebar { z-index: 28; background: var(--bg); }
+  /* Effets ponctuels : anneau, étincelles, « z » de la veille, fichier téléchargé */
+  .fx-ring { position: fixed; z-index: 45; border: 2px solid var(--accent); border-radius: 50%; pointer-events: none; }
+  .fx-spark { position: fixed; z-index: 45; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; pointer-events: none; }
+  .fx-z { position: fixed; z-index: 45; font-weight: 800; color: var(--muted); pointer-events: none; line-height: 1; }
+  .fx-file {
+    position: fixed; z-index: 45; display: flex; align-items: center; gap: 7px; max-width: 260px; padding: 8px 12px; border-radius: 10px; pointer-events: none;
+    background: var(--accent-soft); color: var(--accent); font-size: 12.5px; font-weight: 600; box-shadow: var(--shadow); white-space: nowrap;
+  }
+  .fx-file i { flex: none; width: 13px; height: 16px; border-radius: 3px; background: var(--accent); }
+  .fx-file span { overflow: hidden; text-overflow: ellipsis; }
+  #lib-bookmarks.gold, .star.gold { color: #e8a317; }
+  #lib-bookmarks.gold svg, .star.gold svg { fill: currentColor; }
 </style>
 </head>
 <body data-pos="left">
@@ -980,6 +1044,7 @@
   </div>
 
   <div id="ctx" class="card"></div>
+  <div id="tipcard" class="card" aria-hidden="true"><i id="tip-arr"></i><div id="tip-in"><div id="tip-t"></div><div id="tip-u"></div><div id="tip-m"></div></div></div>
   <div id="dl-pop" class="card" role="dialog" aria-label="Téléchargements en cours">
     <div class="head"><span id="dl-pop-title">Téléchargement</span><button type="button" id="dl-pop-all">Tout voir</button></div>
     <div id="dl-pop-list"></div>
@@ -1185,6 +1250,12 @@
             </div></div>
           <div class="srow" id="row-width"><label class="lab" for="s-width">Largeur de la barre<small>Les pastilles seules, ou avec le titre des pages</small></label>
             <input type="range" id="s-width" min="56" max="300" step="2"><span id="s-width-v"></span></div>
+          <div class="srow"><span class="lab">Animations<small>Réduites : de simples fondus. Le mode économie et le réglage « réduire les animations » du système passent en réduites.</small></span>
+            <div class="choices" id="s-anim">
+              <button type="button" data-value="full">Complètes</button>
+              <button type="button" data-value="reduced">Réduites</button>
+              <button type="button" data-value="off">Aucune</button>
+            </div></div>
           <div class="srow"><label class="lab" for="s-bmhome">Favoris sur la page d'accueil<small>Les vignettes de vos sites favoris, sous la recherche</small></label>
             <input type="checkbox" class="tg" id="s-bmhome"></div>
           <div class="srow"><label class="lab" for="s-recent">Dernières pages visitées sur la page d'accueil<small>La rubrique « Reprendre » ; jamais dans un onglet privé</small></label>
@@ -1201,6 +1272,8 @@
               <option value="google">Google</option>
               <option value="bing">Bing</option>
             </select></div>
+          <div class="srow"><label class="lab" for="s-suggest">Suggestions du moteur<small>Pendant la frappe, le texte tapé est envoyé au moteur choisi pour proposer des recherches ; jamais dans un onglet privé, ni pour une adresse complète</small></label>
+            <input type="checkbox" class="tg" id="s-suggest"></div>
           <div class="srow"><span class="lab">Recherche de la loupe<small>Où s'ouvre ce qu'on cherche depuis la pastille à la loupe</small></span>
             <div class="choices" id="s-searchtab">
               <button type="button" data-value="active">Dans l'onglet actif</button>
@@ -1210,7 +1283,7 @@
         <section data-cat="onglets">
           <h3>Onglets et mémoire</h3>
           <p class="desc">Ce qui garde Feather léger.</p>
-          <div class="srow"><label class="lab" for="s-economy">Mode économie<small>Veille après 5 minutes, vidéos des onglets cachés en pause, lecture automatique des vidéos bloquée, traqueurs bloqués, YouTube en H.264 (moins de calcul)</small></label>
+          <div class="srow"><label class="lab" for="s-economy">Mode économie<small>Veille après 5 minutes, vidéos des onglets cachés en pause, lecture automatique des vidéos bloquée, traqueurs bloqués, YouTube en H.264 (moins de calcul), animations réduites</small></label>
             <input type="checkbox" class="tg" id="s-economy"></div>
           <div class="srow"><label class="lab" for="s-sleep">Mettre en veille un onglet caché après<small>Sa page est fermée et rechargée au retour ; sa mémoire est rendue</small></label>
             <select id="s-sleep">
@@ -1316,6 +1389,7 @@
   let state = { tabs: [], settings: {}, version: '', update: { state: 'idle' }, can_back: false, can_forward: false,
     permissions: [], permission_prompt: null, native_commands: [] };
   let suggestions = [];     // pages proposées sous la barre (favoris, historique)
+  let engineSugg = { query: '', items: [] };  // recherches proposées par le moteur
   let lastActive = null;    // onglet actif au dernier dessin
   let drag = null;          // onglet en cours de déplacement
   const badIcons = new Set(); // icônes introuvables : on garde le point gris
@@ -1348,6 +1422,113 @@
     else if (nav.parentNode !== $('top')) $('gear').after(nav);
   }
 
+  // --- Animations (réglage « Animations » de l'apparence) ---
+  // Seulement transform et opacité, jouées par le moteur (Web Animations) :
+  // aucune boucle en JS, rien ne tourne une fois l'animation finie. Les ressorts
+  // sont calculés une fois ici, en courbes linear() (repli : cubic-bezier).
+  // Exception voulue : avec la barre en haut, la largeur des onglets glisse
+  // (voir `flipTabs`) ; cela ne recalcule que la barre, jamais la page.
+  const reduceQuery = matchMedia('(prefers-reduced-motion: reduce)');
+  // 'full', 'reduced' (fondus courts seulement) ou 'off'. Le mode économie et
+  // le réglage du système passent en « réduites » ; fenêtre cachée : rien.
+  function motion() {
+    const s = state.settings || {};
+    if (s.animations === 'off' || document.hidden) return 'off';
+    if (s.animations === 'reduced' || s.economy || reduceQuery.matches) return 'reduced';
+    return 'full';
+  }
+  const LINEAR_OK = CSS.supports('animation-timing-function', 'linear(0, 1)');
+  function spring(k, c) {
+    const w0 = Math.sqrt(k), z = c / (2 * Math.sqrt(k)), wd = w0 * Math.sqrt(Math.max(1e-6, 1 - z * z));
+    const x = (t) => z < 1 ? 1 - Math.exp(-z * w0 * t) * (Math.cos(wd * t) + (z * w0 / wd) * Math.sin(wd * t)) : 1 - Math.exp(-w0 * t) * (1 + w0 * t);
+    let end = 2, calm = 0;
+    for (let t = 0; t < 2; t += 1 / 120) {
+      if (Math.abs(1 - x(t)) < .003) { calm += 1 / 120; if (calm > .08) { end = t; break; } } else calm = 0;
+    }
+    const pts = [];
+    for (let i = 0; i <= 40; i++) pts.push(i === 40 ? 1 : +x(end * i / 40).toFixed(4));
+    return { ms: Math.round(end * 1000), easing: LINEAR_OK ? `linear(${pts.join(', ')})` : (z < .6 ? 'cubic-bezier(.34, 1.56, .64, 1)' : 'cubic-bezier(.3, 1.25, .5, 1)') };
+  }
+  // Vif (léger dépassement), élastique (rebond franc).
+  // Tiroir des menus de la barre : un rebond plus court (le panneau est grand).
+  const SNAP = spring(420, 32), BOUNCE = spring(300, 16), DRAWER = spring(320, 24);
+  const EASE = 'cubic-bezier(.2, .8, .2, 1)', IN = 'cubic-bezier(.5, 0, .9, .5)';
+  const done = () => { const a = { onfinish: null, cancel() {} }; queueMicrotask(() => a.onfinish && a.onfinish()); return a; };
+  // Joue une animation. `opt` : une durée (courbe EASE) ou { ms, easing, fill }.
+  // Une animation de sortie (opacité finale 0, ou fill 'forwards') garde son
+  // dernier état : l'élément ne réapparaît pas avant d'être retiré.
+  function anim(el, frames, opt, delay = 0) {
+    const o = typeof opt === 'number' ? { ms: opt, easing: EASE } : opt;
+    const m = motion();
+    if (m === 'off' || !el) return done();
+    for (const a of el.getAnimations()) if (a.playState === 'finished') a.cancel();
+    const exit = o.fill === 'forwards' || frames[frames.length - 1].opacity === 0;
+    if (m === 'reduced') {
+      if (!frames.some((f) => 'opacity' in f)) return done();
+      const f = frames.map((k) => (k.offset === undefined ? { opacity: k.opacity ?? 1 } : { opacity: k.opacity ?? 1, offset: k.offset }));
+      return el.animate(f, { duration: Math.min(o.ms, 140), easing: 'linear', fill: exit ? 'forwards' : 'none' });
+    }
+    const fill = exit ? (delay ? 'both' : 'forwards') : (delay ? 'backwards' : 'none');
+    return el.animate(frames, { duration: o.ms, easing: o.easing, delay, fill });
+  }
+  const cascade = (els, frames, opt, step, start = 0) => els.forEach((e, i) => anim(e, frames, opt, start + Math.min(i, 12) * step));
+  const center = (r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+  // Transformation qui pose `el` sur le rectangle `r` (départ d'un morphing).
+  function onto(el, r) {
+    const e = el.getBoundingClientRect();
+    if (!e.width || !e.height || !r.width || !r.height) return 'none';
+    const a = center(e), b = center(r);
+    return `translate(${b.x - a.x}px, ${b.y - a.y}px) scale(${r.width / e.width}, ${r.height / e.height})`;
+  }
+  // Une bulle glisse d'un rectangle à l'autre, sous le contenu de `host` (onglet
+  // actif, catégorie des paramètres) ; `el` cache son propre fond pendant ce temps.
+  function bubble(host, from, to, el, cls, opt, wobble) {
+    if (motion() !== 'full' || !from || !to || !to.width || !to.height) return;
+    const h = host.getBoundingClientRect();
+    const b = document.createElement('span');
+    b.className = 'bubble ' + cls;
+    Object.assign(b.style, {
+      left: (to.left - h.left + host.scrollLeft) + 'px', top: (to.top - h.top + host.scrollTop) + 'px',
+      width: to.width + 'px', height: to.height + 'px',
+    });
+    host.prepend(b);
+    if (el) el.classList.add('bubbling');
+    const a = center(from), c = center(to);
+    const dx = a.x - c.x, dy = a.y - c.y, sx = from.width / to.width, sy = from.height / to.height;
+    const frames = [{ transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` }, { transform: 'none' }];
+    // `wobble` : [x, y], la bulle s'étire à mi-chemin, comme une goutte.
+    if (wobble) frames.splice(1, 0, { transform: `translate(${dx / 2}px, ${dy / 2}px) scale(${(sx + 1) / 2 * wobble[0]}, ${(sy + 1) / 2 * wobble[1]})`, offset: .4 });
+    const end = () => { b.remove(); if (el) el.classList.remove('bubbling'); };
+    const a2 = anim(b, frames, opt);
+    a2.onfinish = end;
+    a2.oncancel = end;
+  }
+  // Petit anneau qui s'élargit et s'efface (favori, téléchargement fini).
+  function ringAt(el, color, scale) {
+    if (motion() !== 'full') return;
+    const r = el.getBoundingClientRect();
+    if (!r.width) return;
+    const ring = document.createElement('span');
+    ring.className = 'fx-ring';
+    Object.assign(ring.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', borderColor: color });
+    document.body.appendChild(ring);
+    anim(ring, [{ transform: 'scale(.7)', opacity: .9 }, { transform: `scale(${scale})`, opacity: 0 }], { ms: 380, easing: 'cubic-bezier(.2, .7, .3, 1)' }).onfinish = () => ring.remove();
+  }
+  // Rectangles ajoutés pour un temps à la forme de l'interface (Windows) : le
+  // chemin d'un panneau qui arrive, ou d'un fichier qui vole vers son bouton.
+  let extraShapes = [];
+  function shapeFor(r, ms) {
+    if (!state.overlay || motion() !== 'full') return;
+    const item = { x: r.left, y: r.top, w: r.width, h: r.height, r: 0 };
+    extraShapes.push(item);
+    queueShape();
+    setTimeout(() => { extraShapes = extraShapes.filter((x) => x !== item); queueShape(); }, ms);
+  }
+  const union = (a, b) => {
+    const left = Math.min(a.left, b.left), top = Math.min(a.top, b.top);
+    return { left, top, width: Math.max(a.right, b.right) - left, height: Math.max(a.bottom, b.bottom) - top };
+  };
+
   const input = $('input');
   const activeTab = () => state.tabs.find((t) => t.active);
   const label = (t) => t.home ? 'Accueil' : (t.title || t.url);
@@ -1355,8 +1536,118 @@
   // Un panneau ouvert passe par-dessus la page (macOS, Windows) ou la cache (Linux).
   // La forme est envoyée avant : sous Windows, l'interface est découpée dès
   // qu'elle passe devant la page.
+  // --- Panneaux : arrivée et départ animés ---
+  // Au départ, le panneau reste affiché (classe leave-<mode>) le temps de son
+  // animation, et l'interface reste devant la page : Rust ne la repasse dessous
+  // qu'ensuite. Un panneau qui s'ouvre pendant ce temps coupe l'animation.
+  let leaving = null;
+  function stopLeaving() {
+    if (!leaving) return;
+    const l = leaving;
+    leaving = null;
+    clearTimeout(l.timer);
+    document.body.classList.remove('leave-' + l.mode, 'leaving', 'drawer');
+    for (const el of l.els) {
+      el.style.pointerEvents = '';
+      for (const a of el.getAnimations()) a.cancel();
+    }
+  }
+  const PANELS = {
+    library: () => $('library').querySelector('.panel'),
+    extensions: () => $('extensions').querySelector('.panel'),
+    site: () => $('site').querySelector('.panel'),
+    group: () => $('group').querySelector('.panel'),
+    import: () => $('import').querySelector('.panel'),
+    settings: () => $('settings-form'),
+    menu: () => $('ctx'),
+    tip: () => $('tipcard'),
+    dlpop: () => $('dl-pop'),
+    bar: () => $('overlay'),
+    peek: () => $('sidebar'),
+  };
+  // Décalage vers le bord de la fenêtre où se trouve la barre.
+  function awayShift(d) {
+    const pos = document.body.dataset.pos || 'left';
+    if (pos === 'top') return `translateY(-${d})`;
+    return pos === 'right' ? `translateX(${d})` : `translateX(-${d})`;
+  }
+  // 6B : les menus de la barre sortent de dessous elle, comme un tiroir.
+  function drawerFrom(r) {
+    const pos = document.body.dataset.pos || 'left';
+    const s = $('sidebar').getBoundingClientRect();
+    if (pos === 'top') return `translateY(${s.bottom - r.bottom}px)`;
+    if (pos === 'right') return `translateX(${s.left - r.left}px)`;
+    return `translateX(${s.right - r.right}px)`;
+  }
+  // Départ d'un panneau : l'animation commence, et la fin est rendue (ou null).
+  function leaveAnim(m) {
+    const el = PANELS[m] && PANELS[m]();
+    if (!el || !state.overlay || motion() === 'off' || !el.getClientRects().length) return null;
+    const r = el.getBoundingClientRect();
+    let a, ms;
+    if (m === 'library' || m === 'extensions') {
+      document.body.classList.add('drawer');
+      ms = 220;
+      a = anim(el, [{ transform: 'none' }, { transform: drawerFrom(r) }], { ms, easing: IN, fill: 'forwards' });
+      anim($('pop-arrow'), [{ opacity: 1 }, { opacity: 0 }], 90);
+    } else if (m === 'settings') {
+      ms = 240;
+      a = anim(el, [{ transform: 'none', opacity: 1 }, { opacity: 1, offset: .55 }, { transform: onto(el, $('gear').getBoundingClientRect()), opacity: 0 }], { ms, easing: 'cubic-bezier(.4, 0, .9, .6)' });
+      anim($('gear').querySelector('svg'), [{ transform: 'rotate(90deg)' }, { transform: 'none' }], SNAP);
+    } else if (m === 'peek') {
+      // Sortie du plein écran : la barre reste, rien ne part.
+      if (!state.fullscreen) return null;
+      ms = 180;
+      a = anim(el, [{ transform: 'none' }, { transform: awayShift('100%') }], { ms, easing: IN, fill: 'forwards' });
+    } else if (m === 'tip') {
+      ms = 120;
+      a = anim(el, [{ opacity: 1 }, { transform: isTop() ? 'translateY(-6px) scale(.96)' : 'scale(.96)', opacity: 0 }], ms);
+    } else {
+      ms = m === 'menu' || m === 'bar' ? 110 : 160;
+      a = anim(el, [{ opacity: 1 }, { transform: 'scale(.96)', opacity: 0 }], ms);
+    }
+    el.style.pointerEvents = 'none';
+    return { mode: m, els: [el], ms: motion() === 'full' ? ms : 140, anim: a };
+  }
+  // Arrivée d'un panneau qui vient de s'ouvrir.
+  function enterAnim(m) {
+    const el = PANELS[m] && PANELS[m]();
+    if (!el || motion() === 'off') return;
+    if (m === 'peek') { anim(el, [{ transform: awayShift('100%') }, { transform: 'none' }], SNAP); return; }
+    if (m === 'library' || m === 'extensions') {
+      const r = el.getBoundingClientRect();
+      if (!r.width) return;
+      document.body.classList.add('drawer');
+      shapeFor(union($('sidebar').getBoundingClientRect(), r), DRAWER.ms);
+      anim(el, [{ transform: drawerFrom(r) }, { transform: 'none' }], DRAWER).onfinish = () => { if (!leaving) document.body.classList.remove('drawer'); };
+      anim($('pop-arrow'), [{ opacity: 0 }, { opacity: 1 }], 160, 200);
+      const rows = m === 'library' ? [...el.querySelectorAll('.head, .search')].concat([...$('lib-list').children]) : [...el.children];
+      cascade(rows, [{ transform: 'translateY(-14px)', opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP, 30, 90);
+    } else if (m === 'settings') {
+      // 7A : la fenêtre se déploie depuis l'engrenage, qui tourne d'un quart de tour.
+      const gear = $('gear');
+      const g = gear.getBoundingClientRect();
+      shapeFor(union(g, el.getBoundingClientRect()), SNAP.ms);
+      anim(el, [{ transform: onto(el, g), opacity: 0 }, { opacity: 1, offset: .15 }, { transform: 'none', opacity: 1 }], SNAP);
+      anim(gear.querySelector('svg'), [{ transform: 'none' }, { transform: 'rotate(90deg)' }], BOUNCE);
+      cascade([...el.querySelectorAll('.set-nav > *')], [{ transform: 'translateX(-12px)', opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP, 22, 120);
+      const sec = el.querySelector('.set-body section.on');
+      if (sec) cascade([...sec.children], [{ transform: 'translateY(12px)', opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP, 28, 170);
+    } else if (m === 'dlpop') {
+      el.style.transformOrigin = isTop() ? 'top right' : document.body.dataset.pos === 'right' ? 'right top' : 'left top';
+      anim(el, [{ transform: 'translateY(-10px) scale(.9)', opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP);
+    } else if (m === 'bar') {
+      if (document.body.classList.contains('anchored')) anim(el, [{ transform: 'scale(.96)', opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP);
+      else cascade([...el.querySelectorAll('.card:not([hidden])')], [{ transform: 'translateY(-10px)', opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP, 30);
+    } else if (m === 'site' || m === 'group' || m === 'import') {
+      anim(el, [{ transform: 'translateY(-12px) scale(.96)', opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP);
+    }
+  }
+
   function setMode(next) {
     if (next === mode) return;
+    stopLeaving();
+    const was = mode;
     const wasOpen = mode !== null;
     // Barre ouverte au survol : un menu ou une fenêtre qui s'ouvre la referme,
     // sinon la barre élargie le cacherait. Le menu d'un onglet la garde ouverte.
@@ -1377,10 +1668,18 @@
     document.body.classList.toggle('extensions', mode === 'extensions');
     $('lib-ext').classList.toggle('on', mode === 'extensions');
     document.body.classList.toggle('dlpop', mode === 'dlpop');
+    document.body.classList.toggle('tip', mode === 'tip');
+    document.body.classList.toggle('peek', mode === 'peek');
     for (const k of LIB_KINDS) $('lib-' + k).classList.toggle('on', mode === 'library' && libKind === k);
     placePop();
     if (mode !== null) reportShape();
-    if (wasOpen !== (mode !== null)) sendExpand(mode !== null);
+    const out = mode === null ? leaveAnim(was) : null;
+    if (out) {
+      leaving = out;
+      document.body.classList.add('leave-' + was, 'leaving');
+      out.timer = setTimeout(() => { stopLeaving(); if (mode === null) sendExpand(false); }, out.ms);
+    } else if (wasOpen !== (mode !== null)) sendExpand(mode !== null);
+    if (mode !== null && mode !== 'menu' && mode !== 'tip') enterAnim(mode);
     watchMemory();
   }
 
@@ -1431,6 +1730,7 @@
     if (document.body.classList.contains('strip')) add($('strip'));
     if (mode === 'bar' && document.body.classList.contains('anchored')) { add($('overlay')); add($('pal-arrow')); }
     for (const el of document.querySelectorAll('.card')) add(el);
+    rects.push(...extraShapes);
     const json = JSON.stringify(rects);
     if (json === lastShape) return;
     lastShape = json;
@@ -1517,6 +1817,7 @@
     else if (mode === 'menu') closeTabMenu();
     else if (mode === 'hover') endHover();
     else if (mode === 'dlpop') closeDlPop();
+    else if (mode === 'tip') hideTip();
   }
 
   let ctxTimer = 0;
@@ -1590,9 +1891,33 @@
     box.style.visibility = '';
     setMode('menu');
     box.classList.add('open');
+    // 8A : le menu jaillit du curseur, ses lignes en cascade ; un fond glisse
+    // d'une ligne à l'autre sous la souris.
+    const full = motion() === 'full';
+    box.classList.toggle('slide', full);
+    if (full) {
+      const hl = document.createElement('span');
+      hl.className = 'mhl';
+      box.prepend(hl);
+      box.style.transformOrigin = `${ev.clientX - x}px ${ev.clientY - y}px`;
+      anim(box, [{ transform: 'scale(.82)', opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP);
+      cascade([...box.querySelectorAll('button')], [{ transform: 'translateX(-10px)', opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP, 20, 40);
+    } else anim(box, [{ opacity: 0 }, { opacity: 1 }], 120);
     clearTimeout(ctxTimer);
     ctxTimer = setTimeout(closeTabMenu, 4000);
   }
+  $('ctx').addEventListener('pointerover', (e) => {
+    const b = e.target.closest('#ctx button');
+    const hl = $('ctx').querySelector('.mhl');
+    if (!b || !hl) return;
+    const first = !hl.classList.contains('on');
+    if (first) hl.style.transition = 'none';
+    hl.style.transform = `translateY(${b.offsetTop}px)`;
+    hl.style.height = b.offsetHeight + 'px';
+    if (first) { void hl.offsetWidth; hl.style.transition = ''; }
+    hl.classList.add('on');
+  });
+  $('ctx').addEventListener('pointerleave', () => { const hl = $('ctx').querySelector('.mhl'); if (hl) hl.classList.remove('on'); });
   $('ctx').addEventListener('pointerenter', () => clearTimeout(ctxTimer));
   $('ctx').addEventListener('pointerleave', () => { clearTimeout(ctxTimer); ctxTimer = setTimeout(closeTabMenu, 350); });
   document.addEventListener('pointerdown', (e) => { if (!$('ctx').contains(e.target)) closeTabMenu(); }, true);
@@ -1622,6 +1947,180 @@
     '<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
   const SPEAKER_OFF = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/>' +
     '<path d="m16 9 6 6m0-6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+
+  // --- Animations des onglets ---
+  // La liste est redessinée en entier à chaque changement : on note où était
+  // chaque onglet juste avant (`measureTabs`), puis on fait glisser chacun de
+  // son ancienne place à la nouvelle (`playTabs`). Au-delà de 40 onglets, rien.
+  let lastTabs = new Map();   // id → onglet tel qu'il était au dessin précédent
+  let dropped = null;         // onglet qui vient d'être lâché : il retombe en rebond
+  function measureTabs(box) {
+    const tabs = new Map();
+    for (const el of box.querySelectorAll('.tab:not(.ghost)')) tabs.set(Number(el.dataset.id), { el, r: el.getBoundingClientRect() });
+    const groups = new Map();
+    for (const el of box.querySelectorAll('.grp')) groups.set(Number(el.dataset.g), el.getBoundingClientRect());
+    return { tabs, groups, top: isTop() };
+  }
+  function playTabs(before) {
+    const prev = lastTabs;
+    lastTabs = new Map(state.tabs.map((t) => [t.id, t]));
+    const drop = dropped;
+    dropped = null;
+    const m = motion();
+    // Premier dessin, barre changée de place, ou trop d'onglets : rien ne bouge.
+    if (m === 'off' || !prev.size || before.top !== isTop() || state.tabs.length > 40) return;
+    const box = $('pills');
+    const top = isTop();
+    const els = [...box.querySelectorAll('.tab:not(.ghost)')];
+    const now = new Map(els.map((el) => [Number(el.dataset.id), el]));
+    const fin = new Map(els.map((el) => [el, el.getBoundingClientRect()]));
+    // Barre en haut : chaque onglet repart de son ancienne largeur (0 s'il
+    // apparaît) et glisse en ressort vers la nouvelle.
+    const grown = [];
+    if (top && m === 'full') {
+      for (const el of els) {
+        const p = before.tabs.get(Number(el.dataset.id));
+        const w = p ? p.r.width : 0;
+        if (Math.abs(w - fin.get(el).width) < 1) continue;
+        Object.assign(el.style, { flex: `0 0 ${w}px`, minWidth: w + 'px', maxWidth: w + 'px' });
+        grown.push(el);
+      }
+    }
+    const start = grown.length ? new Map(els.map((el) => [el, el.getBoundingClientRect()])) : fin;
+    if (grown.length) {
+      const t = `${BOUNCE.ms}ms ${BOUNCE.easing}`;
+      for (const el of grown) {
+        el.style.transition = `flex-grow ${t}, flex-basis ${t}, min-width ${t}, max-width ${t}`;
+        el.style.flex = el.style.minWidth = el.style.maxWidth = '';
+      }
+      setTimeout(() => { for (const el of grown) el.style.transition = ''; }, BOUNCE.ms + 50);
+    }
+    // Onglets disparus : fermés (2B, aspirés), ou rangés dans leur groupe replié (10D).
+    let folded = 0;
+    for (const [id, p] of before.tabs) {
+      if (now.has(id)) continue;
+      const t = lastTabs.get(id);
+      const lab = t && t.group != null ? box.querySelector(`.grp[data-g="${t.group}"]`) : null;
+      ghost(box, p, lab ? lab.getBoundingClientRect() : null, lab ? folded++ : 0);
+    }
+    let unfolded = 0;
+    for (const el of els) {
+      const id = Number(el.dataset.id);
+      const p = before.tabs.get(id);
+      if (!p) {
+        const t = lastTabs.get(id);
+        const lab = prev.has(id) && t && t.group != null ? box.querySelector(`.grp[data-g="${t.group}"]`) : null;
+        if (lab) fromLabel(el, lab.getBoundingClientRect(), unfolded++);   // 10D : le groupe s'ouvre
+        else if (!prev.has(id)) arrive(el, top);                           // 1B : nouvel onglet
+        continue;
+      }
+      const a = center(p.r), b = center(start.get(el));
+      const dx = a.x - b.x, dy = a.y - b.y;
+      if (id === drop) {
+        // 4A : l'onglet lâché retombe de là où la souris l'a laissé.
+        anim(el, [{ transform: `translate(${dx}px, ${dy}px) scale(1.06) rotate(-2.5deg)` }, { transform: 'none' }], BOUNCE);
+      } else if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) {
+        anim(el, [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], SNAP);
+      }
+    }
+    // 5B : le fond de l'onglet actif glisse de l'ancien au nouveau.
+    const was = [...prev.values()].find((t) => t.active);
+    const is = activeTab();
+    if (was && is && was.id !== is.id && before.tabs.has(was.id) && now.has(is.id)) {
+      const from = before.tabs.get(was.id).r, el = now.get(is.id), to = fin.get(el);
+      if (top) bubble(box, from, to, el, 'tabb', BOUNCE, [1.12, .82]);
+      else {
+        const right = document.body.dataset.pos === 'right';
+        const trait = (r) => ({ left: right ? r.right - 4 : r.left, top: r.top + 11, width: 4, height: r.height - 22 });
+        bubble(box, trait(from), trait(to), el, 'barb', BOUNCE, [1, 1.7]);
+      }
+    }
+    // 10E : veille et réveil ; 10A : ajout aux favoris.
+    for (const t of state.tabs) {
+      const old = prev.get(t.id);
+      if (!old) continue;
+      const el = now.get(t.id);
+      if (el && t.asleep && !old.asleep) sleepFx(el);
+      else if (el && !t.asleep && old.asleep) anim(el.querySelector('.dot'), [{ transform: 'scale(.8)' }, { transform: 'none' }], BOUNCE);
+      if (t.bookmarked && !old.bookmarked && t.url === old.url) favoriteFx(t, el);
+    }
+  }
+  // 1B : l'onglet arrive en tournant depuis la barre et rebondit, puis son icône.
+  function arrive(el, top) {
+    const side = document.body.dataset.pos === 'right' ? 18 : -18;
+    const from = top ? 'translateY(18px) rotate(-14deg) scale(.5)' : `translateX(${side}px) rotate(-14deg) scale(.5)`;
+    anim(el, [{ transform: from, opacity: 0 }, { transform: 'none', opacity: 1 }], BOUNCE);
+    anim(el.querySelector('.dot'), [{ transform: 'scale(0) rotate(-45deg)' }, { transform: 'none' }], BOUNCE, 90);
+  }
+  // 10D : un onglet ressort de l'étiquette de son groupe.
+  function fromLabel(el, lab, i) {
+    const a = center(lab), b = center(el.getBoundingClientRect());
+    anim(el, [{ transform: `translate(${a.x - b.x}px, ${a.y - b.y}px) scale(.3)`, opacity: 0 }, { transform: 'none', opacity: 1 }], BOUNCE, 40 + i * 45);
+  }
+  // Onglet disparu : son ancien élément reste un instant à sa place, puis s'écrase
+  // et s'aspire (2B), ou file dans l'étiquette de son groupe (`to`, 10D).
+  function ghost(box, p, to, i) {
+    if (motion() !== 'full') return;
+    const g = p.el;
+    const h = box.getBoundingClientRect();
+    g.classList.add('ghost');
+    g.classList.remove('dragging', 'lifted');
+    g.removeAttribute('title');
+    Object.assign(g.style, {
+      position: 'absolute', left: (p.r.left - h.left + box.scrollLeft) + 'px', top: (p.r.top - h.top + box.scrollTop) + 'px',
+      width: p.r.width + 'px', height: p.r.height + 'px', margin: '0', flex: 'none', minWidth: '0', maxWidth: 'none', transform: '', transition: '',
+    });
+    box.appendChild(g);
+    let a;
+    if (to) {
+      const c = center(p.r), d = center(to);
+      a = anim(g, [{ transform: 'none', opacity: 1 }, { transform: `translate(${d.x - c.x}px, ${d.y - c.y}px) scale(.3)`, opacity: 0 }], { ms: 260, easing: IN }, i * 45);
+    } else {
+      a = anim(g, [
+        { transform: 'none', opacity: 1 },
+        { transform: 'scale(1.15, .7)', opacity: 1, offset: .3 },
+        { transform: 'translateY(8px) scale(.05, .4)', opacity: 0 },
+      ], { ms: 260, easing: 'cubic-bezier(.6, 0, .8, .4)' });
+    }
+    a.onfinish = () => g.remove();
+  }
+  // 10E : l'icône pâlit (CSS) et deux « z » s'envolent.
+  function sleepFx(el) {
+    if (motion() !== 'full') return;
+    const r = el.querySelector('.dot').getBoundingClientRect();
+    if (!r.width) return;
+    [0, 1].forEach((i) => {
+      const z = document.createElement('span');
+      z.className = 'fx-z';
+      z.textContent = 'z';
+      Object.assign(z.style, { left: (r.right - 4) + 'px', top: (r.top - 2) + 'px', fontSize: (10 + i * 3) + 'px' });
+      document.body.appendChild(z);
+      anim(z, [{ transform: 'translate(0, 4px)', opacity: 0 }, { opacity: 1, offset: .25 }, { transform: `translate(${6 + i * 4}px, ${-8 - i * 4}px)`, opacity: 0 }], { ms: 1000, easing: 'ease-out' }, i * 220).onfinish = () => z.remove();
+    });
+  }
+  // 10A : l'étoile (dans l'onglet, le bandeau, la palette, ou le bouton des favoris) rebondit et éclate.
+  function favoriteFx(tab, el) {
+    if (motion() !== 'full') return;
+    const shown = (b) => b && b.getClientRects().length;
+    let star = el && tab.active && el.querySelector('.star');
+    if (!shown(star)) star = $('b-star');
+    if (!shown(star)) star = mode === 'bar' ? $('star') : null;
+    if (!shown(star)) star = $('lib-bookmarks');
+    if (!shown(star)) return;
+    star.classList.add('gold');
+    setTimeout(() => star.classList.remove('gold'), 1200);
+    anim(star, [{ transform: 'scale(.55) rotate(-25deg)' }, { transform: 'none' }], BOUNCE);
+    ringAt(star, '#e8a317', 1.6);
+    const c = center(star.getBoundingClientRect());
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * Math.PI * 2 - Math.PI / 2, d = i % 2 ? 17 : 13;
+      const sp = document.createElement('i');
+      sp.className = 'fx-spark';
+      Object.assign(sp.style, { left: c.x + 'px', top: c.y + 'px', background: i % 2 ? 'var(--accent)' : '#e8a317' });
+      document.body.appendChild(sp);
+      anim(sp, [{ transform: 'translate(0, 0) scale(1.3)', opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px, ${Math.sin(a) * d}px) scale(0)`, opacity: 0 }], { ms: 520, easing: 'cubic-bezier(.15, .8, .3, 1)' }, 60).onfinish = () => sp.remove();
+    }
+  }
 
   function renderSidebar() {
     $('back').disabled = !state.can_back;
@@ -1656,6 +2155,7 @@
     pillsKey = key;
 
     const box = $('pills');
+    const before = measureTabs(box);
     box.textContent = '';
     const groups = new Map((state.groups || []).map((g) => [g.id, g]));
     let lastGroup = null;
@@ -1679,7 +2179,9 @@
       el.dataset.id = tab.id;
       el.setAttribute('role', 'button');
       el.setAttribute('aria-label', label(tab));
-      el.title = tabTitle(tab); // bulle : le titre de la page, et son état
+      // Bulle : le titre de la page, et son état. Là où l'interface passe devant
+      // la page, la fiche d'aperçu la remplace (voir `showTip`).
+      if (!state.overlay || canHover()) el.title = tabTitle(tab);
       el.innerHTML = '<span class="pc"><span class="dot"></span></span>' +
         '<button class="close" aria-label="Fermer l\'onglet">' +
         '<svg width="8" height="8" viewBox="0 0 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg></button>';
@@ -1718,7 +2220,9 @@
           inp.placeholder = 'Aller à, chercher, ou taper / pour une commande';
           inp.addEventListener('pointerdown', (e) => e.stopPropagation());
           inp.addEventListener('input', () => {
-            if (inp.value.startsWith('/')) { const v = inp.value; editing = false; openBar(v, true); }
+            // Ce qui est tapé passe dans la palette, pour les suggestions et les commandes.
+            const v = inp.value;
+            if (v.trim() && v !== (tab.home ? '' : tab.url)) { editing = false; typeInBar(v); }
           });
           inp.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
@@ -1782,6 +2286,7 @@
       el.addEventListener('pointerdown', (e) => startDrag(e, el, tab));
       box.appendChild(el);
     }
+    playTabs(before);
   }
 
   // Étiquette d'un groupe : un clic le replie ou l'ouvre, clic droit pour le menu.
@@ -1789,6 +2294,7 @@
     const el = document.createElement('div');
     const count = state.tabs.filter((t) => t.group === group.id).length;
     el.className = 'grp' + (group.collapsed ? ' collapsed' : '');
+    el.dataset.g = group.id;
     el.style.setProperty('--g', group.color);
     el.innerHTML = '<span class="n"></span><span class="c"></span>';
     el.querySelector('.n').textContent = group.name;
@@ -1842,7 +2348,7 @@
     if (!isTop() || !tab) return false;
     editing = true;
     renderSidebar();
-    const inp = document.querySelector('.tab.active .urlinput');
+    const inp = document.querySelector('.tab.active:not(.ghost) .urlinput');
     if (!inp) { editing = false; return false; }
     inp.value = text || (tab.home ? '' : tab.url);
     inp.focus();
@@ -1942,9 +2448,14 @@
     const top = isTop();
     const pos = top ? e.clientX : e.clientY;
     if (!drag.moved && Math.abs(pos - drag.y) < 6) return;
-    if (!drag.moved) { drag.moved = true; pillsKey = null; drag.el.classList.add('dragging'); drag.el.title = ''; }
+    if (!drag.moved) {
+      drag.moved = true; pillsKey = null; drag.el.classList.add('dragging'); drag.el.title = '';
+      hideTip();
+      // 4A : l'onglet se soulève, penché, et suit la souris.
+      if (motion() === 'full') { drag.el.classList.add('lifted'); anim(drag.el, [{ transform: 'none' }, { transform: lift(0, top) }], SNAP); }
+    }
     const box = $('pills');
-    const others = [...box.querySelectorAll('.tab')].filter((el) => el !== drag.el);
+    const others = [...box.querySelectorAll('.tab:not(.ghost)')].filter((el) => el !== drag.el);
     // La position du pointeur s'appelait « c », comme l'onglet comparé : on comparait
     // donc un élément à un nombre (toujours faux) et l'onglet partait toujours à la fin.
     const before = others.find((el) => {
@@ -1952,9 +2463,25 @@
       return top ? pos < r.left + r.width / 2 : pos < r.top + r.height / 2;
     });
     drag.before = before ? Number(before.dataset.id) : null;
-    if (before) { if (drag.el.nextSibling !== before) box.insertBefore(drag.el, before); }
-    else if (box.lastChild !== drag.el) box.appendChild(drag.el);
+    const moves = before ? drag.el.nextSibling !== before : box.lastChild !== drag.el;
+    // Les autres onglets s'écartent en glissant au lieu de sauter.
+    const was = moves && motion() === 'full' ? new Map(others.map((el) => [el, el.getBoundingClientRect()])) : null;
+    if (moves) box.insertBefore(drag.el, before || null);
+    if (was) {
+      for (const [el, r] of was) {
+        const n = el.getBoundingClientRect();
+        const dx = r.left - n.left, dy = r.top - n.top;
+        if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) anim(el, [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], SNAP);
+      }
+    }
+    if (drag.el.classList.contains('lifted')) {
+      for (const a of drag.el.getAnimations()) a.cancel();
+      drag.el.style.transform = '';
+      const r = drag.el.getBoundingClientRect();
+      drag.el.style.transform = lift(pos - (top ? r.left + r.width / 2 : r.top + r.height / 2), top);
+    }
   });
+  const lift = (d, top) => (top ? `translateX(${d}px)` : `translateY(${d}px)`) + ' translateY(-3px) scale(1.06) rotate(-2.5deg)';
   const endDrag = () => {
     if (!drag) return;
     const { tab, moved, onTitle, before } = drag;
@@ -1964,6 +2491,11 @@
       const rest = state.tabs.filter((t) => t.id !== tab.id).map((t) => t.id);
       const at = before == null ? -1 : rest.indexOf(before);
       send({ type: 'move_tab', id: tab.id, index: at < 0 ? rest.length : at });
+      // La liste est redessinée par le nouvel état (l'onglet y retombe en rebond, voir
+      // `playTabs`) ; la redessiner tout de suite, dans l'ancien ordre, le faisait sauter.
+      dropped = tab.id;
+      setTimeout(() => { if (!drag && pillsKey === null) renderSidebar(); }, 400);
+      return;
     } else if (tab.active && onTitle && isTop()) {
       startEdit();
       return;
@@ -2007,6 +2539,20 @@
           closeBar(false);
           send(newTab ? { type: 'navigate', input: p.url, new_tab: true } : { type: 'open_url', url: p.url, new_tab: false });
         } }));
+      // Puis les recherches proposées par le moteur. Celles d'un texte plus
+      // court restent affichées tant qu'elles commencent par ce qui est tapé :
+      // la liste ne clignote pas entre deux réponses.
+      const typed = raw.toLowerCase();
+      const fresh = engineSugg.query.toLowerCase() === typed;
+      const engine = ($('s-engine').querySelector(`option[value="${state.settings.search_engine || 'duckduckgo'}"]`) || {}).textContent || '';
+      for (const q of engineSugg.items) {
+        if (!fresh && !q.toLowerCase().startsWith(typed)) continue;
+        matches.push({ name: q, desc: engine, search: true, run: () => {
+          const newTab = searchNewTab();
+          closeBar(false);
+          send({ type: 'navigate', input: q, new_tab: newTab });
+        } });
+      }
       if (selected >= matches.length) selected = -1;
     }
     const ul = $('command-list');
@@ -2014,9 +2560,9 @@
     matches.forEach((c, i) => {
       const li = document.createElement('li');
       if (i === selected) li.className = 'selected';
-      li.innerHTML = (c.bookmark ? '<span class="mark">★</span>' : '') + '<span class="name"></span><span class="desc"></span>';
+      li.innerHTML = (c.bookmark ? '<span class="mark">★</span>' : c.search ? LOUPE : '') + '<span class="name"></span><span class="desc"></span>';
       li.querySelector('.name').textContent = c.name;
-      li.querySelector('.name').classList.toggle('page', !!c.page);
+      li.querySelector('.name').classList.toggle('page', !!(c.page || c.search));
       li.querySelector('.desc').textContent = c.page ? host(c.desc) : c.desc;
       li.addEventListener('mousedown', (e) => { e.preventDefault(); runCommand(c); });
       ul.appendChild(li);
@@ -2029,7 +2575,7 @@
   function placePalette() {
     if (mode !== 'bar' || !document.body.classList.contains('anchored')) return;
     const box = $('overlay');
-    const pill = document.querySelector('#pills .tab.active');
+    const pill = document.querySelector('#pills .tab.active:not(.ghost)');
     const r = pill && pill.getBoundingClientRect();
     const center = r && r.height ? r.top + r.height / 2 : 64;
     const h = box.offsetHeight;
@@ -2066,8 +2612,23 @@
   function requestSuggestions() {
     clearTimeout(suggestTimer);
     const text = input.value.trim();
-    if (!text || text.startsWith('/')) { suggestions = []; return; }
+    if (!text || text.startsWith('/')) { suggestions = []; engineSugg = { query: '', items: [] }; return; }
     suggestTimer = setTimeout(() => send({ type: 'suggest', query: text }), 60);
+  }
+  // Petite loupe devant une recherche proposée par le moteur.
+  const LOUPE = '<svg class="mark q" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+
+  // Un texte tapé ailleurs (adresse de la barre, page d'accueil) passe dans la
+  // palette, curseur à la fin, avec les suggestions.
+  function typeInBar(text) {
+    // Touches arrivées avant que la palette ait pris la main : elles suivent le texte déjà là.
+    if (mode === 'bar' && !searchOnly) text = input.value + text;
+    openBar(text, true);
+    $('bar-acts').classList.remove('on');
+    input.setSelectionRange(text.length, text.length);
+    selected = text.trim().startsWith('/') ? 0 : -1;
+    requestSuggestions();
+    renderCommands();
   }
 
   // Ouvre la barre par-dessus la page, avec l'adresse actuelle (ou un texte donné).
@@ -2096,6 +2657,7 @@
     input.value = text || (!searchOnly && tab && !tab.home ? tab.url : '');
     selected = 0;
     suggestions = [];
+    engineSugg = { query: '', items: [] };
     showResult(null);
     renderCommands();
     requestPreview();
@@ -2110,6 +2672,7 @@
     searchOnly = false;
     input.value = '';
     suggestions = [];
+    engineSugg = { query: '', items: [] };
     showResult(null);
     renderCommands();
     setMode(null);
@@ -2117,7 +2680,7 @@
   }
 
   function runCommand(c) {
-    if (c.native || c.page) { c.run(); return; }
+    if (c.native || c.page || c.search) { c.run(); return; }
     closeBar(c.name !== '/parametres' && c.name !== '/chercher' && c.name !== '/extensions');
     c.run();
   }
@@ -2141,6 +2704,7 @@
     const set = (id, v) => { if ($(id) !== active) $(id).value = v; };
     set('s-name', s.name || '');
     $('s-engine').value = s.search_engine || 'duckduckgo';
+    $('s-suggest').checked = s.search_suggestions !== false;
     set('s-home', s.home_page || '');
     $('s-autoupdate').checked = s.auto_update_check !== false;
     $('s-history').value = String(s.history_days ?? 90);
@@ -2159,6 +2723,7 @@
     choose('s-startup', s.startup || 'home');
     choose('s-searchtab', s.search_new_tab ? 'new' : 'active');
     choose('s-theme', s.theme || 'auto');
+    choose('s-anim', s.animations || 'full');
     choose('s-pos', s.bar_position || 'left');
     choose('s-style', s.sidebar_style || 'palette');
     const top = (s.bar_position || 'left') === 'top';
@@ -2179,10 +2744,19 @@
   const choose = (id, value) => { for (const b of $(id).children) b.classList.toggle('on', b.dataset.value === value); };
   const chosen = (id) => { const b = $(id).querySelector('.on'); return b ? b.dataset.value : undefined; };
   function showCat(cat) {
+    const old = document.querySelector('.navbtn.on');
+    const from = mode === 'settings' && old && old.dataset.cat !== cat ? old.getBoundingClientRect() : null;
     setCat = cat;
     for (const b of document.querySelectorAll('.navbtn')) b.classList.toggle('on', b.dataset.cat === cat && !$('s-search').value.trim());
     for (const sec of document.querySelectorAll('.set-body section')) sec.classList.toggle('on', sec.dataset.cat === cat);
     $('set-body').scrollTop = 0;
+    // 7A : le fond de la catégorie glisse jusqu'à la nouvelle, son contenu arrive en cascade.
+    const now = document.querySelector('.navbtn.on');
+    if (!from || !now) return;
+    bubble(document.querySelector('.set-nav'), from, now.getBoundingClientRect(), now, 'navb', SNAP, [1, 1.25]);
+    const dir = now.getBoundingClientRect().top > from.top ? 1 : -1;
+    const sec = document.querySelector('.set-body section.on');
+    if (sec) cascade([...sec.children], [{ transform: `translateY(${dir * 16}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP, 26);
   }
   // Vue d'ensemble : une carte par catégorie, avec son réglage principal.
   function renderOverview() {
@@ -2279,6 +2853,7 @@
       auto_update_check: $('s-autoupdate').checked,
       startup: chosen('s-startup'),
       search_new_tab: chosen('s-searchtab') === 'new',
+      search_suggestions: $('s-suggest').checked,
       history_days: Number($('s-history').value),
       bookmarks_on_home: $('s-bmhome').checked,
       recent_on_home: $('s-recent').checked,
@@ -2290,6 +2865,7 @@
       index_exclude: $('s-index-ex').value.split(/[,\s]+/).filter(Boolean),
       sidebar_width: state.settings.sidebar_width,
       economy: $('s-economy').checked,
+      animations: chosen('s-anim'),
     };
     state.settings = Object.assign({}, state.settings, settings);
     applyTheme(settings.theme);
@@ -2393,7 +2969,7 @@
   });
   input.addEventListener('keydown', (e) => {
     if (matches.length) {
-      const first = matches[0].page ? -1 : 0;
+      const first = matches[0].page || matches[0].search ? -1 : 0;
       const span = matches.length - first;
       if (e.key === 'ArrowDown') { selected = (selected - first + 1) % span + first; renderCommands(); e.preventDefault(); return; }
       if (e.key === 'ArrowUp') { selected = (selected - first - 1 + span) % span + first; renderCommands(); e.preventDefault(); return; }
@@ -2508,12 +3084,7 @@
       if (!text.trim()) return;
       inp.value = '';
       renderAddr(activeTab());
-      openBar(text, true);
-      $('bar-acts').classList.remove('on');
-      input.setSelectionRange(text.length, text.length);
-      selected = text.trim().startsWith('/') ? 0 : -1;
-      requestSuggestions();
-      renderCommands();
+      typeInBar(text);
     });
     inp.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -2539,7 +3110,7 @@
   // Barre au survol (et fil du mode concentration) : elle s'ouvre par-dessus la page.
   // Sous Linux, la page serait cachée : la barre reste fermée.
   let hoverTimer = 0;
-  const canHover = () => !isTop() && !!state.overlay && (sideStyle() === 'hover' || state.focus);
+  const canHover = () => !isTop() && !!state.overlay && !state.fullscreen && (sideStyle() === 'hover' || state.focus);
   // La barre se referme en 0,2 s (transition CSS) : on la laisse passer
   // par-dessus la page jusqu'à la fin, sinon l'animation serait coupée.
   let unhoverTimer = 0;
@@ -2604,6 +3175,8 @@
   }
   document.addEventListener('pointermove', (e) => {
     lastPointer = { x: e.clientX, y: e.clientY };
+    if (mode === 'tip') tipAt(e.clientX, e.clientY);
+    if (mode === 'peek') peekAt(e.clientX, e.clientY);
     if (!hoverOpen()) return;
     if (pointerOnBar()) stayOpen(); else leaveSoon();
   }, true);
@@ -2614,6 +3187,8 @@
   function nativePointer(x, y) {
     if (hot && (x == null || !onResizer(x, y))) resizerHot(false);
     lastPointer = x == null ? null : { x, y };
+    if (mode === 'tip') { if (x == null) hideTip(); else tipAt(x, y); }
+    if (document.body.classList.contains('fs')) peekAt(x, y);
     if (!hoverOpen()) return;
     if (pointerOnBar()) stayOpen(); else leaveSoon();
   }
@@ -2628,6 +3203,147 @@
     lastPointer = { x: e.clientX, y: e.clientY };
     if (hoverOpen()) leaveSoon();
   });
+  // --- 9A · Plein écran : la barre s'envole, et revient par le bord ---
+  // Les boutons et les onglets partent en cascade vers le bord, puis Rust
+  // agrandit la page à toute la fenêtre (bar_hidden). Au retour, Rust rend
+  // tout de suite sa place à la barre, et ils reviennent avec un rebond.
+  // Sous Linux, l'interface ne passe pas devant la page : la barre reste
+  // (Rust n'envoie jamais `fullscreen`).
+  let fullscreen = false;
+  let fsTimer = 0;
+  // Ce qui s'envole : boutons, onglets et groupes, sans leur contenu.
+  function barItems() {
+    const els = [...$('sidebar').querySelectorAll('button, .tab:not(.ghost), .grp')].filter((e) => e.getClientRects().length);
+    const top = els.filter((e) => !els.some((o) => o !== e && o.contains(e)));
+    const key = isTop() ? (r) => r.left : (r) => r.top;
+    return top.map((e) => [e, key(e.getBoundingClientRect())]).sort((a, b) => a[1] - b[1]).map((p) => p[0]);
+  }
+  function flyAway() {
+    clearTimeout(fsTimer);
+    if (hoverOpen()) endHover(true);
+    if (mode === 'tip') hideTip();
+    const els = barItems();
+    const m = motion();
+    let ms = 0;
+    if (m !== 'off') {
+      cascade(els, [{ transform: 'none', opacity: 1 }, { transform: awayShift('40px'), opacity: 0 }], { ms: 220, easing: IN }, 14);
+      ms = m === 'full' ? 220 + Math.min(els.length - 1, 12) * 14 : 140;
+    }
+    fsTimer = setTimeout(() => {
+      if (!state.fullscreen) return;
+      document.body.classList.add('fs');
+      for (const e of els) for (const a of e.getAnimations()) a.cancel();
+      send({ type: 'bar_hidden', hidden: true });
+    }, ms);
+  }
+  function flyBack() {
+    clearTimeout(fsTimer);
+    clearTimeout(peekTimer);
+    peekTimer = 0;
+    if (mode === 'peek') setMode(null);
+    document.body.classList.remove('fs');
+    const els = barItems();
+    for (const e of els) for (const a of e.getAnimations()) a.cancel();
+    cascade(els, [{ transform: awayShift('40px'), opacity: 0 }, { transform: 'none', opacity: 1 }], BOUNCE, 18);
+  }
+  // La souris touche le bord de la barre : elle revient par-dessus la page,
+  // et repart 0,4 s après que la souris l'a quittée.
+  let peekTimer = 0;
+  function atEdge(x, y) {
+    const pos = document.body.dataset.pos || 'left';
+    if (pos === 'top') return y <= 2;
+    return pos === 'right' ? x >= innerWidth - 3 : x <= 2;
+  }
+  function peekAt(x, y) {
+    if (mode === null && x != null && atEdge(x, y)) { setMode('peek'); return; }
+    if (mode !== 'peek') return;
+    if (x != null && pointerOnBar()) { clearTimeout(peekTimer); peekTimer = 0; return; }
+    if (peekTimer) return;
+    peekTimer = setTimeout(() => {
+      peekTimer = 0;
+      if (mode === 'peek' && !pointerOnBar() && !drag && document.activeElement !== $('side-input')) setMode(null);
+    }, 400);
+  }
+
+  // --- 3B · Fiche d'aperçu de l'onglet survolé ---
+  // Elle passe par-dessus la page (mode 'tip'), donc seulement là où l'interface
+  // sait le faire : sous Linux, la bulle du système reste. Elle glisse d'un
+  // onglet à l'autre tant que la souris reste sur la barre.
+  const tipOk = () => !!state.overlay && !canHover();
+  let tipTab = null;
+  let tipTimer = 0;
+  const tabEl = (id) => (id == null ? null : $('pills').querySelector(`.tab:not(.ghost)[data-id="${id}"]`));
+  function tipEnter(el) {
+    if (!tipOk() || drag || editing || (mode !== null && mode !== 'tip')) return;
+    const id = Number(el.dataset.id);
+    if (tipTab === id) return;
+    tipTab = id;
+    clearTimeout(tipTimer);
+    if (mode === 'tip') showTip(el);
+    else tipTimer = setTimeout(() => { const e = tabEl(tipTab); if (e && mode === null && !drag) showTip(e); }, 450);
+  }
+  function hideTip() {
+    clearTimeout(tipTimer);
+    tipTab = null;
+    if (mode === 'tip') setMode(null);
+  }
+  // Souris ailleurs que sur un onglet : la fiche s'en va.
+  function tipAt(x, y) {
+    if (tipTab == null) return;
+    const hit = [...$('pills').querySelectorAll('.tab:not(.ghost)')].find((el) => {
+      const r = el.getBoundingClientRect();
+      return x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+    });
+    if (hit) tipEnter(hit); else hideTip();
+  }
+  function showTip(el) {
+    const t = state.tabs.find((x) => x.id === Number(el.dataset.id));
+    if (!t) return;
+    const card = $('tipcard');
+    const first = mode !== 'tip';
+    const old = first ? null : card.getBoundingClientRect();
+    const [title, ...rest] = tabTitle(t).split('\n');
+    $('tip-t').textContent = title;
+    $('tip-u').textContent = t.home ? '' : host(t.url);
+    $('tip-m').textContent = rest.join(' · ');
+    $('tip-m').classList.toggle('zz', !!t.asleep);
+    if (first) setMode('tip');
+    // Sous l'onglet (barre en haut) ou à côté de la colonne, sans sortir de la fenêtre.
+    const r = el.getBoundingClientRect();
+    const w = card.offsetWidth, h = card.offsetHeight;
+    const pos = document.body.dataset.pos || 'left';
+    let x, y;
+    if (pos === 'top') {
+      x = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 8));
+      y = r.bottom + 10;
+      $('tip-arr').style.left = Math.round(r.left + r.width / 2 - x - 7) + 'px';
+      $('tip-arr').style.top = '';
+    } else {
+      const s = $('sidebar').getBoundingClientRect();
+      x = pos === 'right' ? s.left - w - 10 : s.right + 10;
+      y = Math.max(8, Math.min(r.top + r.height / 2 - h / 2, innerHeight - h - 8));
+      $('tip-arr').style.top = Math.round(r.top + r.height / 2 - y - 7) + 'px';
+      $('tip-arr').style.left = '';
+    }
+    card.dataset.side = pos;
+    card.style.left = Math.round(x) + 'px';
+    card.style.top = Math.round(y) + 'px';
+    queueShape();
+    if (first) {
+      card.style.transformOrigin = pos === 'top' ? '50% 0' : pos === 'right' ? '100% 50%' : '0 50%';
+      anim(card, [{ transform: pos === 'top' ? 'translateY(-8px) scale(.92)' : 'scale(.92)', opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP);
+    } else {
+      const n = card.getBoundingClientRect();
+      anim(card, [{ transform: `translate(${old.left - n.left}px, ${old.top - n.top}px)` }, { transform: 'none' }], SNAP);
+      anim($('tip-in'), [{ opacity: 0 }, { opacity: 1 }], 140);
+    }
+  }
+  $('pills').addEventListener('pointerover', (e) => {
+    const el = e.target.closest('.tab');
+    if (el && !el.classList.contains('ghost')) tipEnter(el);
+  });
+  $('pills').addEventListener('pointerleave', hideTip);
+
   $('reader-pill').addEventListener('click', () => send({ type: 'reader' }));
   $('reader-btn').addEventListener('mousedown', (e) => e.preventDefault());
   $('reader-btn').addEventListener('click', () => { closeBar(false); send({ type: 'reader' }); });
@@ -2921,7 +3637,7 @@
   $('new-tab').addEventListener('click', () => send({ type: 'new_tab' }));
 
   // --- Paramètres ---
-  for (const id of ['s-theme', 's-pos', 's-style', 's-startup', 's-searchtab']) {
+  for (const id of ['s-theme', 's-pos', 's-style', 's-startup', 's-searchtab', 's-anim']) {
     for (const b of $(id).children) b.addEventListener('click', () => {
       // Nouveau style de barre : elle reprend sa largeur d'origine (la plus
       // étroite, ou celle de la barre large), même après un élargissement à la main.
@@ -2938,7 +3654,7 @@
   for (const q of document.querySelectorAll('#ov-quick input')) {
     q.addEventListener('change', () => { $(q.dataset.for).checked = q.checked; saveSettings(); renderOverview(); });
   }
-  for (const id of ['s-engine', 's-history', 's-sleep', 's-bmhome', 's-recent', 's-trackers', 's-ads', 's-index', 's-economy', 's-autoupdate']) {
+  for (const id of ['s-engine', 's-suggest', 's-history', 's-sleep', 's-bmhome', 's-recent', 's-trackers', 's-ads', 's-index', 's-economy', 's-autoupdate']) {
     $(id).addEventListener('change', saveSettings);
   }
   // Champs de texte : enregistrés en quittant le champ ou avec Entrée.
@@ -2988,6 +3704,8 @@
     if (mode === 'bar') closeBar(false);
     if (mode === 'site' || mode === 'group' || mode === 'import') setMode(null);
     stopEdit();
+    libSlide = mode === 'library' ? Math.sign(LIB_KINDS.indexOf(kind) - LIB_KINDS.indexOf(libKind)) : 0;
+    if (libSlide) anim($('lib-title'), [{ transform: `translateX(${libSlide * 16}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP);
     libKind = kind;
     const info = LIB_PANELS[kind];
     $('lib-title').innerHTML = $('lib-' + kind).innerHTML;
@@ -3194,7 +3912,20 @@
     b.textContent = 'Endormir les onglets cachés';
   }
 
+  // Autre menu de la bibliothèque, même fenêtre : les lignes glissent dans le
+  // sens des boutons (6B). `libSlide` : -1, 1, ou 0 (rien).
+  let libSlide = 0;
+  let libFresh = false;   // les lignes viennent d'arriver de Rust
   function renderLibrary() {
+    renderLibraryList();
+    // Favoris et historique : on attend les lignes envoyées par Rust.
+    const ready = LOCAL_KINDS.includes(libKind) || libFresh;
+    libFresh = false;
+    if (!libSlide || !ready || !$('lib-list').children.length) return;
+    cascade([...$('lib-list').children], [{ transform: `translateX(${libSlide * 24}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], SNAP, 22);
+    libSlide = 0;
+  }
+  function renderLibraryList() {
     const list = $('lib-list');
     list.textContent = '';
     const q = $('lib-search').value.trim().toLowerCase();
@@ -3258,11 +3989,18 @@
     el.classList.toggle('ring', p != null);
     if (p != null) el.style.setProperty('--p', String(p));
   }
+  let dlWasBusy = false;
   function renderDownloadsButton() {
     const dls = state.downloads || [];
     const b = $('lib-downloads');
     const running = dls.filter((d) => d.state === 'progress');
     const busy = running.length > 0;
+    // Téléchargement fini : le bouton rebondit dans un anneau vert.
+    if (dlWasBusy && !busy && dls.some((d) => d.state === 'done')) {
+      anim(b, [{ transform: 'scale(.75)' }, { transform: 'none' }], BOUNCE);
+      ringAt(b, '#2f9e5b', 1.35);
+    }
+    dlWasBusy = busy;
     b.classList.toggle('busy', busy);
     b.classList.toggle('fresh', !busy && dls.filter((d) => d.state !== 'progress').length > seenDownloads);
     const sized = running.filter((d) => d.total && d.received != null);
@@ -3288,8 +4026,41 @@
       seenIds.add(d.id);
       if (d.state === 'progress') fresh = true;
     }
-    if (fresh && dlPopReady && state.overlay && mode === null) openDlPop();
+    if (fresh && dlPopReady && state.overlay && mode === null) {
+      openDlPop();
+      const d = dls.find((d) => d.state === 'progress');
+      if (d && mode === 'dlpop') flyDownload(d.name);
+    }
     dlPopReady = true;
+  }
+  // 10B : le fichier part du milieu de la page et file en arc vers le bouton, qui rebondit.
+  function flyDownload(name) {
+    const b = $('lib-downloads');
+    const to = b.getBoundingClientRect();
+    if (motion() !== 'full' || !to.width) return;
+    const chip = document.createElement('div');
+    chip.className = 'fx-file';
+    chip.innerHTML = '<i></i><span></span>';
+    chip.querySelector('span').textContent = name;
+    document.body.appendChild(chip);
+    const w = chip.offsetWidth, h = chip.offsetHeight;
+    const x0 = innerWidth / 2 - w / 2, y0 = innerHeight * .45 - h / 2;
+    Object.assign(chip.style, { left: x0 + 'px', top: y0 + 'px' });
+    const dx = to.left + to.width / 2 - (x0 + w / 2), dy = to.top + to.height / 2 - (y0 + h / 2);
+    shapeFor(union({ left: x0, top: y0, right: x0 + w, bottom: y0 + h }, { left: to.left, top: Math.max(0, to.top - 70), right: to.right, bottom: to.bottom }), 1300);
+    anim(chip, [{ transform: 'scale(.6)', opacity: 0 }, { transform: 'none', opacity: 1 }], BOUNCE);
+    // Un arc : la trajectoire monte un peu avant de retomber sur le bouton.
+    const arc = [];
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8;
+      arc.push({ transform: `translate(${dx * t}px, ${dy * t - 70 * 4 * t * (1 - t)}px) scale(${1 - .75 * t})`, opacity: i === 8 ? .5 : 1 });
+    }
+    setTimeout(() => {
+      anim(chip, arc, { ms: 620, easing: 'cubic-bezier(.45, 0, .55, 1)', fill: 'forwards' }).onfinish = () => {
+        chip.remove();
+        anim(b, [{ transform: 'scale(.75)' }, { transform: 'none' }], BOUNCE);
+      };
+    }, 480);
   }
   function placeDlPop() {
     const r = $('lib-downloads').getBoundingClientRect();
@@ -3639,6 +4410,10 @@
     applyPos(state.settings.bar_position);
     applyStyle();
     document.body.classList.toggle('focus', !!state.focus && !isTop());
+    if (!!state.fullscreen !== fullscreen) {
+      fullscreen = !!state.fullscreen;
+      if (fullscreen) flyAway(); else flyBack();
+    }
     if (!canHover()) endHover();
     if (!resize) applySide(state.settings.sidebar_width);
     // Autre onglet affiché : la recherche dans la page se ferme.
@@ -3678,6 +4453,7 @@
     setLibrary(data) {
       if (mode !== 'library' || data.kind !== libKind) return;
       libItems = data.items || [];
+      libFresh = true;
       renderLibrary();
     },
     openBar,
@@ -3706,6 +4482,15 @@
       selected = -1;
       renderCommands();
     },
+    // Réponse du moteur : ignorée si le texte a changé entre-temps et ne la prolonge plus.
+    setEngineSuggestions(data) {
+      if (mode !== 'bar') return;
+      const typed = input.value.trim().toLowerCase();
+      if (!typed || !typed.startsWith(data.query.toLowerCase())) return;
+      engineSugg = { query: data.query, items: data.items || [] };
+      renderCommands();
+    },
+    typeInBar,
     setCommandResult(r) {
       if (mode !== 'bar') return;
       if (r && !r.run && !isNative(input.value)) return;
