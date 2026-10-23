@@ -20,6 +20,7 @@ use crate::reader::{self, Article};
 use crate::siteclear;
 use crate::sitedata::Permission;
 use crate::softsleep;
+use crate::suggest;
 use crate::tab_manager::TabId;
 use crate::ui::{CosmeticRequest, ImageHow, PageMetrics, PermissionRequest};
 use crate::update;
@@ -114,6 +115,16 @@ impl App {
         };
         let data = json!({ "query": query, "items": items });
         self.chrome_call(&format!("navigateur.setSuggestions({data})"));
+        // Les suggestions du moteur suivent, si le réglage le permet et jamais
+        // depuis un onglet privé.
+        let private = self.tabs.active().is_some_and(|t| t.private);
+        let (on, engine) = {
+            let s = self.settings();
+            (s.search_suggestions, s.search_engine)
+        };
+        if on && !private && suggest::worth_asking(query) {
+            suggest::request(&self.proxy, engine, query.trim());
+        }
     }
 
     /// Commande native de la barre : aperçu pendant la frappe, ou exécution.
