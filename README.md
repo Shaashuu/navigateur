@@ -245,6 +245,14 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   est à 15 minutes par défaut. Un bouton d'accueil apparaît, l'utilisation de la
   mémoire s'affiche en direct, et la pastille à la loupe ouvre une recherche au
   milieu de la page (dans l'onglet actif ou un nouvel onglet, au choix).
+- **Nouveau en 0.6.1** : la page Paramètres est réorganisée. Le menu est
+  rangé en sections (Navigation, Légèreté, Confidentialité, Feather), chaque
+  catégorie avec son icône, et une carte de version en bas du menu indique
+  si une mise à jour attend. Les réglages sont regroupés sur des cartes
+  titrées, et la recherche masque celles qui ne contiennent rien. Dans
+  Apparence, un aperçu en direct de l'accueil montre aussitôt le thème, la
+  position et le style de la barre ; « Dernier changement » permet
+  d'annuler le dernier réglage modifié, quelle que soit sa catégorie.
 - **Nouveau en 0.6.0** : les paramètres s'ouvrent en pleine page, à la
   place de la page et avec un texte plus grand. Sur l'accueil, les vignettes
   de favoris se déplacent en les glissant. La barre d'adresse propose les
