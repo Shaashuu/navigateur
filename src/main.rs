@@ -10,6 +10,7 @@
 //! les commandes natives, la mise en veille et le suivi des téléchargements.
 
 mod adblock;
+mod archive;
 mod banc;
 mod capture;
 mod commands;

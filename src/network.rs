@@ -242,14 +242,12 @@ mod tests {
     fn outils_par_chemin_complet() {
         #[cfg(windows)]
         {
-            for name in ["curl", "tar"] {
-                let path = system_program(name);
-                assert!(path.is_absolute(), "{path:?}");
-                assert_eq!(path.file_name().and_then(|n| n.to_str()), Some(format!("{name}.exe").as_str()));
-                let dir = path.parent().and_then(|d| d.file_name()).and_then(|d| d.to_str()).unwrap_or("");
-                assert!(dir.eq_ignore_ascii_case("system32"), "{path:?}");
-                assert!(path.exists(), "{path:?}");
-            }
+            let curl = system_program("curl");
+            assert!(curl.is_absolute(), "{curl:?}");
+            assert_eq!(curl.file_name().and_then(|n| n.to_str()), Some("curl.exe"));
+            let dir = curl.parent().and_then(|d| d.file_name()).and_then(|d| d.to_str()).unwrap_or("");
+            assert!(dir.eq_ignore_ascii_case("system32"), "{curl:?}");
+            assert!(curl.exists(), "{curl:?}");
             let explorer = system_program("explorer");
             assert!(explorer.is_absolute() && explorer.ends_with("explorer.exe") && explorer.exists(), "{explorer:?}");
         }
