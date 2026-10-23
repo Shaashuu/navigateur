@@ -348,6 +348,8 @@ pub struct PageMessage {
     /// Texte tapé dans la recherche de l'accueil : il passe dans la barre
     /// (« / » : ses commandes ; sinon les suggestions).
     pub open_bar: Option<String>,
+    /// Nouvel ordre des vignettes de favoris, après un glisser-déposer sur l'accueil.
+    pub reorder_bookmarks: Option<Vec<String>>,
     /// La page joue du son (ou vient d'arrêter).
     pub audible: Option<bool>,
     /// Envoyé avec `audible` : une vidéo de la page joue, mais sans son (voir `Tab::busy`).
@@ -412,12 +414,13 @@ impl PageMessage {
 
     /// Ce qu'on garde d'un message sans la clé de l'onglet, donc écrit par un script
     /// du site ou par un script que Feather lance à la demande : la barre de
-    /// recherche de l'accueil (vérifiée ensuite : seulement sur l'accueil) et
+    /// recherche et les vignettes de l'accueil (vérifiées ensuite : seulement sur l'accueil) et
     /// l'article du mode lecture (seulement après un clic sur le bouton livre).
     pub fn from_untrusted(self) -> Self {
         Self {
             navigate: self.navigate,
             open_bar: self.open_bar,
+            reorder_bookmarks: self.reorder_bookmarks,
             reader: self.reader,
             reader_failed: self.reader_failed,
             ..Self::default()

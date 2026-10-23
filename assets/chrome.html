@@ -2543,7 +2543,14 @@
       for (const a of drag.el.getAnimations()) a.cancel();
       drag.el.style.transform = '';
       const r = drag.el.getBoundingClientRect();
-      drag.el.style.transform = lift(pos - (top ? r.left + r.width / 2 : r.top + r.height / 2), top);
+      // L'onglet reste dans la liste : au-delà, la liste le coupait et il semblait
+      // passer sous les boutons voisins (accueil, flèches, +). Le pointeur peut
+      // aller plus loin, l'onglet s'arrête au bord (et se pose en premier ou en dernier).
+      const b = box.getBoundingClientRect();
+      const half = (top ? r.width : r.height) / 2 * 1.06 + 3;
+      const lo = (top ? b.left : b.top) + half, hi = (top ? b.right : b.bottom) - half;
+      const at = lo < hi ? Math.min(hi, Math.max(lo, pos)) : pos;
+      drag.el.style.transform = lift(at - (top ? r.left + r.width / 2 : r.top + r.height / 2), top);
     }
   });
   const lift = (d, top) => (top ? `translateX(${d}px)` : `translateY(${d}px)`) + ' translateY(-3px) scale(1.06) rotate(-2.5deg)';

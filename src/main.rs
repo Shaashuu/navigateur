@@ -1107,6 +1107,16 @@ impl App {
                 self.show_loading(Some(id));
             }
         }
+        if let Some(order) = message.reorder_bookmarks {
+            // La page déplacée a déjà ses vignettes dans le nouvel ordre : on ne
+            // recharge que les autres onglets d'accueil.
+            if let Ok(mut lib) = self.library.write() {
+                lib.reorder_bookmarks(&order);
+            }
+            for w in self.tabs.home_tabs().filter(|t| t.id != id).filter_map(|t| t.webview()) {
+                let _ = w.reload();
+            }
+        }
         if let Some(text) = message.open_bar {
             // « / » ouvre les commandes ; un autre texte passe dans la barre,
             // qui propose alors les suggestions pendant la frappe.

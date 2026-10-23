@@ -237,6 +237,33 @@ impl Library {
         self.bookmarks_changed = true;
     }
 
+    /// Nouvel ordre des vignettes de la page d'accueil (glisser-déposer). Seuls
+    /// les favoris cités changent de place, entre eux : ils reprennent les cases
+    /// qu'ils occupaient, dans l'ordre donné. Les autres (au-delà des vignettes
+    /// affichées) ne bougent pas. Une liste qui ne correspond pas aux favoris
+    /// (adresse inconnue, doublon) est ignorée.
+    pub fn reorder_bookmarks(&mut self, order: &[String]) {
+        let slots: Vec<usize> =
+            self.bookmarks.iter().enumerate().filter(|(_, b)| order.contains(&b.url)).map(|(i, _)| i).collect();
+        if slots.len() != order.len() || slots.len() < 2 {
+            return;
+        }
+        let mut moved = Vec::with_capacity(order.len());
+        for url in order {
+            match self.bookmarks.iter().position(|b| &b.url == url) {
+                Some(i) if !moved.contains(&i) => moved.push(i),
+                _ => return,
+            }
+        }
+        let picked: Vec<Bookmark> = moved.iter().map(|&i| self.bookmarks[i].clone()).collect();
+        let mut changed = false;
+        for (slot, b) in slots.into_iter().zip(picked) {
+            changed |= self.bookmarks[slot].url != b.url;
+            self.bookmarks[slot] = b;
+        }
+        self.bookmarks_changed |= changed;
+    }
+
     /// Les favoris, le plus récent en premier, filtrés par le texte cherché.
     pub fn search_bookmarks(&self, query: &str) -> Vec<&Bookmark> {
         let query = query.trim().to_lowercase();
@@ -317,6 +344,22 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].title, "Wikipédia");
         assert_eq!(lib.search_history("", 10)[0].url, "https://youtube.com/");
+    }
+
+    #[test]
+    fn favoris_remis_dans_l_ordre() {
+        let mut lib = Library::default();
+        for u in ["https://a.fr/", "https://b.fr/", "https://c.fr/", "https://d.fr/"] {
+            lib.toggle_bookmark(u, "", None);
+        }
+        let urls = |lib: &Library| lib.bookmarks().iter().map(|b| b.url.clone()).collect::<Vec<_>>();
+        // Seules les trois premières vignettes sont citées : « d » garde sa place.
+        lib.reorder_bookmarks(&["https://c.fr/".into(), "https://a.fr/".into(), "https://b.fr/".into()]);
+        assert_eq!(urls(&lib), ["https://c.fr/", "https://a.fr/", "https://b.fr/", "https://d.fr/"]);
+        // Adresse inconnue ou doublon : rien ne bouge.
+        lib.reorder_bookmarks(&["https://a.fr/".into(), "https://x.fr/".into()]);
+        lib.reorder_bookmarks(&["https://a.fr/".into(), "https://a.fr/".into()]);
+        assert_eq!(urls(&lib), ["https://c.fr/", "https://a.fr/", "https://b.fr/", "https://d.fr/"]);
     }
 
     #[test]
