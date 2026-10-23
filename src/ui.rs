@@ -556,8 +556,12 @@ pub enum Shortcut {
     Downloads,
     /// Ctrl+Maj+O (⌥⌘B sous macOS) : les favoris.
     Bookmarks,
-    /// F11 : plein écran (⌃⌘F sous macOS, par le menu Fenêtre).
+    /// F11 : plein écran (⌃⌘F sous macOS, par le menu Présentation).
     Fullscreen,
+    /// Menu Fichier (macOS) : importer des favoris d'un autre navigateur.
+    Import,
+    /// Menu Fenêtre (macOS) : la fenêtre des extensions.
+    Extensions,
 }
 
 impl Shortcut {
