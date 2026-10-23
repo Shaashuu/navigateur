@@ -23,6 +23,8 @@ mod import;
 mod layers;
 mod library;
 #[cfg(target_os = "macos")]
+mod mac_file;
+#[cfg(target_os = "macos")]
 mod mac_menu;
 #[cfg(target_os = "macos")]
 mod mac_mouse;
@@ -115,6 +117,9 @@ pub enum UserEvent {
     TimerDone { seconds: u64, label: String },
     /// Fin d'une capture de page : le fichier écrit (`None` : copiée), ou l'erreur.
     Captured(Result<Option<PathBuf>, String>),
+    /// Menu Fichier du Mac : la page enregistrée ou exportée en PDF (ou l'erreur).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Exported(Result<PathBuf, String>),
     /// Listes du bloqueur lues (ou leur état seul : téléchargement, erreur).
     AdFilters(Option<Box<adblock::Filters>>, adblock::Status),
     /// macOS : les listes compilées par WebKit sont prêtes à être posées sur les pages.
@@ -675,6 +680,7 @@ impl App {
             }
             UserEvent::TimerDone { seconds, label } => self.timer_done(seconds, &label),
             UserEvent::Captured(result) => self.captured(result),
+            UserEvent::Exported(result) => self.exported(result),
             UserEvent::AdFilters(filters, status) => self.ad_filters(filters, status),
             UserEvent::AdRulesReady => {
                 self.reapply_ads();
@@ -1232,6 +1238,31 @@ impl App {
             Shortcut::FindPrevious => self.focus_chrome("navigateur.findStep(true)"),
             Shortcut::BookmarkAll => self.bookmark_all(),
             Shortcut::ReportIssue => self.open_tab(ui::ISSUES_URL, false),
+            #[cfg(target_os = "macos")]
+            Shortcut::SavePage => self.export_page(mac_file::Export::Archive),
+            #[cfg(target_os = "macos")]
+            Shortcut::ExportPdf => self.export_page(mac_file::Export::Pdf),
+            #[cfg(target_os = "macos")]
+            Shortcut::OpenFile => {
+                if let Some(url) = mac_file::choose_file() {
+                    self.open_tab(&url, false);
+                    if let Some(w) = self.tabs.active().and_then(|t| t.webview()) {
+                        mac_file::load_file(w, &url);
+                    }
+                }
+            }
+            #[cfg(target_os = "macos")]
+            Shortcut::Share => {
+                if let Some(tab) = self.tabs.active()
+                    && network::is_web(tab.url())
+                    && let Some(w) = tab.webview()
+                {
+                    mac_file::share(w, tab.url());
+                }
+            }
+            // Seulement dans les menus du Mac.
+            #[cfg(not(target_os = "macos"))]
+            Shortcut::SavePage | Shortcut::ExportPdf | Shortcut::OpenFile | Shortcut::Share => {}
             Shortcut::Fullscreen => {
                 let full = self.window.fullscreen().is_some();
                 self.window.set_fullscreen((!full).then_some(tao::window::Fullscreen::Borderless(None)));

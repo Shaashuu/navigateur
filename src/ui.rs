@@ -587,6 +587,12 @@ pub enum Shortcut {
     BookmarkAll,
     /// Menu Aide (macOS) : la page des problèmes signalés de Feather.
     ReportIssue,
+    /// Menu Fichier (macOS) : archive de la page (⌘S), PDF, fichier à
+    /// ouvrir (⌘O), menu de partage.
+    SavePage,
+    ExportPdf,
+    OpenFile,
+    Share,
 }
 
 impl Shortcut {
