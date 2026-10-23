@@ -68,6 +68,9 @@ pub struct Tab {
     pub private: bool,
     /// Dernière fois que l'onglet était au premier plan (pour la mise en veille).
     pub last_active: Instant,
+    /// Dernière fois que la page jouait ou filmait, vu au dernier relevé (voir
+    /// `App::probe_media`).
+    pub heard: Option<Instant>,
     /// Mémoire et processeur de la page (voir `weight.rs`).
     pub weight: Weight,
     /// Veille douce de la page cachée (voir `softsleep.rs`).
@@ -262,6 +265,7 @@ impl TabManager {
             site_name: None,
             private,
             last_active: Instant::now(),
+            heard: None,
             weight: Weight::default(),
             repos: Repos::Eveille,
             readable: false,

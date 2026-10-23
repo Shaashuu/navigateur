@@ -4,13 +4,14 @@
 //! du site, suivi des téléchargements.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 
 use crate::commands::{self, Contexte, Resultat};
 use crate::adblock;
 use crate::capture::{self, Target};
+use crate::clock::Timer;
 use crate::downloads::{self, Download, State};
 use crate::images;
 use crate::import;
@@ -31,6 +32,21 @@ const ZOOMS: [f64; 13] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 
 
 /// Un onglet caché et lourd est mis en veille après ce délai, quel que soit le réglage.
 const HEAVY_SLEEP: Duration = Duration::from_secs(5 * 60);
+
+/// Rythme des relevés (voir `clock.rs`) : poids, son et veille des onglets ;
+/// progression d'un téléchargement ; mémoire, panneau de la mémoire ouvert.
+pub const SURVEY_EVERY: Duration = Duration::from_secs(5);
+pub const PROGRESS_EVERY: Duration = Duration::from_secs(1);
+const MEMORY_EVERY: Duration = Duration::from_secs(2);
+/// Nouvelles versions des extensions : deux minutes après le lancement, puis
+/// toutes les heures (la recherche n'a lieu qu'une fois par semaine).
+pub const FIRST_EXTENSION_CHECK: Duration = Duration::from_secs(120);
+const EXTENSION_CHECK_EVERY: Duration = Duration::from_secs(3600);
+/// Le texte des pages (jusqu'à 10 Mo) est enregistré au plus une fois par minute.
+const TEXT_SAVE_EVERY: Duration = Duration::from_secs(60);
+/// Son et caméra sont demandés au moteur pour l'onglet affiché, et pour un
+/// onglet caché qui joue, filme, ou était affiché ou jouait il y a moins d'une minute.
+const MEDIA_RECENT: Duration = Duration::from_secs(60);
 /// « Actualiser » recrée à neuf une page qui pèse au moins autant (Mo).
 const FRESH_RELOAD_MB: u32 = 300;
 
@@ -145,12 +161,8 @@ impl App {
                     json!({ "texte": texte, "lignes": lignes, "erreur": false, "run": true })
                 }
                 Some(Ok(Resultat::Minuteur { secondes, libelle })) => {
-                    let proxy = self.proxy.clone();
-                    let label = libelle.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_secs(secondes));
-                        let _ = proxy.send_event(UserEvent::TimerDone { seconds: secondes, label });
-                    });
+                    let alert = Timer::Alert { seconds: secondes, label: libelle };
+                    self.clock.borrow_mut().after(Duration::from_secs(secondes), alert);
                     let texte = format!("Minuteur lancé : {}", commands::duree_lisible(secondes));
                     json!({ "texte": texte, "erreur": false, "run": true })
                 }
@@ -283,9 +295,20 @@ impl App {
     /// envoyée à chaque changement ; fermé, rien de plus que d'habitude.
     pub(crate) fn watch_memory(&mut self, on: bool) {
         self.memory_watched = on;
-        if on && self.sample_weights() {
+        if on {
+            self.sample_memory();
+        }
+    }
+
+    /// Panneau de la mémoire ouvert : relevé, puis le suivant dans deux secondes.
+    pub(crate) fn sample_memory(&mut self) {
+        if !self.memory_watched {
+            return;
+        }
+        if self.sample_weights() {
             self.push_state();
         }
+        self.clock.borrow_mut().once(MEMORY_EVERY, Timer::Memory);
     }
 
     /// Le texte d'une page chargée rejoint la recherche dans l'historique.
@@ -302,59 +325,81 @@ impl App {
             return;
         }
         let (url, title) = (tab.url().to_string(), tab.title.clone());
-        // Enregistré avec le reste du texte, une fois par minute (voir `tick`).
+        // Enregistré avec le reste du texte, une fois par minute (voir `survey`).
         self.fulltext.add(&url, &title, text);
     }
 
-    /// Chaque seconde : progression des téléchargements ; toutes les cinq
-    /// secondes : poids des onglets et mise en veille des onglets oubliés.
-    pub(crate) fn tick(&mut self) {
-        self.ticks += 1;
+    /// Toutes les cinq secondes : poids, son et veille des onglets, relais du
+    /// bloqueur en extension ; le texte des pages chaque minute, les nouvelles
+    /// versions des extensions chaque heure. Avant, un réveil chaque seconde
+    /// faisait ce travail une fois sur cinq, fenêtre inactive comprise.
+    pub(crate) fn survey(&mut self) {
+        let now = Instant::now();
+        // macOS : secours si l'entrée en plein écran finit longtemps après le
+        // dernier redimensionnement (voir `watch_fullscreen`).
+        self.sync_fullscreen();
+        if now >= self.extension_check {
+            self.extension_check = now + EXTENSION_CHECK_EVERY;
+            self.check_extension_updates();
+        }
+        if now.duration_since(self.text_saved) >= TEXT_SAVE_EVERY {
+            self.text_saved = now;
+            if let Err(err) = self.fulltext.save() {
+                eprintln!("texte des pages non enregistré : {err}");
+            }
+        }
+        self.probe_media();
+        // Un bloqueur en extension qui a fini de se préparer prend le relais.
+        let before = self.extensions.ad_blocker().is_some();
+        self.sync_ad_blocker();
+        let mut changed = self.extensions.ad_blocker().is_some() != before;
+        changed |= self.sample_weights();
+        self.soft_sleep();
+        changed |= self.auto_sleep();
+        if changed {
+            self.push_state();
+        }
+        // Aucune page chargée après 5 s (hors ligne…) : les extensions démarrent quand même.
+        self.start_extensions();
+        self.clock.borrow_mut().once(SURVEY_EVERY, Timer::Survey);
+    }
+
+    /// Un téléchargement ou une mise à jour commence : sa progression est
+    /// relevée chaque seconde, jusqu'à la fin.
+    pub(crate) fn watch_progress(&self) {
+        self.clock.borrow_mut().once(PROGRESS_EVERY, Timer::Progress);
+    }
+
+    /// Chaque seconde pendant un téléchargement : la taille déjà reçue et la vitesse.
+    pub(crate) fn progress(&mut self) {
+        let now = Instant::now();
         let mut changed = false;
         for d in self.downloads.iter_mut().filter(|d| d.state == State::Progress) {
             let before = d.received;
-            d.probe();
+            d.probe(now);
             changed |= d.received != before;
         }
-        changed |= self.probe_update();
-        // Nouvelles versions des extensions : deux minutes après le lancement, puis
-        // toutes les heures (la recherche n'a lieu qu'une fois par semaine).
-        if self.ticks % 3600 == 120 {
-            self.check_extension_updates();
-        }
-        if self.ticks.is_multiple_of(60)
-            && let Err(err) = self.fulltext.save()
-        {
-            eprintln!("texte des pages non enregistré : {err}");
-        }
-        if self.ticks.is_multiple_of(5) {
-            self.probe_media();
-            // Un bloqueur en extension qui a fini de se préparer prend le relais.
-            let before = self.extensions.ad_blocker().is_some();
-            self.sync_ad_blocker();
-            changed |= self.extensions.ad_blocker().is_some() != before;
-            changed |= self.sample_weights();
-            self.soft_sleep();
-            changed |= self.auto_sleep();
-        } else if self.memory_watched && self.ticks.is_multiple_of(2) {
-            changed |= self.sample_weights();
-        }
+        changed |= self.probe_update(now);
         if changed {
             self.push_state();
+        }
+        if self.downloading() || matches!(self.update, UpdateState::Downloading { .. }) {
+            self.watch_progress();
         }
     }
 
     /// Mise à jour en cours de téléchargement : la taille du fichier reçu.
-    fn probe_update(&mut self) -> bool {
-        let UpdateState::Downloading { received, speed, .. } = &mut self.update else { return false };
+    fn probe_update(&mut self, now: Instant) -> bool {
+        let UpdateState::Downloading { received, speed, probed, .. } = &mut self.update else { return false };
         let Some(size) = update::download_path().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()) else {
             return false;
         };
         if size == *received {
             return false;
         }
-        *speed = size.saturating_sub(*received);
+        *speed = downloads::rate(*received, size, now.saturating_duration_since(*probed));
         *received = size;
+        *probed = now;
         true
     }
 
@@ -405,10 +450,21 @@ impl App {
         self.downloads.iter().any(|d| d.state == State::Progress)
     }
 
-    /// Demande au moteur le son et la caméra de chaque page (voir `media.rs`).
-    fn probe_media(&self) {
-        for tab in self.tabs.iter() {
-            if let Some(w) = tab.webview() {
+    /// Demande au moteur le son et la caméra des pages (voir `media.rs`) :
+    /// l'onglet affiché, et un onglet caché qui joue, filme, ou était affiché
+    /// ou jouait il y a moins d'une minute (une vidéo lancée juste avant de
+    /// changer d'onglet, une pause entre deux morceaux). Avant, chaque onglet
+    /// était sondé toutes les cinq secondes, ceux en veille douce compris.
+    fn probe_media(&mut self) {
+        let active = self.tabs.active_id();
+        let now = Instant::now();
+        for tab in self.tabs.iter_mut() {
+            if tab.sounds() || tab.capturing || tab.engine.playing || tab.engine.capturing {
+                tab.heard = Some(now);
+            }
+            let recent = |at: Instant| now.saturating_duration_since(at) < MEDIA_RECENT;
+            let wanted = Some(tab.id) == active || recent(tab.last_active) || tab.heard.is_some_and(recent);
+            if wanted && let Some(w) = tab.webview() {
                 crate::media::probe(w, tab.id, &self.proxy);
             }
         }
@@ -630,7 +686,7 @@ impl App {
         self.next_download_id += 1;
         let mut d = Download::new(id, String::new(), path);
         d.state = State::Done;
-        d.probe();
+        d.probe(Instant::now());
         d.speed = None;
         let name = d.name.clone();
         self.downloads.push(d);
@@ -828,6 +884,7 @@ impl App {
             });
         }
         self.downloads.push(Download::new(id, url, path));
+        self.watch_progress();
         self.push_state();
     }
 
@@ -889,7 +946,7 @@ impl App {
                 if success {
                     downloads::quarantine(&d.path);
                 }
-                d.probe();
+                d.probe(Instant::now());
                 d.speed = None;
             }
         }

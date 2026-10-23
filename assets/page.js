@@ -538,13 +538,29 @@
   };
   document.addEventListener('visibilitychange', startBeat);
   startBeat();
-  setInterval(() => {
+  const sendMetrics = () => {
     const visible = document.visibilityState === 'visible';
     const lag = visible && lagCount ? Math.round(lagSum / lagCount) : null;
     lagSum = 0; lagCount = 0;
     const mem = performance.memory && performance.memory.usedJSHeapSize;
     post({ metrics: { lag_ms: lag, heap_mb: mem ? Math.round(mem / 1048576) : null } });
-  }, 5000);
+  };
+  // Un relevé toutes les cinq secondes tant que la page est affichée. Cachée,
+  // elle envoie un dernier relevé (sans retard) puis se tait : avant, chaque
+  // onglet caché réveillait Feather toutes les cinq secondes. Sous Windows, où
+  // la mémoire de l'onglet vient de ce relevé, elle en envoie encore un par minute.
+  let metricsTimer = 0, metricsEvery = 0;
+  const paceMetrics = () => {
+    const visible = document.visibilityState === 'visible';
+    const wanted = visible ? 5000 : (performance.memory ? 60000 : 0);
+    if (!visible && metricsEvery === 5000) sendMetrics();
+    if (wanted === metricsEvery) return;
+    clearInterval(metricsTimer);
+    metricsEvery = wanted;
+    metricsTimer = wanted ? setInterval(sendMetrics, wanted) : 0;
+  };
+  document.addEventListener('visibilitychange', paceMetrics);
+  paceMetrics();
 
   // Texte de la page, pour retrouver une page de l'historique par son contenu.
   // Envoyé une fois, deux secondes après le chargement (Feather décide s'il le garde).

@@ -3,7 +3,8 @@
 
 //! Feather : une fenêtre tao, une webview pour l'interface, et une
 //! webview par onglet. Tout tourne sur le thread principal ; les webviews
-//! communiquent avec le code Rust par des messages (`UserEvent`).
+//! communiquent avec le code Rust par des messages (`UserEvent`), et les
+//! réveils prévus (relevés, enregistrement, minuteurs) passent par `clock.rs`.
 //!
 //! Ce fichier contient le cœur (onglets, navigation, état de l'interface) ;
 //! `features.rs` ajoute la recherche dans la page, le zoom, les autorisations,
@@ -13,6 +14,7 @@ mod adblock;
 mod archive;
 mod banc;
 mod capture;
+mod clock;
 mod commands;
 mod downloads;
 mod errorpage;
@@ -60,6 +62,7 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::window::{Icon, Window, WindowBuilder};
 use wry::{WebView, WebViewBuilder};
 
+use clock::{Clock, Timer};
 use commands::Notes;
 use downloads::Download;
 use features::PendingPermission;
@@ -78,6 +81,19 @@ const TITLE_PAUSE: Duration = Duration::from_secs(1);
 /// (voir `App::watch_pointer`) : assez souvent pour que la barre au survol se
 /// referme sans attendre, sans réveiller le programme pour rien.
 const POINTER_POLL: Duration = Duration::from_millis(60);
+/// Les pages fermées ou mises en veille sont détruites un peu plus de trois
+/// secondes après (voir `TabManager::reap`), le temps que leur son s'arrête.
+const REAP_DELAY: Duration = Duration::from_millis(3100);
+/// Les changements sont regroupés : l'enregistrement part deux secondes après le premier.
+const PERSIST_DELAY: Duration = Duration::from_secs(2);
+/// Après un redimensionnement, le plein écran est relu à ce rythme pendant
+/// `FULLSCREEN_WATCH` (macOS : l'entrée et la sortie finissent parfois après
+/// le dernier redimensionnement).
+const FULLSCREEN_CHECK: Duration = Duration::from_millis(250);
+const FULLSCREEN_WATCH: Duration = Duration::from_secs(3);
+/// Parties de l'état que l'interface modifie elle-même en attendant la
+/// réponse (assets/chrome.html) : renvoyées après chacun de ses messages.
+const LOCAL_KEYS: [&str; 5] = ["settings", "adblock", "downloads", "permission_prompt", "extensions"];
 
 /// Événements envoyés par les webviews à la boucle principale.
 #[derive(Debug)]
@@ -88,8 +104,6 @@ pub enum UserEvent {
     /// avec l'adresse du cadre qui l'envoie.
     Page(TabId, String, String),
     Title(TabId, String),
-    /// Des changements de titre retenus (voir `TITLE_PAUSE`) partent vers l'interface.
-    TitlesDue,
     /// Début (`true`) ou fin (`false`) de chargement, avec l'adresse.
     PageLoad(TabId, bool, String),
     /// Le chargement de cette adresse a échoué : on affiche une page d'erreur Feather.
@@ -102,8 +116,6 @@ pub enum UserEvent {
     /// Suggestions du moteur de recherche pour ce texte de la barre (voir `suggest`).
     EngineSuggestions { query: String, items: Vec<String> },
     Update(UpdateEvent),
-    /// Les onglets fermés peuvent être détruits.
-    Reap,
     /// Un téléchargement commence, rangé à cet endroit.
     DownloadStarted { url: String, path: PathBuf, private: bool },
     DownloadDone { url: String, path: Option<PathBuf>, success: bool },
@@ -111,12 +123,6 @@ pub enum UserEvent {
     DownloadSize { id: u32, total: u64 },
     /// Image ajoutée à Photos (ou la raison de l'échec).
     ImageSaved(Result<(), String>),
-    /// Moment d'enregistrer l'historique, les favoris et la session.
-    Persist,
-    /// Chaque seconde : progression des téléchargements, poids et veille des onglets.
-    Tick,
-    /// Un minuteur (`/minuteur`) est arrivé à son terme.
-    TimerDone { seconds: u64, label: String },
     /// Fin d'une capture de page : le fichier écrit (`None` : copiée), ou l'erreur.
     Captured(Result<Option<PathBuf>, String>),
     /// Menu Fichier du Mac : la page enregistrée ou exportée en PDF (ou l'erreur).
@@ -164,8 +170,15 @@ enum UpdateState {
     Checking,
     UpToDate,
     Available { info: update::Available },
-    /// `received` : octets déjà téléchargés (mesurés chaque seconde), `speed` : par seconde.
-    Downloading { info: update::Available, received: u64, speed: u64 },
+    /// `received` : octets déjà téléchargés (mesurés chaque seconde), `speed` : par
+    /// seconde, `probed` : moment de la dernière mesure.
+    Downloading {
+        info: update::Available,
+        received: u64,
+        speed: u64,
+        #[serde(skip)]
+        probed: Instant,
+    },
     Ready { info: update::Available },
     Error { message: String },
 }
@@ -211,19 +224,22 @@ struct App {
     downloads: Vec<Download>,
     /// Prochain numéro de téléchargement (jamais réutilisé, même après « Vider la liste »).
     next_download_id: u32,
-    /// Un enregistrement est déjà prévu (voir `schedule_persist`).
-    persist_pending: Cell<bool>,
+    /// Réveils prévus : enregistrement, relevés, minuteurs… (voir `clock.rs`).
+    clock: RefCell<Clock>,
     /// L'état a changé : il partira vers l'interface une fois les événements en
     /// attente traités (voir `push_state`).
     state_dirty: Cell<bool>,
-    /// Dernier envoi dû à un titre, et envoi de titres déjà prévu (voir `TITLE_PAUSE`).
+    /// Dernier envoi dû à un titre (voir `TITLE_PAUSE`).
     last_title_push: Cell<Instant>,
-    titles_waiting: Cell<bool>,
     /// Le dernier état envoyé, pour n'envoyer ensuite que ce qui a changé.
     sent_state: RefCell<serde_json::Map<String, serde_json::Value>>,
-    /// Le prochain envoi sera complet : après un message de l'interface, qui a
-    /// pu modifier sa copie de l'état en attendant la réponse (réglages…).
+    /// Le prochain envoi sera complet (l'interface vient de se charger).
     full_state: Cell<bool>,
+    /// Le prochain envoi reprend les parties que l'interface modifie elle-même
+    /// en attendant la réponse (réglages…), même inchangées : voir `LOCAL_KEYS`.
+    resync: Cell<bool>,
+    /// Version des icônes d'extension déjà envoyées à l'interface (voir `send_state`).
+    icons_sent: Cell<Option<u64>>,
     /// Dernière session écrite sur le disque, pour ne pas la réécrire à l'identique.
     saved_session: RefCell<Option<Session>>,
     /// Demandes d'autorisation en attente d'une réponse de l'utilisateur.
@@ -236,8 +252,12 @@ struct App {
     memory_watched: bool,
     /// Articles du mode lecture, un par onglet (lus par le protocole `navigateur`).
     reader: reader::Store,
-    /// Secondes écoulées (pour ne mesurer le poids des onglets que toutes les 5 s).
-    ticks: u64,
+    /// Prochaine recherche de nouvelles versions des extensions, et dernier
+    /// enregistrement du texte des pages (voir `survey`).
+    extension_check: Instant,
+    text_saved: Instant,
+    /// Dernier redimensionnement de la fenêtre (voir `FULLSCREEN_WATCH`).
+    resized_at: Instant,
     /// Listes du bloqueur de publicités (affiché dans les paramètres).
     adblock: adblock::Status,
     /// Extensions installées et leur petite fenêtre ouverte.
@@ -325,14 +345,6 @@ fn main() -> wry::Result<()> {
     // Pages gardées avant 0.5.8, de sites qu'on n'indexe plus (messageries, banques…).
     fulltext.forget_excluded(&settings.index_exclude);
 
-    // Une seconde : progression des téléchargements, poids et veille des onglets.
-    let tick_proxy = proxy.clone();
-    std::thread::spawn(move || {
-        while tick_proxy.send_event(UserEvent::Tick).is_ok() {
-            std::thread::sleep(Duration::from_secs(1));
-        }
-    });
-
     let mut app = App {
         window,
         surface,
@@ -357,19 +369,22 @@ fn main() -> wry::Result<()> {
         notes: Notes::load(),
         downloads: Vec::new(),
         next_download_id: 1,
-        persist_pending: Cell::new(false),
+        clock: RefCell::new(Clock::default()),
         state_dirty: Cell::new(false),
         last_title_push: Cell::new(Instant::now().checked_sub(TITLE_PAUSE).unwrap_or_else(Instant::now)),
-        titles_waiting: Cell::new(false),
         sent_state: RefCell::new(serde_json::Map::new()),
         full_state: Cell::new(false),
+        resync: Cell::new(false),
+        icons_sent: Cell::new(None),
         saved_session: RefCell::new(None),
         permission_requests: HashMap::new(),
         next_permission_request: 1,
         sampler: Sampler::default(),
         memory_watched: false,
         reader: reader::Store::default(),
-        ticks: 0,
+        extension_check: Instant::now() + features::FIRST_EXTENSION_CHECK,
+        text_saved: Instant::now(),
+        resized_at: Instant::now(),
         adblock: adblock::Status::default(),
         extensions: extensions::Extensions::load(),
         placement,
@@ -430,6 +445,7 @@ fn main() -> wry::Result<()> {
     if check_update {
         app.start_check(false);
     }
+    app.start_clock();
 
     // Fichiers lus, interface et premier onglet créés : le reste est l'affaire du moteur.
     banc::etape("rust");
@@ -454,6 +470,7 @@ fn main() -> wry::Result<()> {
             } => {
                 app.placement.track(&app.window);
                 app.sync_fullscreen();
+                app.watch_fullscreen();
                 app.relayout();
             }
             Event::WindowEvent { event: WindowEvent::Moved(_), .. } => app.placement.track(&app.window),
@@ -464,16 +481,19 @@ fn main() -> wry::Result<()> {
                 storage::flush();
             }
             Event::UserEvent(event) => app.handle(event),
-            // Tous les événements en attente sont traités : un seul envoi de l'état.
+            // Tous les événements en attente sont traités : les réveils arrivés à
+            // l'heure, puis un seul envoi de l'état.
             Event::MainEventsCleared => {
+                app.run_timers();
                 app.flush_state();
                 app.watch_pointer();
             }
             _ => {}
         }
-        // Panneau ouvert : la boucle se réveille pour relire la position de la souris.
+        // La boucle dort jusqu'au prochain réveil de l'horloge, ou jusqu'à la
+        // prochaine lecture de la souris quand un panneau est ouvert.
         if *control_flow == ControlFlow::Wait
-            && let Some(due) = app.pointer_due
+            && let Some(due) = app.next_wake()
         {
             *control_flow = ControlFlow::WaitUntil(due);
         }
@@ -540,11 +560,6 @@ impl App {
                     tab.title = title;
                 }
                 self.title_changed();
-            }
-            UserEvent::TitlesDue => {
-                self.titles_waiting.set(false);
-                self.last_title_push.set(Instant::now());
-                self.push_state();
             }
             UserEvent::PageLoad(id, loading, url) => {
                 // La page d'un onglet mis en veille charge about:blank avant d'être
@@ -666,7 +681,6 @@ impl App {
                 self.chrome_call(&format!("navigateur.setEngineSuggestions({data})"));
             }
             UserEvent::Update(event) => self.handle_update(event),
-            UserEvent::Reap => self.tabs.reap(),
             UserEvent::DownloadStarted { url, path, private } => self.download_started(url, path, private),
             UserEvent::DownloadDone { url, path, success } => self.download_done(&url, path, success),
             UserEvent::ImageSaved(result) => self.image_saved(result),
@@ -676,20 +690,6 @@ impl App {
                 }
                 self.push_state();
             }
-            UserEvent::Persist => {
-                self.persist_pending.set(false);
-                self.persist();
-            }
-            UserEvent::Tick => {
-                // macOS : l'entrée en plein écran finit parfois après le dernier redimensionnement.
-                self.sync_fullscreen();
-                self.tick();
-                // Aucune page chargée après 5 s (hors ligne…) : les extensions démarrent quand même.
-                if self.ticks >= 5 {
-                    self.start_extensions();
-                }
-                self.banc_tick();
-            }
             UserEvent::Media(id, state) => {
                 if let Some(tab) = self.tabs.get_mut(id)
                     && tab.engine != state
@@ -698,7 +698,6 @@ impl App {
                     self.push_state();
                 }
             }
-            UserEvent::TimerDone { seconds, label } => self.timer_done(seconds, &label),
             UserEvent::Captured(result) => self.captured(result),
             UserEvent::Exported(result) => self.exported(result),
             UserEvent::AdFilters(filters, status) => self.ad_filters(filters, status),
@@ -726,11 +725,70 @@ impl App {
             UserEvent::ExtensionPopup(raw) => self.extension_popup_message(&raw),
             UserEvent::ExtensionOpen(url) => self.extension_open(&url),
         }
-        // L'onglet affiché a pu changer : s'il était en veille, on recharge sa page.
+        self.settle();
+    }
+
+    /// Après un événement ou un réveil : l'onglet affiché a pu changer ; s'il
+    /// était en veille, on recharge sa page.
+    fn settle(&mut self) {
         self.wake_active();
         if !self.permission_requests.is_empty() {
             self.drop_stale_permissions();
         }
+    }
+
+    /// Les relevés réguliers démarrent avec le programme (voir `clock.rs`).
+    fn start_clock(&self) {
+        let mut clock = self.clock.borrow_mut();
+        clock.once(features::SURVEY_EVERY, Timer::Survey);
+        if banc::actif() {
+            clock.once(banc::TOUR, Timer::Banc);
+        }
+    }
+
+    /// Prochain réveil de la boucle : l'horloge, ou la lecture de la souris.
+    fn next_wake(&self) -> Option<Instant> {
+        [self.clock.borrow().next(), self.pointer_due].into_iter().flatten().min()
+    }
+
+    /// Fait ce qui était prévu pour maintenant (voir `clock.rs`).
+    fn run_timers(&mut self) {
+        let due = self.clock.borrow_mut().take_due(Instant::now());
+        if due.is_empty() {
+            return;
+        }
+        for timer in due {
+            match timer {
+                Timer::Survey => self.survey(),
+                Timer::Progress => self.progress(),
+                Timer::Memory => self.sample_memory(),
+                Timer::Banc => {
+                    self.banc_tick();
+                    self.clock.borrow_mut().once(banc::TOUR, Timer::Banc);
+                }
+                Timer::Fullscreen => {
+                    self.sync_fullscreen();
+                    if self.resized_at.elapsed() < FULLSCREEN_WATCH {
+                        self.clock.borrow_mut().once(FULLSCREEN_CHECK, Timer::Fullscreen);
+                    }
+                }
+                Timer::Reap => self.tabs.reap(),
+                Timer::Persist => self.persist(),
+                Timer::Titles => {
+                    self.last_title_push.set(Instant::now());
+                    self.push_state();
+                }
+                Timer::Alert { seconds, label } => self.timer_done(seconds, &label),
+            }
+        }
+        self.settle();
+    }
+
+    /// La fenêtre change de taille : le plein écran est relu pendant quelques
+    /// secondes (avant, il l'était chaque seconde, en permanence).
+    fn watch_fullscreen(&mut self) {
+        self.resized_at = Instant::now();
+        self.clock.borrow_mut().once(FULLSCREEN_CHECK, Timer::Fullscreen);
     }
 
     fn handle_chrome(&mut self, message: ChromeMessage) {
@@ -738,6 +796,8 @@ impl App {
             // L'interface est prête : elle montre les fichiers abîmés mis de côté au lancement.
             ChromeMessage::Ready => {
                 banc::etape("interface");
+                // Interface (re)chargée : elle reçoit tout, icônes comprises.
+                self.full_state.set(true);
                 let warnings = storage::take_warnings();
                 if !warnings.is_empty() {
                     let text = serde_json::to_string(&warnings.join(" ")).unwrap_or_default();
@@ -995,8 +1055,10 @@ impl App {
             ChromeMessage::ExtensionAnswer { request, allow } => self.answer_extension(request, allow),
         }
         // L'interface a pu changer sa copie de l'état sans attendre (réglages,
-        // liste vidée…) : on lui renvoie tout, pour qu'elle reparte du vrai.
-        self.full_state.set(true);
+        // liste vidée…) : on lui renvoie ces parties, pour qu'elle reparte du
+        // vrai. Avant, tout l'état repartait à chaque message (onglets, icônes,
+        // commandes…), une frappe dans la barre comprise.
+        self.resync.set(true);
         self.push_state();
     }
 
@@ -1446,13 +1508,10 @@ impl App {
         }
     }
 
-    /// Les pages fermées ou mises en veille sont détruites trois secondes plus tard.
+    /// Les pages fermées ou mises en veille sont détruites trois secondes plus
+    /// tard : un réveil pour chacune, pour qu'aucune n'attende plus.
     fn schedule_reap(&self) {
-        let proxy = self.proxy.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(3100));
-            let _ = proxy.send_event(UserEvent::Reap);
-        });
+        self.clock.borrow_mut().after(REAP_DELAY, Timer::Reap);
     }
 
     /// L'onglet affiché charge une adresse : l'indicateur part tout de suite. Le
@@ -1614,14 +1673,7 @@ impl App {
 
     /// Prévoit un enregistrement dans deux secondes, pour regrouper les changements.
     fn schedule_persist(&self) {
-        if self.persist_pending.replace(true) {
-            return;
-        }
-        let proxy = self.proxy.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(2));
-            let _ = proxy.send_event(UserEvent::Persist);
-        });
+        self.clock.borrow_mut().once(PERSIST_DELAY, Timer::Persist);
     }
 
     /// Enregistre tout de suite l'historique, les favoris, les réglages par site,
@@ -1715,7 +1767,8 @@ impl App {
         if let Some(path) = update::download_path() {
             let _ = std::fs::remove_file(path);
         }
-        self.update = UpdateState::Downloading { info: info.clone(), received: 0, speed: 0 };
+        self.update = UpdateState::Downloading { info: info.clone(), received: 0, speed: 0, probed: Instant::now() };
+        self.watch_progress();
         let proxy = self.proxy.clone();
         std::thread::spawn(move || {
             let result = update::install(&info);
@@ -1762,22 +1815,18 @@ impl App {
     /// Un titre a changé : envoyé tout de suite, ou à la fin de la pause s'il en
     /// arrive trop vite. Le titre est gardé dans l'onglet dans tous les cas.
     fn title_changed(&self) {
-        if self.titles_waiting.get() {
+        let mut clock = self.clock.borrow_mut();
+        if clock.has(&Timer::Titles) {
             return;
         }
         let since = self.last_title_push.get().elapsed();
-        if since >= TITLE_PAUSE {
-            self.last_title_push.set(Instant::now());
-            self.push_state();
+        if since < TITLE_PAUSE {
+            clock.after(TITLE_PAUSE - since, Timer::Titles);
             return;
         }
-        self.titles_waiting.set(true);
-        let proxy = self.proxy.clone();
-        let wait = TITLE_PAUSE - since;
-        std::thread::spawn(move || {
-            std::thread::sleep(wait);
-            let _ = proxy.send_event(UserEvent::TitlesDue);
-        });
+        drop(clock);
+        self.last_title_push.set(Instant::now());
+        self.push_state();
     }
 
     fn flush_state(&self) {
@@ -1814,7 +1863,16 @@ impl App {
         drop(lib);
         let serde_json::Value::Object(state) = state else { return };
         let mut sent = self.sent_state.borrow_mut();
-        if self.full_state.replace(false) || sent.is_empty() {
+        let full = self.full_state.replace(false) || sent.is_empty();
+        let resync = self.resync.replace(false);
+        // Icônes des extensions (jusqu'à 96 Ko chacune) : à part, et seulement
+        // quand elles changent. Avant, elles repartaient avec chaque état.
+        let icons = self.extensions.icons_version();
+        if full || self.icons_sent.get() != Some(icons) {
+            self.icons_sent.set(Some(icons));
+            self.chrome_call(&format!("navigateur.setExtensionIcons({})", self.extensions.icons_json()));
+        }
+        if full {
             // État complet, avec ce qui ne change jamais (version, commandes…).
             let mut full = state.clone();
             full.insert("version".into(), json!(update::CURRENT));
@@ -1824,8 +1882,11 @@ impl App {
         } else {
             // Seulement les parties qui ont changé depuis le dernier envoi : souvent
             // un onglet (titre, chargement) ou un téléchargement, pas les réglages.
-            let changed: serde_json::Map<String, serde_json::Value> =
-                state.iter().filter(|(k, v)| sent.get(*k) != Some(*v)).map(|(k, v)| (k.clone(), v.clone())).collect();
+            let changed: serde_json::Map<String, serde_json::Value> = state
+                .iter()
+                .filter(|(k, v)| (resync && LOCAL_KEYS.contains(&k.as_str())) || sent.get(*k) != Some(*v))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
             if changed.is_empty() {
                 return;
             }
