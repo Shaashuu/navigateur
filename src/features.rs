@@ -428,11 +428,12 @@ impl App {
     /// du son n'est pas touché. Les onglets privés en profitent aussi : la vraie veille les
     /// épargne, puisqu'elle effacerait leur session.
     fn soft_sleep(&mut self) {
-        let active = self.tabs.active_id();
+        // L'onglet affiché, et l'autre côté de la vue partagée.
+        let shown = self.tabs.shown_ids();
         let downloading = self.downloading();
         let sites = std::sync::Arc::clone(&self.sites);
         let sites = sites.read().ok();
-        for tab in self.tabs.iter_mut().filter(|t| Some(t.id) != active && !t.sounds()) {
+        for tab in self.tabs.iter_mut().filter(|t| !shown.contains(&t.id) && !t.sounds()) {
             let mut vise = softsleep::palier(tab.last_active.elapsed());
             // Une page qui travaille peut au plus rendre de la mémoire (Windows),
             // jamais être gelée.
@@ -458,14 +459,14 @@ impl App {
     /// changer d'onglet, une pause entre deux morceaux). Avant, chaque onglet
     /// était sondé toutes les cinq secondes, ceux en veille douce compris.
     fn probe_media(&mut self) {
-        let active = self.tabs.active_id();
+        let shown = self.tabs.shown_ids();
         let now = Instant::now();
         for tab in self.tabs.iter_mut() {
             if tab.sounds() || tab.capturing || tab.engine.playing || tab.engine.capturing {
                 tab.heard = Some(now);
             }
             let recent = |at: Instant| now.saturating_duration_since(at) < MEDIA_RECENT;
-            let wanted = Some(tab.id) == active || recent(tab.last_active) || tab.heard.is_some_and(recent);
+            let wanted = shown.contains(&tab.id) || recent(tab.last_active) || tab.heard.is_some_and(recent);
             if wanted && let Some(w) = tab.webview() {
                 crate::media::probe(w, tab.id, &self.proxy);
             }
@@ -481,14 +482,14 @@ impl App {
         if minutes == 0 {
             return false;
         }
-        let active = self.tabs.active_id();
+        let shown = self.tabs.shown_ids();
         let idle = Duration::from_secs(u64::from(minutes) * 60);
         let downloading = self.downloading();
         let sites = self.sites.read().ok();
         let candidates: Vec<TabId> = self
             .tabs
             .iter()
-            .filter(|t| Some(t.id) != active && !t.is_asleep() && !t.private)
+            .filter(|t| !shown.contains(&t.id) && !t.is_asleep() && !t.private)
             .filter(|t| !keep_awake(t, sites.as_deref(), downloading))
             .filter(|t| {
                 let hidden = t.last_active.elapsed();

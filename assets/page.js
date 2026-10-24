@@ -139,6 +139,7 @@
       '<button data-img="save">Enregistrer l\'image</button>' : ''}${image && url ? '<hr>' : ''}${url ? `
       <button data-how="tab">Ouvrir dans un nouvel onglet</button>
       <button data-how="background">Ouvrir en arrière-plan</button>
+      <button data-how="beside">Ouvrir à côté</button>
       <button data-how="private">Ouvrir dans un onglet privé</button>
       <hr><button data-how="copy">Copier l'adresse du lien</button>` : ''}</div>`;
     const menu = root.querySelector('.m');
