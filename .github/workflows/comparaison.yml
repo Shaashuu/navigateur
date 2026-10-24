@@ -1,0 +1,78 @@
+name: Comparer les navigateurs
+
+# Banc de comparaison (outils/comparaison/banc_navigateurs.py) : la version
+# publiée de Feather face à Chrome, Firefox, Edge et Safari, installés sur les
+# machines de GitHub. Lancé à la main, ou à chaque envoi sur une branche
+# claude/** qui touche ce banc (essais du banc lui-même).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version publiée de Feather à mesurer (par exemple v0.6.2)"
+        required: true
+      scenarios:
+        description: "Scénarios"
+        default: "demarrage,vide,simple,sites5,sites10,speedometer"
+  push:
+    branches: ["claude/**"]
+    paths:
+      - "outils/comparaison/**"
+      - ".github/workflows/comparaison.yml"
+
+permissions:
+  contents: read
+
+env:
+  VERSION: ${{ inputs.version || 'v0.6.1' }}
+  # Un envoi sur une branche fait un essai court du banc (moins de lancements).
+  SCENARIOS: ${{ inputs.scenarios || 'demarrage,simple,sites5,speedometer' }}
+  DEMARRAGES: ${{ github.event_name == 'push' && '2' || '5' }}
+  SPEEDOMETER_PASSAGES: ${{ github.event_name == 'push' && '1' || '3' }}
+
+jobs:
+  comparer:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Outils
+        shell: bash
+        run: |
+          python3 -m pip install --quiet psutil || python -m pip install --quiet psutil
+          git clone --quiet --depth 1 -b release/3.1 https://github.com/WebKit/Speedometer.git "$RUNNER_TEMP/speedometer"
+      - name: Télécharger Feather ${{ env.VERSION }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/feather"
+          cd "$RUNNER_TEMP/feather"
+          if [ "$RUNNER_OS" = macOS ]; then
+            gh release download "$VERSION" -R Shaashuu/feather-releases -p '*-macos.dmg'
+            hdiutil attach -nobrowse -mountpoint "$RUNNER_TEMP/dmg" Feather-*-macos.dmg
+            cp -R "$RUNNER_TEMP/dmg/Feather.app" .
+            hdiutil detach "$RUNNER_TEMP/dmg"
+            echo "FEATHER=$RUNNER_TEMP/feather/Feather.app/Contents/MacOS/feather" >> "$GITHUB_ENV"
+          else
+            gh release download "$VERSION" -R Shaashuu/feather-releases -p '*-windows.exe'
+            echo "FEATHER=$(cygpath -w "$RUNNER_TEMP/feather/$(ls Feather-*-windows.exe)")" >> "$GITHUB_ENV"
+          fi
+          echo "FEATHER_VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Comparer
+        shell: bash
+        run: |
+          py=python3; command -v python3 >/dev/null || py=python
+          $py outils/comparaison/banc_navigateurs.py --feather "$FEATHER" \
+            --speedometer "$RUNNER_TEMP/speedometer" --scenarios "$SCENARIOS" \
+            --sortie "resultats-${{ matrix.os }}.json"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: resultats-${{ matrix.os }}
+          path: resultats-*.json
