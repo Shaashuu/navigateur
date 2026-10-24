@@ -245,6 +245,15 @@ Autres captures : [commandes](captures/commandes.png), [paramètres](captures/pa
   est à 15 minutes par défaut. Un bouton d'accueil apparaît, l'utilisation de la
   mémoire s'affiche en direct, et la pastille à la loupe ouvre une recherche au
   milieu de la page (dans l'onglet actif ou un nouvel onglet, au choix).
+- **Nouveau en 0.6.2** : la vue partagée affiche deux onglets côte à côte
+  dans la même fenêtre. Glissez un onglet sur un bord de la page, ou faites
+  ⌥⌘N (Alt+Maj+N sous Windows et Linux), le clic droit sur un onglet ou
+  « Ouvrir à côté » dans le menu d'un lien. Le côté actif est entouré d'un
+  liseré et garde la barre d'adresse et les raccourcis ; la poignée du milieu
+  s'aimante à 1/3, 1/2 et 2/3 (double-clic pour revenir moitié-moitié). Dans
+  une fenêtre étroite, les deux pages passent l'une sur l'autre. Aucun des
+  deux côtés ne s'endort, et la vue partagée est retrouvée au prochain
+  lancement.
 - **Nouveau en 0.6.1** : la page Paramètres est réorganisée. Le menu est
   rangé en sections (Navigation, Légèreté, Confidentialité, Feather), chaque
   catégorie avec son icône, et une carte de version en bas du menu indique
