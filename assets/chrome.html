@@ -913,6 +913,61 @@
   #ctx .mhl { position: absolute; left: 5px; right: 5px; top: 0; height: 36px; border-radius: 9px; background: var(--accent-soft); opacity: 0; pointer-events: none; transition: transform .18s cubic-bezier(.2, .8, .2, 1), opacity .12s; }
   #ctx .mhl.on { opacity: 1; }
   #ctx button { position: relative; }
+
+  /* --- Vue partagée (point 15) : deux onglets côte à côte dans la zone des pages --- */
+  /* 2A · Pastille jumelée : les deux onglets se touchent dans la barre. */
+  body[data-pos="top"] #pills .tab.split-a { border-radius: 17px 5px 5px 17px; margin-right: -2px; }
+  body[data-pos="top"] #pills .tab.split-b { border-radius: 5px 17px 17px 5px; }
+  body[data-pos="top"] #pills .tab.split-a, body[data-pos="top"] #pills .tab.split-b { box-shadow: inset 0 0 0 1px var(--line); }
+  body[data-pos="top"] #pills .tab.split-on {
+    flex: 2 1 0; min-width: 120px; max-width: 300px; padding-right: 12px;
+    background: color-mix(in srgb, var(--accent-soft) 50%, transparent);
+  }
+  body[data-pos="top"] #pills .tab.split-on .ttl { color: var(--text); }
+  body:not([data-pos="top"]) #pills .tab.split-a .dot { border-radius: 11px 11px 6px 6px; }
+  body:not([data-pos="top"]) #pills .tab.split-b .dot { border-radius: 6px 6px 11px 11px; }
+  body:not([data-pos="top"]) #pills .tab.split-b .pc { position: relative; }
+  /* Le lien entre les deux pastilles de la colonne. */
+  body:not([data-pos="top"]) #pills .tab.split-b .pc::before {
+    content: ''; position: absolute; left: 50%; top: -7px; width: 4px; height: 14px; margin-left: -2px;
+    border-radius: 2px; background: var(--accent); opacity: .35;
+  }
+  body:not([data-pos="top"]) #pills .tab.split-shown.split-b .pc::before { opacity: .9; }
+  body:not([data-pos="top"]) #pills .tab.split-on .dot { background: var(--surface); box-shadow: 0 0 0 1.5px var(--accent-soft); }
+  body:not([data-pos="top"]) #pills .tab.split-on::after {
+    content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); opacity: .4;
+  }
+  body[data-pos="right"] #pills .tab.split-on::after { left: auto; right: 0; border-radius: 3px 0 0 3px; }
+  .tab.split-on .side-ttl { color: var(--text); }
+  /* 3A · Liseré autour du côté actif, dans la marge de 8 px autour des pages. */
+  #split-ring {
+    position: fixed; display: none; z-index: 1; pointer-events: none; box-sizing: border-box;
+    border: 2px solid var(--accent); border-radius: 14px;
+  }
+  /* Poignée entre les deux pages : elle occupe l'espace de 8 px qui les sépare. */
+  #split-sep { position: fixed; display: none; z-index: 2; cursor: col-resize; touch-action: none; }
+  #split-sep.stacked { cursor: row-resize; }
+  #split-sep i {
+    position: absolute; left: 50%; top: 50%; width: 4px; height: 40px; margin: -20px 0 0 -2px;
+    border-radius: 2px; background: var(--muted); opacity: .45; transition: opacity .15s, background .15s, transform .18s cubic-bezier(.2, .8, .2, 1);
+  }
+  #split-sep.stacked i { width: 40px; height: 4px; margin: -2px 0 0 -20px; }
+  #split-sep.hot i, body.splitting #split-sep i { opacity: 1; background: var(--accent); transform: scale(1.25); }
+  body.split #split-ring, body.split #split-sep { display: block; }
+  body.settings #split-ring, body.settings #split-sep, body.fs #split-ring { display: none !important; }
+  body.splitting, body.splitting * { cursor: col-resize !important; }
+  body.splitting.split-stacked, body.splitting.split-stacked * { cursor: row-resize !important; }
+  /* 1A · Onglet glissé sur la page : la moitié visée s'éclaire. */
+  #split-drop { position: fixed; display: none; z-index: 30; pointer-events: none; }
+  body.drop #split-drop { display: block; }
+  #split-drop .half {
+    position: absolute; box-sizing: border-box; border-radius: 11px; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--accent) 16%, transparent); border: 2px dashed var(--accent);
+  }
+  #split-drop .lbl {
+    padding: 7px 14px; border-radius: 16px; font-size: 13px; font-weight: 600;
+    background: var(--surface); color: var(--accent); box-shadow: var(--shadow);
+  }
   #ctx.slide button:hover { background: none; }
   /* Fiche d'aperçu d'un onglet survolé (3B) */
   #tipcard {
@@ -1111,6 +1166,9 @@
 </style>
 </head>
 <body data-pos="left">
+  <div id="split-ring" aria-hidden="true"></div>
+  <div id="split-sep" title="Glisser pour partager la place (double-clic : moitié-moitié ; clic droit : autres choix)" aria-hidden="true"><i></i></div>
+  <div id="split-drop" aria-hidden="true"><div class="half"><span class="lbl"></span></div></div>
   <div id="resizer" title="Glisser pour élargir la barre (double-clic : taille d'origine)" aria-hidden="true"></div>
   <nav id="sidebar" aria-label="Navigation">
     <div id="top">
@@ -1871,6 +1929,7 @@
     document.body.classList.toggle('dlpop', mode === 'dlpop');
     document.body.classList.toggle('tip', mode === 'tip');
     document.body.classList.toggle('peek', mode === 'peek');
+    document.body.classList.toggle('drop', mode === 'drop');
     for (const k of LIB_KINDS) $('lib-' + k).classList.toggle('on', mode === 'library' && libKind === k);
     placePop();
     if (mode !== null) reportShape();
@@ -1931,6 +1990,7 @@
     if (document.body.classList.contains('strip')) add($('strip'));
     if (mode === 'bar' && document.body.classList.contains('anchored')) { add($('overlay')); add($('pal-arrow')); }
     for (const el of document.querySelectorAll('.card')) add(el);
+    if (mode === 'drop') add($('split-drop'));
     rects.push(...extraShapes);
     const json = JSON.stringify(rects);
     if (json === lastShape) return;
@@ -2048,6 +2108,7 @@
     if (tab.active && (tab.readable || tab.reading)) {
       items.push([BOOK, 'Lecture', tab.reading ? 'Quitter le mode lecture' : "Afficher l'article en mode lecture", () => send({ type: 'reader' })]);
     }
+    items.push(...splitTabItems(tab));
     items.push([PIN, tab.pinned ? 'Détacher' : 'Épingler', tab.pinned ? "Détacher l'onglet" : "Épingler l'onglet en tête de liste", () => send({ type: 'pin_tab', id: tab.id, pinned: !tab.pinned })]);
     if (!tab.pinned) items.push([GROUP, 'Groupe', 'Ranger dans un groupe', () => openGroupSheet(tab)]);
     items.push([CLOSE, 'Fermer', "Fermer l'onglet", () => send({ type: 'close_tab', id: tab.id })]);
@@ -2351,7 +2412,7 @@
     // Rien n'a changé dans les onglets : on garde la liste telle quelle. La refaire à
     // chaque message (chargement, son, mémoire…) rechargeait les icônes et rejouait
     // l'apparition des titres pendant le survol.
-    const key = JSON.stringify([state.tabs, state.groups, isTop(), editing, badIcons.size]);
+    const key = JSON.stringify([state.tabs, state.groups, isTop(), editing, badIcons.size, state.split && [state.split.first, state.split.second, state.split.shown]]);
     if (key === pillsKey) return;
     pillsKey = key;
 
@@ -2368,14 +2429,15 @@
       const group = tab.group != null ? groups.get(tab.group) : null;
       if (group && group.id !== lastGroup) box.appendChild(groupLabel(group));
       lastGroup = group ? group.id : null;
-      if (group && group.collapsed && !tab.active) continue;
+      if (group && group.collapsed && !tab.active && !splitShown(tab.id)) continue;
       const el = document.createElement('div');
       const sound = tab.audible || tab.muted;
       const icon = tab.icon && !badIcons.has(tab.icon) ? tab.icon : null;
       const level = tab.weight ? tab.weight.level : 0;
       el.className = 'tab' + (tab.active ? ' active' : '') + (tab.loading && !sound ? ' loading' : '') +
         (icon ? ' has-icon' : '') + (tab.muted ? ' muted' : '') + (tab.private ? ' private' : '') +
-        (tab.asleep ? ' asleep' : '') + (level ? ' w' + level : '') + (tab.pinned ? ' pinned' : '') + (group ? ' in-group' : '');
+        (tab.asleep ? ' asleep' : '') + (level ? ' w' + level : '') + (tab.pinned ? ' pinned' : '') + (group ? ' in-group' : '') +
+        splitClass(tab);
       if (group) el.style.setProperty('--g', group.color);
       el.dataset.id = tab.id;
       el.setAttribute('role', 'button');
@@ -2488,6 +2550,7 @@
       box.appendChild(el);
     }
     playTabs(before);
+    pairArrived();
   }
 
   // Étiquette d'un groupe : un clic le replie ou l'ouvre, clic droit pour le menu.
@@ -2624,6 +2687,15 @@
     if (on === hot) return;
     hot = on;
     resizer.classList.toggle('hot', on);
+    watchPointer();
+  }
+  // La poignée de la barre et celle de la vue partagée demandent toutes deux la
+  // position de la souris : Rust la lit tant que l'une des deux est allumée.
+  let watching = false;
+  function watchPointer() {
+    const on = hot || sepHot;
+    if (on === watching) return;
+    watching = on;
     send({ type: 'watch_pointer', on });
   }
   function onResizer(x, y) {
@@ -2637,6 +2709,203 @@
   resizer.addEventListener('pointerleave', () => resizerHot(false));
   // Fenêtre plus étroite : la barre ne dépasse pas la moitié de la largeur.
   window.addEventListener('resize', () => { if (!resize) applySide(state.settings.sidebar_width); });
+
+  // --- Vue partagée (point 15) : deux onglets affichés côte à côte ---
+  // Rust place les deux pages et dit où (state.split.rects) ; l'interface dessine
+  // ce qui les entoure : la pastille jumelée (2A), le liseré du côté actif (3A),
+  // la poignée dans l'espace de 8 px entre elles, et les moitiés qui s'éclairent
+  // quand on glisse un onglet sur la page (1A). Deux pages au plus.
+  const SPLIT_GAP = 8;        // ui::PAGE_GAP
+  const SPLIT_MIN = 0.2, SPLIT_MAX = 0.8;
+  const SPLIT_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M12 5v14"/></svg>';
+  const split = () => state.split || null;
+  const splitShown = (id) => { const sp = split(); return !!sp && sp.shown && (sp.first === id || sp.second === id); };
+  function splitClass(tab) {
+    const sp = split();
+    if (!sp || (sp.first !== tab.id && sp.second !== tab.id)) return '';
+    // Le premier des deux dans la liste porte le bord gauche (ou haut) de la pastille.
+    const ia = state.tabs.findIndex((t) => t.id === sp.first), ib = state.tabs.findIndex((t) => t.id === sp.second);
+    const lead = ia < ib ? sp.first : sp.second;
+    return (tab.id === lead ? ' split-a' : ' split-b') + (sp.shown ? ' split-shown' : '') + (sp.shown && !tab.active ? ' split-on' : '');
+  }
+  // La paire vient de se former : les deux onglets rebondissent ensemble.
+  let pairKey = '';
+  function pairArrived() {
+    const sp = split();
+    const key = sp ? sp.first + '-' + sp.second : '';
+    if (key === pairKey) return;
+    pairKey = key;
+    if (!sp || motion() !== 'full') return;
+    for (const id of [sp.first, sp.second]) {
+      const el = tabEl(id);
+      if (el) anim(el, [{ transform: 'scale(.9)' }, { transform: 'none' }], BOUNCE);
+    }
+  }
+  const place = (el, [x, y, w, h], out = 0) => {
+    el.style.left = (x - out) + 'px';
+    el.style.top = (y - out) + 'px';
+    el.style.width = (w + 2 * out) + 'px';
+    el.style.height = (h + 2 * out) + 'px';
+  };
+  // Place des deux pages pour une proportion (comme `Split::rects` côté Rust).
+  function splitRects(sp, ratio) {
+    const [x, y, w, h] = state.page_area;
+    if (sp.stacked) {
+      const a = Math.round((h - SPLIT_GAP) * ratio);
+      return [[x, y, w, a], [x, y + a + SPLIT_GAP, w, h - a - SPLIT_GAP]];
+    }
+    const a = Math.round((w - SPLIT_GAP) * ratio);
+    return [[x, y, a, h], [x + a + SPLIT_GAP, y, w - a - SPLIT_GAP, h]];
+  }
+  let ringSide = null;
+  function drawSplit(sp, rects) {
+    const active = activeTab();
+    const side = active && active.id === sp.second ? 1 : 0;
+    place($('split-ring'), rects[side], 3);
+    const [a, b] = rects;
+    const sep = $('split-sep');
+    sep.classList.toggle('stacked', sp.stacked);
+    document.body.classList.toggle('split-stacked', sp.stacked);
+    if (sp.stacked) place(sep, [a[0], a[1] + a[3], a[2], b[1] - a[1] - a[3]]);
+    else place(sep, [a[0] + a[2], a[1], b[0] - a[0] - a[2], a[3]]);
+    // Le liseré passe d'un côté à l'autre : il apparaît en fondu à sa nouvelle place.
+    const key = sp.first + '-' + sp.second + '-' + side;
+    if (key !== ringSide) {
+      ringSide = key;
+      const m = motion();
+      if (m === 'full') anim($('split-ring'), [{ opacity: 0, transform: 'scale(.985)' }, { opacity: 1, transform: 'none' }], SNAP);
+      else if (m === 'reduced') anim($('split-ring'), [{ opacity: 0 }, { opacity: 1 }], 140);
+    }
+  }
+  function renderSplit() {
+    const sp = split();
+    const on = !!(sp && sp.shown && state.page_area);
+    if (!on) {
+      ringSide = null;
+      if (sepHot) sepIsHot(false);
+    }
+    document.body.classList.toggle('split', on);
+    if (on && !sepDrag) drawSplit(sp, sp.rects);
+  }
+
+  // La poignée : glisser partage la place (aimantée à 1/3, 1/2 et 2/3),
+  // double-clic remet moitié-moitié, clic droit propose le reste.
+  const sep = $('split-sep');
+  let sepDrag = null;
+  let sepHot = false;
+  let sepFrame = 0;
+  function sepIsHot(on) {
+    if (on === sepHot) return;
+    sepHot = on;
+    sep.classList.toggle('hot', on);
+    watchPointer();
+  }
+  function onSep(x, y) {
+    const r = sep.getBoundingClientRect();
+    // Un peu de marge : la poignée ne fait que 8 px.
+    return x >= r.left - 3 && x < r.right + 3 && y >= r.top - 3 && y < r.bottom + 3;
+  }
+  function sendRatio(ratio, done) {
+    cancelAnimationFrame(sepFrame);
+    if (done) send({ type: 'split_ratio', ratio, done: true });
+    else sepFrame = requestAnimationFrame(() => send({ type: 'split_ratio', ratio, done: false }));
+  }
+  sep.addEventListener('pointerdown', (e) => {
+    const sp = split();
+    if (e.button !== 0 || !sp || !sp.shown) return;
+    e.preventDefault();
+    sepDrag = { ratio: sp.ratio, moved: false };
+    sep.setPointerCapture(e.pointerId);
+    document.body.classList.add('splitting');
+  });
+  sep.addEventListener('pointermove', (e) => {
+    sepIsHot(true);
+    const sp = split();
+    if (!sepDrag || !sp) return;
+    const [x, y, w, h] = state.page_area;
+    let ratio = sp.stacked ? (e.clientY - y - SPLIT_GAP / 2) / (h - SPLIT_GAP) : (e.clientX - x - SPLIT_GAP / 2) / (w - SPLIT_GAP);
+    ratio = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, ratio));
+    // Aimants : à moins de 2 % d'un tiers ou de la moitié, la poignée s'y pose.
+    for (const m of [1 / 3, 1 / 2, 2 / 3]) if (Math.abs(ratio - m) < 0.02) ratio = m;
+    if (ratio === sepDrag.ratio) return;
+    sepDrag.ratio = ratio;
+    sepDrag.moved = true;
+    drawSplit(sp, splitRects(sp, ratio));
+    sendRatio(ratio, false);
+  });
+  const endSep = () => {
+    if (!sepDrag) return;
+    const { ratio, moved } = sepDrag;
+    sepDrag = null;
+    document.body.classList.remove('splitting');
+    if (moved) sendRatio(ratio, true);
+  };
+  sep.addEventListener('pointerup', endSep);
+  sep.addEventListener('pointercancel', endSep);
+  sep.addEventListener('pointerenter', () => sepIsHot(true));
+  sep.addEventListener('pointerleave', () => { if (!sepDrag) sepIsHot(false); });
+  sep.addEventListener('dblclick', () => sendRatio(0.5, true));
+  sep.addEventListener('contextmenu', (e) => { e.preventDefault(); if (split()) showMenu(splitItems(), e); });
+
+  // Les commandes de la vue partagée affichée (menu de la poignée et des deux onglets).
+  function splitItems() {
+    const sp = split();
+    return [
+      ['<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h13l-4-4M17 17H4l4 4"/></svg>', 'Échanger', 'Échanger les deux côtés', () => send({ type: 'split_swap' })],
+      [SPLIT_ICON, sp && sp.chosen_stacked ? 'Côte à côte' : "L'une sur l'autre", sp && sp.chosen_stacked ? 'Afficher les deux pages côte à côte' : "Afficher les deux pages l'une au-dessus de l'autre", () => send({ type: 'split_turn' })],
+      ['<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16M5 9l-3 3 3 3M19 9l3 3-3 3"/></svg>', 'Moitié-moitié', 'Donner la même place aux deux pages', () => sendRatio(0.5, true)],
+      [CLOSE, 'Quitter la vue partagée', 'Les deux onglets restent ouverts', () => send({ type: 'split_exit' })],
+    ];
+  }
+  // Lignes du menu d'un onglet : l'afficher à côté de l'onglet actif, ou les
+  // commandes de la vue partagée dont il fait partie.
+  function splitTabItems(tab) {
+    const sp = split();
+    if (sp && (sp.first === tab.id || sp.second === tab.id)) {
+      if (sp.shown) return splitItems();
+      return [[SPLIT_ICON, 'Vue partagée', 'Afficher les deux onglets côte à côte', () => send({ type: 'activate_tab', id: tab.id })],
+        [CLOSE, 'Séparer', 'Ne plus afficher ces deux onglets ensemble', () => send({ type: 'split_exit' })]];
+    }
+    if (tab.active) return [[SPLIT_ICON, 'Vue partagée', 'Ouvrir un nouvel onglet à côté de celui-ci (' + splitKey() + ')', () => shortcut('split_view')]];
+    return [[SPLIT_ICON, 'Afficher à côté', "Afficher cet onglet à côté de l'onglet actif", () => send({ type: 'split_with', id: tab.id, first: false, stacked: false })]];
+  }
+  const splitKey = () => /Mac/.test(navigator.platform) ? '⌥⌘N' : 'Alt+Maj+N';
+
+  // 1A · Un onglet glissé sur la page : la moitié visée s'éclaire, et l'onglet
+  // s'y affiche au lâcher. L'interface doit passer devant la page pour la
+  // dessiner : pas sous Linux, où le menu de l'onglet reste.
+  const ZONES = { L: 'À gauche', R: 'À droite', T: 'En haut', B: 'En bas' };
+  function dropZone(x, y) {
+    const a = state.page_area;
+    if (!a || !state.overlay || state.tabs.length < 2) return null;
+    const [ax, ay, aw, ah] = a;
+    if (x < ax || x >= ax + aw || y < ay || y >= ay + ah) return null;
+    const px = (x - ax) / aw, py = (y - ay) / ah;
+    // Le haut et le bas de la page (un quart chacun) : l'une sur l'autre.
+    if (py < 0.25 && ah > 300) return 'T';
+    if (py > 0.75 && ah > 300) return 'B';
+    return px < 0.5 ? 'L' : 'R';
+  }
+  function showDrop(zone) {
+    if (drag.zone === zone) return;
+    const was = drag.zone;
+    drag.zone = zone;
+    if (!zone) { if (mode === 'drop') setMode(null); return; }
+    const box = $('split-drop');
+    place(box, state.page_area);
+    const [, , w, h] = state.page_area;
+    const stacked = zone === 'T' || zone === 'B';
+    const first = zone === 'L' || zone === 'T';
+    const half = box.querySelector('.half');
+    const hw = stacked ? w : (w - SPLIT_GAP) / 2, hh = stacked ? (h - SPLIT_GAP) / 2 : h;
+    place(half, [first || stacked ? 0 : w - hw, !first && stacked ? h - hh : 0, hw, hh]);
+    half.querySelector('.lbl').textContent = ZONES[zone];
+    if (mode !== 'drop') { if (mode === 'tip') hideTip(); setMode('drop'); }
+    queueShape();
+    const m = motion();
+    if (m === 'full') anim(half, [{ opacity: 0, transform: 'scale(.96)' }, { opacity: 1, transform: 'none' }], was ? SNAP : BOUNCE);
+    else if (m === 'reduced') anim(half, [{ opacity: 0 }, { opacity: 1 }], 120);
+  }
 
   // Glisser-déposer : maintenir le clic sur un onglet pour le déplacer.
   function startDrag(e, el, tab) {
@@ -2655,6 +2924,9 @@
       // 4A : l'onglet se soulève, penché, et suit la souris.
       if (motion() === 'full') { drag.el.classList.add('lifted'); anim(drag.el, [{ transform: 'none' }, { transform: lift(0, top) }], SNAP); }
     }
+    // Sur la page : l'onglet ira à côté de l'onglet affiché, plus dans la liste.
+    showDrop(dropZone(e.clientX, e.clientY));
+    if (drag.zone) return;
     const box = $('pills');
     const others = [...box.querySelectorAll('.tab:not(.ghost)')].filter((el) => el !== drag.el);
     // La position du pointeur s'appelait « c », comme l'onglet comparé : on comparait
@@ -2692,8 +2964,16 @@
   const lift = (d, top) => (top ? `translateX(${d}px)` : `translateY(${d}px)`) + ' translateY(-3px) scale(1.06) rotate(-2.5deg)';
   const endDrag = () => {
     if (!drag) return;
-    const { tab, moved, onTitle, before } = drag;
+    const { tab, moved, onTitle, before, zone } = drag;
     drag = null;
+    if (zone) {
+      if (mode === 'drop') setMode(null);
+      send({ type: 'split_with', id: tab.id, first: zone === 'L' || zone === 'T', stacked: zone === 'T' || zone === 'B' });
+      // L'onglet retombe à sa place (Rust le range à côté de l'autre).
+      pillsKey = null;
+      renderSidebar();
+      return;
+    }
     if (moved) {
       // Position dans la liste complète (les onglets d'un groupe replié n'y sont pas dessinés).
       const rest = state.tabs.filter((t) => t.id !== tab.id).map((t) => t.id);
@@ -3441,6 +3721,7 @@
   // de la souris au-dessus de la page, et la barre élargie restait affichée.
   function nativePointer(x, y) {
     if (hot && (x == null || !onResizer(x, y))) resizerHot(false);
+    if (sepHot && !sepDrag && (x == null || !onSep(x, y))) sepIsHot(false);
     lastPointer = x == null ? null : { x, y };
     if (mode === 'tip') { if (x == null) hideTip(); else tipAt(x, y); }
     if (document.body.classList.contains('fs')) peekAt(x, y);
@@ -4653,6 +4934,7 @@
     const id = active ? active.id : null;
     if (id !== lastActive) { lastActive = id; if (findOpen) closeFind(); }
     renderSidebar();
+    renderSplit();
     renderUpdate();
     renderStrip();
     watchNewDownloads();

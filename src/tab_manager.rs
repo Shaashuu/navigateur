@@ -25,7 +25,7 @@ use crate::downloads;
 use crate::media::MediaState;
 use crate::errorpage::{self, ErrorKind};
 use crate::extensions;
-use crate::library::{Library, Session, TabGroup};
+use crate::library::{Library, SavedSplit, Session, TabGroup};
 use crate::network;
 use crate::reader;
 use crate::settings::Settings;
@@ -217,6 +217,84 @@ pub struct TabInfo<'a> {
     pub reading: bool,
 }
 
+/// Une zone de la fenêtre : x, y, largeur et hauteur, en pixels logiques.
+pub type Area = (f64, f64, f64, f64);
+
+/// Part d'un côté de la vue partagée, au moins et au plus.
+const SPLIT_RATIO_MIN: f64 = 0.2;
+const SPLIT_RATIO_MAX: f64 = 0.8;
+/// En dessous de cette largeur par page, les deux pages passent l'une sur
+/// l'autre d'elles-mêmes, et reviennent côte à côte quand la fenêtre s'élargit.
+const SPLIT_NARROW: f64 = 280.0;
+
+/// Vue partagée : deux onglets affichés ensemble dans la zone des pages, côte
+/// à côte ou l'un sur l'autre. Deux au plus, pour la mémoire : chaque côté
+/// affiché garde sa page éveillée (ni veille, ni veille douce). Elle est à
+/// l'écran quand l'onglet actif en est un côté ; l'onglet actif est le côté
+/// où l'on tape (barre d'adresse, raccourcis, recherche dans la page).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct Split {
+    /// À gauche (ou en haut).
+    pub first: TabId,
+    /// À droite (ou en bas).
+    pub second: TabId,
+    /// Part de la place donnée au premier.
+    pub ratio: f64,
+    /// L'un sur l'autre, choisi par l'utilisateur.
+    pub stacked: bool,
+}
+
+impl Split {
+    pub fn has(&self, id: TabId) -> bool {
+        self.first == id || self.second == id
+    }
+
+    /// L'autre côté de cet onglet.
+    pub fn other(&self, id: TabId) -> Option<TabId> {
+        if id == self.first {
+            Some(self.second)
+        } else if id == self.second {
+            Some(self.first)
+        } else {
+            None
+        }
+    }
+
+    /// L'un sur l'autre : choisi, ou parce que la zone est trop étroite pour
+    /// deux pages lisibles côte à côte.
+    pub fn stacked_in(&self, width: f64) -> bool {
+        self.stacked || (width - ui::PAGE_GAP) * self.ratio.min(1.0 - self.ratio) < SPLIT_NARROW
+    }
+
+    /// Les places du premier et du second dans la zone des pages, séparés par
+    /// l'espace habituel entre la page et la barre (la poignée s'y loge).
+    pub fn rects(&self, (x, y, w, h): Area) -> [Area; 2] {
+        if self.stacked_in(w) {
+            let first = ((h - ui::PAGE_GAP) * self.ratio).round();
+            [(x, y, w, first), (x, y + first + ui::PAGE_GAP, w, h - first - ui::PAGE_GAP)]
+        } else {
+            let first = ((w - ui::PAGE_GAP) * self.ratio).round();
+            [(x, y, first, h), (x + first + ui::PAGE_GAP, y, w - first - ui::PAGE_GAP, h)]
+        }
+    }
+}
+
+/// Ce que l'interface reçoit pour dessiner la vue partagée : la pastille
+/// jumelée, le liseré du côté actif et la poignée entre les pages.
+#[derive(Serialize)]
+pub struct SplitInfo {
+    pub first: TabId,
+    pub second: TabId,
+    pub ratio: f64,
+    /// Disposition affichée (l'un sur l'autre, choisi ou faute de place).
+    pub stacked: bool,
+    /// Disposition choisie.
+    pub chosen_stacked: bool,
+    /// À l'écran (l'onglet actif en est un côté).
+    pub shown: bool,
+    pub rects: [Area; 2],
+}
+
 /// Tout ce qu'il faut pour créer la webview d'un nouvel onglet.
 pub struct PageContext<'a> {
     pub window: &'a Window,
@@ -241,6 +319,10 @@ pub struct TabManager {
     /// Groupes d'onglets, dans l'ordre de création.
     groups: Vec<TabGroup>,
     next_group: u32,
+    /// La vue partagée (une seule à la fois).
+    split: Option<Split>,
+    /// Zone des pages dans la fenêtre (voir `set_area`).
+    area: Area,
 }
 
 impl TabManager {
@@ -297,6 +379,14 @@ impl TabManager {
 
     /// Recrée la page d'un onglet en veille. `visible` : la montrer tout de suite.
     pub fn wake(&mut self, id: TabId, ctx: &PageContext, visible: bool) -> wry::Result<()> {
+        // Un côté de la vue partagée n'a que sa part de la zone des pages.
+        let place = match self.split {
+            Some(split) if split.has(id) => {
+                let [first, second] = split.rects(self.area);
+                Some(if split.first == id { first } else { second })
+            }
+            _ => None,
+        };
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) else {
             return Ok(());
         };
@@ -317,6 +407,9 @@ impl TabManager {
             // Sans souvenir (Windows, Linux, macOS 11), au moins la position.
             None => tab.scroll_due = tab.scroll.take(),
         }
+        if let Some(area) = place {
+            let _ = webview.set_bounds(ui::rect(area));
+        }
         crate::layers::round_page(&webview);
         let host = tab.host();
         adblock::apply(&webview, &host, tab.private);
@@ -334,11 +427,12 @@ impl TabManager {
     /// L'onglet actif, un onglet qui joue du son ou un onglet privé (qui
     /// perdrait sa session) ne sont pas mis en veille.
     pub fn sleep(&mut self, id: TabId) -> bool {
-        let active = self.active;
+        // L'autre côté de la vue partagée affichée est à l'écran lui aussi.
+        let shown = self.shown(id);
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) else {
             return false;
         };
-        if active == Some(id) || tab.audible || tab.private {
+        if shown || tab.audible || tab.private {
             return false;
         }
         let Some(webview) = tab.webview.take() else {
@@ -395,6 +489,12 @@ impl TabManager {
         let Some(index) = self.tabs.iter().position(|t| t.id == id) else {
             return;
         };
+        // Fermer un côté défait la vue partagée : l'autre côté prend toute la
+        // place et, si c'était l'onglet affiché, reste à l'écran.
+        let partner = self.split.and_then(|s| s.other(id));
+        if partner.is_some() {
+            self.split = None;
+        }
         let mut closed = self.tabs.remove(index);
         let tabs = &self.tabs;
         self.groups.retain(|g| tabs.iter().any(|t| t.group == Some(g.id)));
@@ -420,9 +520,12 @@ impl TabManager {
                 .get(index)
                 .or_else(|| self.tabs.last())
                 .map(|t| t.id);
-            if let Some(next) = neighbour {
+            if let Some(next) = partner.or(neighbour) {
                 self.activate(next, visible);
             }
+        }
+        if partner.is_some() {
+            self.place_all();
         }
     }
 
@@ -473,21 +576,25 @@ impl TabManager {
             return;
         }
         let now = Instant::now();
+        let before = self.shown_ids();
+        self.active = Some(id);
+        // L'onglet choisi, et l'autre côté si c'est une vue partagée.
+        let after = self.shown_ids();
         for tab in &mut self.tabs {
+            let shown = after.contains(&tab.id);
             // L'onglet qu'on quitte compte comme vu à l'instant.
-            if Some(tab.id) == self.active || tab.id == id {
+            if before.contains(&tab.id) || shown {
                 tab.last_active = now;
             }
             if let Some(w) = &tab.webview {
                 // L'onglet qui revient retrouve sa mémoire normale et se dégèle.
-                if tab.id == id {
+                if shown && !before.contains(&tab.id) {
                     softsleep::reveiller(w, tab.repos);
                     tab.repos = Repos::Eveille;
                 }
-                let _ = w.set_visible(visible && tab.id == id);
+                let _ = w.set_visible(visible && shown);
             }
         }
-        self.active = Some(id);
     }
 
     /// Onglet suivant (`step = 1`) ou précédent (`step = -1`), en boucle.
@@ -510,6 +617,14 @@ impl TabManager {
         let index = index.min(self.tabs.len());
         self.tabs.insert(index, tab);
         self.arrange();
+        // Les deux côtés d'une vue partagée restent l'un contre l'autre.
+        if let Some(split) = self.split.filter(|s| s.has(id)) {
+            if split.first == id {
+                self.put_next_to(split.second, id, false);
+            } else {
+                self.put_next_to(split.first, id, true);
+            }
+        }
     }
 
     pub fn active(&self) -> Option<&Tab> {
@@ -540,19 +655,160 @@ impl TabManager {
         self.tabs.is_empty()
     }
 
-    /// Montre ou cache l'onglet actif (caché quand un panneau de l'interface est ouvert).
+    /// Montre ou cache l'onglet actif, et l'autre côté de la vue partagée
+    /// (cachés quand un panneau de l'interface est ouvert, sous Linux).
     pub fn set_active_visible(&self, visible: bool) {
-        if let Some(w) = self.active().and_then(Tab::webview) {
-            let _ = w.set_visible(visible);
+        for tab in self.tabs.iter().filter(|t| self.shown(t.id)) {
+            if let Some(w) = tab.webview() {
+                let _ = w.set_visible(visible);
+            }
         }
     }
 
-    pub fn set_bounds(&self, bounds: Rect) {
-        for w in self.tabs.iter().filter_map(Tab::webview) {
-            let _ = w.set_bounds(bounds);
+    /// Nouvelle zone des pages (fenêtre, barre ou bandeau changés).
+    pub fn set_area(&mut self, area: Area) {
+        self.area = area;
+        self.place_all();
+    }
+
+    /// Place de chaque page : sa part de la zone en vue partagée, toute la zone sinon.
+    fn place_all(&self) {
+        let split = self.split.map(|s| (s, s.rects(self.area)));
+        for tab in &self.tabs {
+            let Some(w) = tab.webview() else { continue };
+            let area = match split {
+                Some((s, [first, _])) if s.first == tab.id => first,
+                Some((s, [_, second])) if s.second == tab.id => second,
+                _ => self.area,
+            };
+            let _ = w.set_bounds(ui::rect(area));
             // Windows : la découpe arrondie suit la taille de la page.
             crate::layers::round_page(w);
         }
+    }
+
+    // --- Vue partagée ---
+
+    pub fn area(&self) -> Area {
+        self.area
+    }
+
+    /// La vue partagée, si elle est à l'écran (l'onglet actif en est un côté).
+    pub fn split_shown(&self) -> Option<Split> {
+        self.split.filter(|s| self.active.is_some_and(|a| s.has(a)))
+    }
+
+    /// L'onglet est à l'écran : actif, ou l'autre côté de la vue partagée affichée.
+    pub fn shown(&self, id: TabId) -> bool {
+        self.active == Some(id) || self.split_shown().is_some_and(|s| s.has(id))
+    }
+
+    /// Les onglets à l'écran : un, ou deux en vue partagée.
+    pub fn shown_ids(&self) -> Vec<TabId> {
+        match self.split_shown() {
+            Some(s) => vec![s.first, s.second],
+            None => self.active.into_iter().collect(),
+        }
+    }
+
+    /// Affiche `other` à côté de `base`, en premier (à gauche, en haut) ou en
+    /// second. Une vue partagée déjà là se défait : ses onglets restent
+    /// ouverts. L'appelant rend ensuite `other` actif. Faux si l'un des deux
+    /// onglets manque, ou si c'est le même.
+    pub fn open_split(&mut self, base: TabId, other: TabId, other_first: bool, stacked: bool) -> bool {
+        if base == other || self.get(other).is_none() {
+            return false;
+        }
+        let Some((pinned, group)) = self.get(base).map(|t| (t.pinned, t.group)) else {
+            return false;
+        };
+        // Même rang que l'autre côté (épinglé, groupe), pour que le rangement
+        // des onglets les garde ensemble.
+        if let Some(tab) = self.get_mut(other) {
+            tab.pinned = pinned;
+            tab.group = group;
+        }
+        let ratio = self.split.map_or(0.5, |s| s.ratio);
+        let (first, second) = if other_first { (other, base) } else { (base, other) };
+        self.split = Some(Split { first, second, ratio, stacked });
+        self.arrange();
+        self.put_next_to(other, base, other_first);
+        self.place_all();
+        true
+    }
+
+    /// Quitte la vue partagée : les deux onglets restent ouverts, seul l'onglet
+    /// actif reste à l'écran.
+    pub fn close_split(&mut self, visible: bool) {
+        if self.split.take().is_none() {
+            return;
+        }
+        self.place_all();
+        if let Some(id) = self.active {
+            self.activate(id, visible);
+        }
+    }
+
+    /// Les deux côtés changent de place.
+    pub fn swap_split(&mut self) {
+        let Some(split) = self.split.as_mut() else { return };
+        std::mem::swap(&mut split.first, &mut split.second);
+        let (first, second) = (split.first, split.second);
+        self.put_next_to(first, second, true);
+        self.place_all();
+    }
+
+    /// Côte à côte ou l'un sur l'autre.
+    pub fn turn_split(&mut self) {
+        let width = self.area.2;
+        let Some(split) = self.split.as_mut() else { return };
+        // Passées d'elles-mêmes l'une sur l'autre (fenêtre étroite) : on les
+        // garde ainsi, en le choisissant pour de bon.
+        split.stacked = !split.stacked_in(width);
+        self.place_all();
+    }
+
+    /// Part du premier côté (bornée), quand on tire la barre entre les pages.
+    pub fn set_split_ratio(&mut self, ratio: f64) {
+        let Some(split) = self.split.as_mut() else { return };
+        if !ratio.is_finite() {
+            return;
+        }
+        split.ratio = ratio.clamp(SPLIT_RATIO_MIN, SPLIT_RATIO_MAX);
+        self.place_all();
+    }
+
+    /// Ce que l'interface dessine de la vue partagée.
+    pub fn split_info(&self) -> Option<SplitInfo> {
+        let s = self.split?;
+        Some(SplitInfo {
+            first: s.first,
+            second: s.second,
+            ratio: s.ratio,
+            stacked: s.stacked_in(self.area.2),
+            chosen_stacked: s.stacked,
+            shown: self.split_shown().is_some(),
+            rects: s.rects(self.area),
+        })
+    }
+
+    /// Reprend la vue partagée d'une session (places dans l'ordre des onglets
+    /// au moment de l'enregistrement : à appeler avant tout rangement).
+    pub fn restore_split(&mut self, saved: SavedSplit, ids: &[TabId]) {
+        let (Some(&first), Some(&second)) = (ids.get(saved.first), ids.get(saved.second)) else { return };
+        if first == second || !saved.ratio.is_finite() {
+            return;
+        }
+        let ratio = saved.ratio.clamp(SPLIT_RATIO_MIN, SPLIT_RATIO_MAX);
+        self.split = Some(Split { first, second, ratio, stacked: saved.stacked });
+    }
+
+    /// Range l'onglet `id` juste avant (`before`) ou juste après `next_to`.
+    fn put_next_to(&mut self, id: TabId, next_to: TabId, before: bool) {
+        let Some(from) = self.tabs.iter().position(|t| t.id == id) else { return };
+        let tab = self.tabs.remove(from);
+        let at = self.tabs.iter().position(|t| t.id == next_to).map_or(self.tabs.len(), |i| if before { i } else { i + 1 });
+        self.tabs.insert(at, tab);
     }
 
     pub fn home_tabs(&self) -> impl Iterator<Item = &Tab> {
@@ -563,7 +819,12 @@ impl TabManager {
     pub fn session(&self) -> Session {
         let public: Vec<&Tab> = self.tabs.iter().filter(|t| !t.private).collect();
         let used: Vec<u32> = public.iter().filter_map(|t| t.group).collect();
+        let place = |id: TabId| public.iter().position(|t| t.id == id);
+        let split = self.split.and_then(|s| {
+            Some(SavedSplit { first: place(s.first)?, second: place(s.second)?, ratio: s.ratio, stacked: s.stacked })
+        });
         Session {
+            split,
             urls: public.iter().map(|t| t.url.clone()).collect(),
             active: public.iter().position(|t| Some(t.id) == self.active).unwrap_or(0),
             pinned: public.iter().map(|t| t.pinned).collect(),
@@ -594,10 +855,14 @@ impl TabManager {
 
     /// Épingle un onglet (ou le détache). Un onglet épinglé quitte son groupe.
     pub fn set_pinned(&mut self, id: TabId, pinned: bool) {
-        if let Some(tab) = self.get_mut(id) {
-            tab.pinned = pinned;
-            if pinned {
-                tab.group = None;
+        // Les deux côtés d'une vue partagée restent ensemble.
+        let partner = self.split.and_then(|s| s.other(id));
+        for id in std::iter::once(id).chain(partner) {
+            if let Some(tab) = self.get_mut(id) {
+                tab.pinned = pinned;
+                if pinned {
+                    tab.group = None;
+                }
             }
         }
         self.arrange();
@@ -619,10 +884,13 @@ impl TabManager {
         if group.is_some_and(|g| !self.groups.iter().any(|x| x.id == g)) {
             return;
         }
-        if let Some(tab) = self.get_mut(id) {
-            tab.group = group;
-            if group.is_some() {
-                tab.pinned = false;
+        let partner = self.split.and_then(|s| s.other(id));
+        for id in std::iter::once(id).chain(partner) {
+            if let Some(tab) = self.get_mut(id) {
+                tab.group = group;
+                if group.is_some() {
+                    tab.pinned = false;
+                }
             }
         }
         self.arrange();
@@ -1138,6 +1406,52 @@ mod tests {
         assert_eq!(order(&m), vec![c, b, a]);
         m.set_pinned(c, false);
         assert_eq!(m.session().pinned, vec![false, false, false]);
+    }
+
+    #[test]
+    fn vue_partagee_places() {
+        let s = Split { first: 1, second: 2, ratio: 0.5, stacked: false };
+        // 1000 px : deux pages de 496 px séparées par l'espace de 8 px.
+        assert_eq!(s.rects((10.0, 20.0, 1000.0, 600.0)), [(10.0, 20.0, 496.0, 600.0), (514.0, 20.0, 496.0, 600.0)]);
+        // Fenêtre étroite : moins de 280 px par page, elles passent l'une sur l'autre.
+        assert!(!s.stacked_in(600.0));
+        assert!(s.stacked_in(560.0));
+        assert_eq!(s.rects((0.0, 0.0, 500.0, 408.0)), [(0.0, 0.0, 500.0, 200.0), (0.0, 208.0, 500.0, 200.0)]);
+        let narrow = Split { ratio: 0.25, ..s };
+        assert!(narrow.stacked_in(1000.0));
+    }
+
+    #[test]
+    fn vue_partagee_deux_pages() {
+        let mut m = TabManager::default();
+        let a = m.add_asleep("https://a.fr/", "A", false);
+        let b = m.add_asleep("https://b.fr/", "B", false);
+        let c = m.add_asleep("https://c.fr/", "C", false);
+        assert!(!m.open_split(a, a, false, false));
+        // C s'affiche à gauche de A : il se range juste avant lui.
+        assert!(m.open_split(a, c, true, false));
+        assert_eq!(order(&m), vec![c, a, b]);
+        let s = m.split.unwrap();
+        assert_eq!((s.first, s.second), (c, a));
+        // Une seule vue partagée : B remplace C, qui reste ouvert (deux pages au plus).
+        m.set_split_ratio(0.9);
+        assert!(m.open_split(a, b, false, false));
+        let s = m.split.unwrap();
+        assert_eq!((s.first, s.second, s.ratio), (a, b, SPLIT_RATIO_MAX));
+        assert_eq!(order(&m), vec![c, a, b]);
+        m.swap_split();
+        assert_eq!(order(&m), vec![c, b, a]);
+        // Enregistrée avec la session, reprise au démarrage.
+        let saved = m.session().split.unwrap();
+        assert_eq!((saved.first, saved.second), (1, 2));
+        let mut n = TabManager::default();
+        let ids: Vec<TabId> = ["c", "b", "a"].iter().map(|u| n.add_asleep(u, u, false)).collect();
+        n.restore_split(saved, &ids);
+        assert_eq!(n.split.map(|s| (s.first, s.second)), Some((ids[1], ids[2])));
+        // Fermer un côté défait la vue partagée.
+        m.close(b, false);
+        assert!(m.split.is_none());
+        assert_eq!(order(&m), vec![c, a]);
     }
 
     #[test]

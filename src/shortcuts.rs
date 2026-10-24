@@ -44,6 +44,8 @@ pub enum Mods {
     CmdAlt,
     /// Maj seule.
     Shift,
+    /// Alt et Maj, sans Ctrl ni ⌘ (Maj+Alt+N sous Windows, comme Chrome).
+    AltShift,
 }
 
 impl Mods {
@@ -63,6 +65,7 @@ impl Mods {
             Self::CmdShift => "0101",
             Self::CmdAlt => "0110",
             Self::Shift => "0001",
+            Self::AltShift => "0011",
         }
     }
 
@@ -80,6 +83,7 @@ impl Mods {
             Self::CmdShift => (false, false, true, true),
             Self::CmdAlt => (false, true, false, true),
             Self::Shift => (false, false, true, false),
+            Self::AltShift => (false, true, true, false),
         };
         Held { control, alt, shift, cmd }
     }
@@ -201,6 +205,8 @@ pub const BINDINGS: &[Binding] = &[
     on("history", code("KeyY"), Cmd).mac(),
     on("downloads", code("KeyL"), CmdAlt).mac(),
     on("bookmarks", code("KeyB"), CmdAlt).mac(),
+    // ⌥N donne un accent mort sous macOS : la touche physique.
+    on("split_view", code("KeyN"), CmdAlt).mac(),
     on("back", key("["), Cmd).mac(),
     on("forward", key("]"), Cmd).mac(),
     on("open_file", key("o"), Cmd).mac().menu_only(),
@@ -212,6 +218,7 @@ pub const BINDINGS: &[Binding] = &[
     on("downloads", key("j"), CtrlOnly).not_mac(),
     on("bookmarks", key("o"), CtrlShift).not_mac(),
     on("fullscreen", key("f11"), Any).not_mac(),
+    on("split_view", code("KeyN"), AltShift).not_mac(),
     // Partout.
     on("tab", Key::Digits, CtrlOnly),
     on("reopen_tab", key("t"), CtrlShift),
@@ -254,6 +261,7 @@ pub const HELP: &[(&str, &[&str])] = &[
     ("Fermer l'onglet", &["close_tab"]),
     ("Rouvrir l'onglet fermé", &["reopen_tab"]),
     ("Onglet privé", &["new_private_tab"]),
+    ("Vue partagée", &["split_view"]),
     ("Onglet précédent / suivant", &["previous_tab", "next_tab"]),
     ("Page précédente / suivante", &["back", "forward"]),
     ("Actualiser", &["reload"]),
@@ -470,6 +478,8 @@ mod tests {
         assert_eq!(row(true, "Plein écran"), "⌃⌘F");
         assert_eq!(row(false, "Plein écran"), "F11");
         assert_eq!(row(false, "Enregistrer la page"), "");
+        assert_eq!(row(true, "Vue partagée"), "⌥⌘N");
+        assert_eq!(row(false, "Vue partagée"), "Alt+Maj+N");
         assert!(help_json().starts_with("[[\""));
     }
 
@@ -514,6 +524,7 @@ mod tests {
             ("next_tab", "⌘}"),
             ("previous_tab", "⌘{"),
             ("task_manager", "⇧\u{1b}"),
+            ("split_view", "⌥⌘n"),
         ];
         for (action, want) in cases {
             assert_eq!(menu(action).as_deref(), Some(want), "{action}");
@@ -574,6 +585,9 @@ mod tests {
             (false, "", "escape", "Escape", false, None),
             (false, "ctrl", "f", "KeyF", true, Some("find")),
             (false, "", "a", "KeyA", false, None),
+            (true, "cmd alt", "˜", "KeyN", false, Some("split_view")),
+            (false, "alt shift", "N", "KeyN", false, Some("split_view")),
+            (false, "ctrl shift", "n", "KeyN", false, Some("new_private_tab")),
         ];
         let mut script = String::new();
         for mac in [true, false] {

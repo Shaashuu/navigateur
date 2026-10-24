@@ -393,6 +393,9 @@ fn main() -> wry::Result<()> {
         extensions: extensions::Extensions::load(),
         placement,
     };
+    // Zone des pages : connue avant le premier onglet (vue partagée restaurée).
+    let area = app.page_area();
+    app.tabs.set_area(area);
     // Les extensions sont confiées au moteur après la première page (voir `start_extensions`).
     adblock::set_replaced(app.extensions.ad_blocker().is_some());
     // Le menu Historique et le menu Favoris du Mac relisent la bibliothèque à leur ouverture.
@@ -418,12 +421,18 @@ fn main() -> wry::Result<()> {
     }
     if full_restore {
         // Les onglets restaurés restent en veille : seul celui affiché est chargé.
+        let mut ids = Vec::with_capacity(session.urls.len());
         for (i, url) in session.urls.iter().enumerate() {
             let id = app.tabs.add_asleep(url, "", false);
+            ids.push(id);
             if let Some(tab) = app.tabs.get_mut(id) {
                 tab.pinned = session.pinned.get(i).copied().unwrap_or(false);
                 tab.group = session.groups.get(i).copied().flatten();
             }
+        }
+        // La vue partagée revient avec ses deux onglets (repérés avant tout rangement).
+        if let Some(split) = session.split {
+            app.tabs.restore_split(split, &ids);
         }
         // L'onglet affiché est repéré avant que `restore_groups` ne range les onglets.
         let shown = app.tabs.iter().nth(session.active).map(|t| t.id);
@@ -911,6 +920,18 @@ impl App {
                     return;
                 }
             }
+            ChromeMessage::SplitWith { id, first, stacked } => self.split_with(id, first, stacked),
+            // Pendant qu'on tire la barre entre les pages : seulement la vue partagée à redessiner.
+            ChromeMessage::SplitRatio { ratio, done } => {
+                self.tabs.set_split_ratio(ratio);
+                self.push_state();
+                if !done {
+                    return;
+                }
+            }
+            ChromeMessage::SplitSwap => self.tabs.swap_split(),
+            ChromeMessage::SplitTurn => self.tabs.turn_split(),
+            ChromeMessage::SplitExit => self.tabs.close_split(self.page_visible()),
             ChromeMessage::FocusPage => self.focus_page(),
             ChromeMessage::FocusBar => self.focus_bar(),
             ChromeMessage::SaveSettings { settings } => self.save_settings(settings),
@@ -1116,6 +1137,7 @@ impl App {
                 LinkHow::Tab => self.open_tab(&link.url, false),
                 LinkHow::Background => self.open_tab_in_background(&link.url),
                 LinkHow::Private => self.open_tab(&link.url, true),
+                LinkHow::Beside => self.open_beside(id, &link.url),
             }
         }
         // Choisi dans le menu d'une image : la page ne peut pas, seule, remplir les
@@ -1201,6 +1223,12 @@ impl App {
         // Comme dans Chrome, la fenêtre d'une extension se ferme au clic dans la page.
         if message.pressed {
             self.close_extension_popup();
+        }
+        // Clic dans l'autre côté de la vue partagée : il devient le côté actif
+        // (barre d'adresse, raccourcis). Faire défiler la page ne le change pas.
+        if message.pressed && Some(id) != self.tabs.active_id() && self.tabs.shown(id) {
+            self.tabs.activate(id, self.page_visible());
+            self.push_state();
         }
         if let Some(request) = message.permission {
             self.ask_permission(id, request);
@@ -1363,6 +1391,15 @@ impl App {
                 let full = self.window.fullscreen().is_some();
                 self.window.set_fullscreen((!full).then_some(tao::window::Fullscreen::Borderless(None)));
             }
+            Shortcut::SplitView => self.toggle_split(),
+            Shortcut::SplitSwap => {
+                self.tabs.swap_split();
+                self.push_state();
+            }
+            Shortcut::SplitTurn => {
+                self.tabs.turn_split();
+                self.push_state();
+            }
             Shortcut::Focus => {
                 self.focus = !self.focus;
                 self.relayout();
@@ -1375,13 +1412,90 @@ impl App {
         }
     }
 
+    /// ⌥⌘N : la vue partagée affichée se défait ; sinon l'onglet affiché passe
+    /// à gauche et un nouvel onglet (l'accueil) s'ouvre à sa droite, comme Chrome.
+    fn toggle_split(&mut self) {
+        if self.tabs.split_shown().is_some() {
+            self.tabs.close_split(self.page_visible());
+            self.focus_page();
+            self.push_state();
+            return;
+        }
+        let Some(base) = self.tabs.active_id() else { return };
+        let private = self.tabs.get(base).is_some_and(|t| t.private);
+        self.open_tab(network::HOME_URL, private);
+        if let Some(new) = self.tabs.active_id().filter(|id| *id != base) {
+            self.show_beside(base, new, false, false);
+        }
+    }
+
+    /// Glissé sur un bord de la page ou choisi dans le menu d'un onglet : `id`
+    /// s'affiche à côté de l'onglet actif, en premier ou en second. Dans une
+    /// vue partagée déjà affichée, il prend la place du côté visé ; s'il en est
+    /// déjà un côté, les deux échangent leur place si besoin. Glisser l'onglet
+    /// affiché lui-même le met à côté de l'onglet vu juste avant.
+    fn split_with(&mut self, id: TabId, first: bool, stacked: bool) {
+        let Some(active) = self.tabs.active_id() else { return };
+        if self.tabs.get(id).is_none() {
+            return;
+        }
+        let base = match self.tabs.split_shown() {
+            Some(split) if split.has(id) => {
+                if (split.first == id) != first {
+                    self.tabs.swap_split();
+                }
+                if split.stacked != stacked {
+                    self.tabs.turn_split();
+                }
+                self.push_state();
+                return;
+            }
+            // Le côté visé est remplacé, l'autre reste.
+            Some(split) => if first { split.second } else { split.first },
+            None if id != active => active,
+            None => {
+                let previous = self.tabs.iter().filter(|t| t.id != id).max_by_key(|t| t.last_active).map(|t| t.id);
+                let Some(previous) = previous else { return };
+                previous
+            }
+        };
+        self.show_beside(base, id, first, stacked);
+    }
+
+    /// Lien ouvert « à côté » (clic droit dans une page) : un nouvel onglet
+    /// s'affiche à côté de la page d'où vient le lien. Si elle est déjà dans une
+    /// vue partagée, le lien prend la place de l'autre côté.
+    fn open_beside(&mut self, from: TabId, url: &str) {
+        let split = self.tabs.split_shown().filter(|s| s.has(from));
+        let first = split.is_some_and(|s| s.second == from);
+        let stacked = split.is_some_and(|s| s.stacked);
+        let private = self.tabs.get(from).is_some_and(|t| t.private);
+        self.open_tab(url, private);
+        if let Some(new) = self.tabs.active_id().filter(|id| *id != from) {
+            self.show_beside(from, new, first, stacked);
+        }
+    }
+
+    /// Met `other` à côté de `base` et en fait le côté actif.
+    fn show_beside(&mut self, base: TabId, other: TabId, first: bool, stacked: bool) {
+        if !self.tabs.open_split(base, other, first, stacked) {
+            return;
+        }
+        self.close_extension_popup();
+        self.tabs.activate(other, self.page_visible());
+        // L'autre côté dormait peut-être : il se réveille, à sa place.
+        self.wake_active();
+        self.focus_page();
+        self.push_state();
+    }
+
     /// Un nouvel onglet s'ouvre toujours sur l'accueil Feather (heure et recherche).
     fn open_new_tab(&mut self) {
         self.open_tab(network::HOME_URL, false);
     }
 
     /// Zone des pages selon la position et la largeur de la barre, et le bandeau du bas.
-    fn page_bounds(&self) -> wry::Rect {
+    fn page_area(&self) -> tab_manager::Area {
         let s = self.settings();
         let frame = ui::Frame {
             bar: s.bar_position,
@@ -1391,7 +1505,13 @@ impl App {
             focus: self.focus,
             full: self.bar_hidden,
         };
-        ui::page_bounds(&self.window, &frame)
+        ui::page_zone(&self.window, &frame)
+    }
+
+    /// Rectangle d'une nouvelle page : toute la zone (un côté de la vue
+    /// partagée est remis à sa place dès sa création, voir `TabManager::wake`).
+    fn page_bounds(&self) -> wry::Rect {
+        ui::rect(self.page_area())
     }
 
     /// Panneau ouvert par-dessus la page (dont la barre au survol), ou poignée
@@ -1444,7 +1564,9 @@ impl App {
                 eprintln!("paramètres non enregistrés : {err}");
             }
         }
-        self.tabs.set_bounds(self.page_bounds());
+        let area = self.page_area();
+        self.tabs.set_area(area);
+        self.push_state();
     }
 
     fn open_tab(&mut self, url: &str, private: bool) {
@@ -1473,9 +1595,11 @@ impl App {
         if softsleep::remise() {
             self.layers.restack(&self.window, &self.chrome);
         }
-        let Some(id) = self.tabs.active().filter(|t| t.is_asleep()).map(|t| t.id) else {
+        // L'onglet affiché, et l'autre côté de la vue partagée.
+        let asleep: Vec<TabId> = self.tabs.shown_ids().into_iter().filter(|id| self.tabs.get(*id).is_some_and(|t| t.is_asleep())).collect();
+        if asleep.is_empty() {
             return;
-        };
+        }
         let ctx = PageContext {
             window: &self.window,
             surface: &self.surface,
@@ -1486,8 +1610,10 @@ impl App {
             reader: &self.reader,
             bounds: self.page_bounds(),
         };
-        if let Err(err) = self.tabs.wake(id, &ctx, self.page_visible()) {
-            eprintln!("impossible de réveiller l'onglet : {err}");
+        for id in asleep {
+            if let Err(err) = self.tabs.wake(id, &ctx, self.page_visible()) {
+                eprintln!("impossible de réveiller l'onglet : {err}");
+            }
         }
         self.layers.restack(&self.window, &self.chrome);
         self.focus_page();
@@ -1757,7 +1883,10 @@ impl App {
     fn relayout(&mut self) {
         self.close_extension_popup();
         let _ = self.chrome.set_bounds(ui::chrome_bounds(&self.window));
-        self.tabs.set_bounds(self.page_bounds());
+        let area = self.page_area();
+        self.tabs.set_area(area);
+        // L'interface place le liseré et la poignée de la vue partagée d'après la zone.
+        self.push_state();
     }
 
     fn start_check(&mut self, manual: bool) {
@@ -1869,6 +1998,10 @@ impl App {
             // Extension qui bloque les publicités à la place du bloqueur intégré.
             "adblock_by": self.extensions.ad_blocker(),
             "focus": self.focus,
+            // Vue partagée : les deux côtés, la place de chacun (liseré, poignée).
+            "split": self.tabs.split_info(),
+            // Zone des pages, où l'on peut lâcher un onglet pour la vue partagée.
+            "page_area": self.tabs.area(),
             // Sous Linux, l'interface ne passe pas devant la page : la barre reste.
             "fullscreen": self.fullscreen && layers::SUPPORTED,
             "extensions": self.extensions.snapshot(),

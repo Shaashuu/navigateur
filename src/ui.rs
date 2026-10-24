@@ -154,6 +154,28 @@ pub enum ChromeMessage {
         #[serde(default)]
         done: bool,
     },
+    /// Vue partagée : l'onglet `id` s'affiche à côté de l'onglet actif, en
+    /// premier (à gauche, en haut) ou en second, côte à côte ou l'un sur l'autre.
+    /// Si la vue partagée est déjà affichée, il remplace le côté visé.
+    SplitWith {
+        id: TabId,
+        #[serde(default)]
+        first: bool,
+        #[serde(default)]
+        stacked: bool,
+    },
+    /// La barre entre les deux pages est tirée : part du premier côté ; `done` : bouton relâché.
+    SplitRatio {
+        ratio: f64,
+        #[serde(default)]
+        done: bool,
+    },
+    /// Les deux côtés changent de place.
+    SplitSwap,
+    /// Côte à côte ou l'un sur l'autre.
+    SplitTurn,
+    /// Les deux côtés quittent la vue partagée et redeviennent des onglets ordinaires.
+    SplitExit,
     /// L'utilisateur a quitté la barre : rendre le focus à la page.
     FocusPage,
     /// Ctrl+L : barre de l'accueil si l'onglet est sur l'accueil, sinon barre par-dessus la page.
@@ -493,6 +515,8 @@ pub enum LinkHow {
     Background,
     /// Onglet privé.
     Private,
+    /// Nouvel onglet affiché à côté de la page, en vue partagée.
+    Beside,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -604,6 +628,13 @@ pub enum Shortcut {
     BookmarkAll,
     /// Menu Aide (macOS) : la page des problèmes signalés de Feather.
     ReportIssue,
+    /// ⌥⌘N (Maj+Alt+N ailleurs), comme Chrome : vue partagée de l'onglet
+    /// affiché avec un nouvel onglet, ou retour à un seul onglet.
+    SplitView,
+    /// Vue partagée : les deux côtés changent de place.
+    SplitSwap,
+    /// Vue partagée : côte à côte ou l'un sur l'autre.
+    SplitTurn,
     /// Menu Fichier (macOS) : archive de la page (⌘S), PDF, fichier à
     /// ouvrir (⌘O), menu de partage.
     SavePage,
@@ -669,9 +700,13 @@ pub fn page_area(width: f64, height: f64, f: &Frame) -> (f64, f64, f64, f64) {
 }
 
 /// Zone occupée par les pages : tout sauf la barre, ses bandeaux et la marge autour.
-pub fn page_bounds(window: &Window, frame: &Frame) -> Rect {
+pub fn page_zone(window: &Window, frame: &Frame) -> (f64, f64, f64, f64) {
     let size = window.inner_size().to_logical::<f64>(window.scale_factor());
-    let (x, y, w, h) = page_area(size.width, size.height, frame);
+    page_area(size.width, size.height, frame)
+}
+
+/// Rectangle d'une page, à partir d'une zone (x, y, largeur, hauteur) en pixels logiques.
+pub fn rect((x, y, w, h): (f64, f64, f64, f64)) -> Rect {
     Rect {
         position: LogicalPosition::new(x, y).into(),
         size: LogicalSize::new(w.max(1.0), h.max(1.0)).into(),

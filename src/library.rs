@@ -70,6 +70,20 @@ pub struct Session {
     /// Les groupes d'onglets (nom, couleur, replié).
     #[serde(default)]
     pub tab_groups: Vec<TabGroup>,
+    /// La vue partagée, s'il y en a une (places des deux onglets dans `urls`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split: Option<SavedSplit>,
+}
+
+/// Vue partagée enregistrée : les places de ses deux onglets dans la session,
+/// la part du premier et la disposition choisie.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SavedSplit {
+    pub first: usize,
+    pub second: usize,
+    pub ratio: f64,
+    #[serde(default)]
+    pub stacked: bool,
 }
 
 /// Un groupe d'onglets : « Travail », « Courses »… Replié, ses onglets passent en veille.
