@@ -92,6 +92,7 @@ class Serveur:
         self.dossier = dossier
         self.signaux = {}
         self.resultats = {}
+        self.progres = {}
         self.verrou = threading.Condition()
         serveur = self
 
@@ -109,6 +110,12 @@ class Serveur:
 
             def do_GET(self):
                 url = urllib.parse.urlparse(self.path)
+                if url.path == "/progres":
+                    q = urllib.parse.parse_qs(url.query)
+                    serveur.progres[q.get("id", ["?"])[0]] = q.get("n", ["?"])[0]
+                    self.send_response(204)
+                    self.end_headers()
+                    return
                 if url.path == "/signal":
                     cle = urllib.parse.parse_qs(url.query).get("id", ["?"])[0]
                     with serveur.verrou:
@@ -178,8 +185,14 @@ def preparer_speedometer(source, dossier):
         '\n        fetch("/resultat?id=" + new URLSearchParams(location.search).get("banc"), '
         '{method: "POST", body: JSON.stringify({erreur: String(error)})});'
     )
-    assert repere in code and erreur_repere in code, "Speedometer a changé : repères introuvables"
+    progres_repere = "this._finishedTestCount++;"
+    progres = (
+        '\n        fetch("/progres?id=" + new URLSearchParams(location.search).get("banc") '
+        '+ "&n=" + this._finishedTestCount + "/" + this.stepCount).catch(() => {});'
+    )
+    assert repere in code and erreur_repere in code and progres_repere in code, "Speedometer a changé : repères introuvables"
     code = code.replace(repere, repere + envoi, 1).replace(erreur_repere, erreur_repere + erreur, 1)
+    code = code.replace(progres_repere, progres_repere + progres, 1)
     with open(main, "w", encoding="utf-8") as f:
         f.write(code)
     # « banc » n'est pas un paramètre connu de Speedometer : on le retire avant
@@ -288,6 +301,7 @@ def temps_cpu(pids):
 class Navigateur:
     nom = "?"
     webkit = False  # processus WebKit à compter en plus de l'arbre (macOS)
+    par_profil = True  # processus retrouvés aussi par le dossier de profil
 
     def __init__(self, chemin, travail):
         self.chemin = chemin
@@ -326,6 +340,15 @@ class Navigateur:
         trouves = arbre(r) if r else set()
         if MAC and self.webkit:
             trouves |= processus_webkit() - self.avant
+        # Firefox sous Windows : le premier firefox.exe lance le vrai navigateur
+        # puis s'arrête ; on retrouve aussi les processus par leur profil.
+        if self.par_profil:
+            for p in psutil.process_iter(["pid", "cmdline"]):
+                try:
+                    if any(self.profil in a for a in (p.info["cmdline"] or [])):
+                        trouves |= {p.info["pid"]} | {c.pid for c in p.children(recursive=True)}
+                except psutil.Error:
+                    pass
         return trouves
 
     def fermer(self):
@@ -348,8 +371,9 @@ class Navigateur:
                 psutil.Process(p).kill()
             except psutil.Error:
                 pass
-        if WINDOWS and r:
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(r)], capture_output=True)
+        if WINDOWS:
+            for p in ([r] if r else []) + sorted(pids):
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(p)], capture_output=True)
         if self.proc:
             try:
                 self.proc.wait(5)
@@ -387,6 +411,7 @@ class Navigateur:
 class Feather(Navigateur):
     nom = "Feather"
     webkit = MAC
+    par_profil = False
     bloqueurs = True
 
     def config(self):
@@ -478,7 +503,7 @@ class Firefox(Navigateur):
                 f.write(f"user_pref({json.dumps(k)}, {json.dumps(v)});\n")
 
     def commande(self, urls):
-        return [self.chemin, "-profile", self.profil, "-no-remote", "-new-instance",
+        return [self.chemin, "-profile", self.profil, "-no-remote", "-new-instance", "-wait-for-browser",
                 "-width", "1280", "-height", "900"] + urls
 
     def environnement(self):
@@ -499,6 +524,7 @@ class Firefox(Navigateur):
 class Safari(Navigateur):
     nom = "Safari"
     webkit = True
+    par_profil = False
 
     def neuf(self):
         self.oublier_fenetres()
@@ -609,7 +635,16 @@ def scenario_speedometer(nav, serveur):
            f"&iterationCount={SPEEDOMETER_PASSAGES}")
     nav.lancer([url])
     debut = time.monotonic()
-    corps = serveur.attendre(serveur.resultats, cle, SPEEDOMETER_DELAI)
+    corps = None
+    tour = 0
+    while time.monotonic() - debut < SPEEDOMETER_DELAI:
+        corps = serveur.attendre(serveur.resultats, cle, 60)
+        if corps is not None:
+            break
+        tour += 1
+        journal(f"  {nav.nom} Speedometer: {tour} min, étape {serveur.progres.get(cle, 'aucune')}")
+        if tour in (1, 5):
+            capture(f"{nav.cle}-speedometer-{tour}min")
     duree = round(time.monotonic() - debut)
     pic = memoire(nav.pids())["total"]
     nav.fermer()
@@ -621,6 +656,27 @@ def scenario_speedometer(nav, serveur):
     donnees["memoire_fin"] = pic
     journal(f"  {nav.nom} Speedometer: {donnees}")
     return donnees
+
+
+def capture(nom):
+    """Capture de l'écran (dossier « captures »), pour comprendre un blocage."""
+    os.makedirs("captures", exist_ok=True)
+    fichier = os.path.abspath(os.path.join("captures", nom + ".png"))
+    try:
+        if MAC:
+            subprocess.run(["screencapture", "-x", fichier], timeout=30)
+        elif WINDOWS:
+            script = (
+                "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
+                "$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;"
+                "$i=New-Object System.Drawing.Bitmap $b.Width,$b.Height;"
+                "$g=[System.Drawing.Graphics]::FromImage($i);"
+                "$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size);"
+                f"$i.Save('{fichier}')"
+            )
+            subprocess.run(["powershell", "-NoProfile", "-Command", script], timeout=60)
+    except Exception as e:
+        journal("capture impossible :", e)
 
 
 def machine():

@@ -78,4 +78,6 @@ jobs:
         if: always()
         with:
           name: resultats-${{ matrix.os }}
-          path: resultats-*.json
+          path: |
+            resultats-*.json
+            captures/
