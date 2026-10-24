@@ -76,7 +76,7 @@ ATTENTE_10 = 60
 FENETRE_CPU = 60
 DEMARRAGES = int(os.environ.get("DEMARRAGES", "5"))
 SPEEDOMETER_PASSAGES = int(os.environ.get("SPEEDOMETER_PASSAGES", "3"))
-SPEEDOMETER_DELAI = 15 * 60
+SPEEDOMETER_DELAI = int(os.environ.get("SPEEDOMETER_DELAI", str(15 * 60)))
 
 
 def journal(*morceaux):
@@ -110,6 +110,12 @@ class Serveur:
 
             def do_GET(self):
                 url = urllib.parse.urlparse(self.path)
+                if url.path == "/journal":
+                    q = urllib.parse.parse_qs(url.query)
+                    journal("  page :", q.get("m", ["?"])[0][:300])
+                    self.send_response(204)
+                    self.end_headers()
+                    return
                 if url.path == "/progres":
                     q = urllib.parse.parse_qs(url.query)
                     serveur.progres[q.get("id", ["?"])[0]] = q.get("n", ["?"])[0]
@@ -138,7 +144,13 @@ class Serveur:
                 self.send_response(204)
                 self.end_headers()
 
-        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Gestion)
+        class Http(http.server.ThreadingHTTPServer):
+            daemon_threads = True
+
+            def handle_error(self, *a):
+                pass  # connexion coupée par un navigateur qu'on ferme : sans importance
+
+        self.httpd = Http(("127.0.0.1", PORT), Gestion)
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
     def attendre(self, table, cle, delai):
@@ -194,6 +206,23 @@ def preparer_speedometer(source, dossier):
     code = code.replace(repere, repere + envoi, 1).replace(erreur_repere, erreur_repere + erreur, 1)
     code = code.replace(progres_repere, progres_repere + progres, 1)
     with open(main, "w", encoding="utf-8") as f:
+        f.write(code)
+    # Journal de la page : chargement, erreurs de script (pour comprendre un blocage).
+    index = os.path.join(cible, "index.html")
+    with open(index, encoding="utf-8") as f:
+        code = f.read()
+    sonde = (
+        "<script>(function(){function j(m){try{new Image().src='/journal?m='+encodeURIComponent(m)}catch(e){}}"
+        "j('début '+navigator.userAgent);addEventListener('error',function(e){j('erreur '+e.message+' '+(e.filename||'')+':'+(e.lineno||''))});"
+        "addEventListener('unhandledrejection',function(e){j('promesse '+(e.reason&&e.reason.stack||e.reason))});"
+        "addEventListener('load',function(){j('chargée, visible='+document.visibilityState+' '+innerWidth+'x'+innerHeight)});"
+        "document.addEventListener('visibilitychange',function(){j('visibilité '+document.visibilityState)});"
+        "var n=0;function f(){n++;requestAnimationFrame(f)}requestAnimationFrame(f);setTimeout(function(){j('images en 5 s : '+n)},5000);"
+        "})()</script>"
+    )
+    assert "<head>" in code, "Speedometer a changé : index.html"
+    code = code.replace("<head>", "<head>" + sonde, 1)
+    with open(index, "w", encoding="utf-8") as f:
         f.write(code)
     # « banc » n'est pas un paramètre connu de Speedometer : on le retire avant
     # qu'il ne le refuse, après l'avoir lu.
@@ -254,6 +283,7 @@ def empreintes_mac(pids):
 def memoire(pids):
     """Total en Mo, nombre de processus, détail par nom (Mo)."""
     detail = {}
+    noms = {}
     total = 0.0
     total_ws = 0.0
     compte = 0
@@ -265,10 +295,11 @@ def memoire(pids):
             except psutil.Error:
                 nom = "?"
             detail[nom] = detail.get(nom, 0) + mo
+            noms[nom] = noms.get(nom, 0) + 1
             total += mo
             compte += 1
         return {"total": round(total), "processus": compte,
-                "detail": {k: round(v) for k, v in sorted(detail.items(), key=lambda x: -x[1])}}
+                "detail": {f"{k} ×{noms[k]}": round(v) for k, v in sorted(detail.items(), key=lambda x: -x[1])}}
     for pid in pids:
         try:
             p = psutil.Process(pid)
@@ -278,11 +309,12 @@ def memoire(pids):
             continue
         mo = info.uss / 1048576
         detail[nom] = detail.get(nom, 0) + mo
+        noms[nom] = noms.get(nom, 0) + 1
         total += mo
         total_ws += info.rss / 1048576
         compte += 1
     return {"total": round(total), "travail_total": round(total_ws), "processus": compte,
-            "detail": {k: round(v) for k, v in sorted(detail.items(), key=lambda x: -x[1])}}
+            "detail": {f"{k} ×{noms[k]}": round(v) for k, v in sorted(detail.items(), key=lambda x: -x[1])}}
 
 
 def temps_cpu(pids):

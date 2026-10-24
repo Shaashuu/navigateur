@@ -25,9 +25,10 @@ permissions:
 env:
   VERSION: ${{ inputs.version || 'v0.6.2' }}
   # Un envoi sur une branche fait un essai court du banc (moins de lancements).
-  SCENARIOS: ${{ inputs.scenarios || 'demarrage,simple,sites5,speedometer' }}
+  SCENARIOS: ${{ inputs.scenarios || 'speedometer,demarrage' }}
   DEMARRAGES: ${{ github.event_name == 'push' && '2' || '5' }}
   SPEEDOMETER_PASSAGES: ${{ github.event_name == 'push' && '1' || '3' }}
+  SPEEDOMETER_DELAI: ${{ github.event_name == 'push' && '240' || '900' }}
 
 jobs:
   comparer:
