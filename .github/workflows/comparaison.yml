@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 env:
-  VERSION: ${{ inputs.version || 'v0.6.1' }}
+  VERSION: ${{ inputs.version || 'v0.6.2' }}
   # Un envoi sur une branche fait un essai court du banc (moins de lancements).
   SCENARIOS: ${{ inputs.scenarios || 'demarrage,simple,sites5,speedometer' }}
   DEMARRAGES: ${{ github.event_name == 'push' && '2' || '5' }}
@@ -41,10 +41,14 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      # Python à part : celui de Homebrew refuse pip (PEP 668).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
       - name: Outils
         shell: bash
         run: |
-          python3 -m pip install --quiet psutil || python -m pip install --quiet psutil
+          python -m pip install --quiet psutil
           git clone --quiet --depth 1 -b release/3.1 https://github.com/WebKit/Speedometer.git "$RUNNER_TEMP/speedometer"
       - name: Télécharger Feather ${{ env.VERSION }}
         shell: bash
@@ -67,8 +71,7 @@ jobs:
       - name: Comparer
         shell: bash
         run: |
-          py=python3; command -v python3 >/dev/null || py=python
-          $py outils/comparaison/banc_navigateurs.py --feather "$FEATHER" \
+          python outils/comparaison/banc_navigateurs.py --feather "$FEATHER" \
             --speedometer "$RUNNER_TEMP/speedometer" --scenarios "$SCENARIOS" \
             --sortie "resultats-${{ matrix.os }}.json"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
