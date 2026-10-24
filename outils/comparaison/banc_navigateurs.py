@@ -103,6 +103,16 @@ class Serveur:
             def log_message(self, *a):
                 pass
 
+            # Types fixés : sous Windows, Python lit ceux du registre, où .mjs
+            # (modules de Speedometer) peut manquer ou valoir text/plain, et le
+            # navigateur refuse alors le script sans rien dire.
+            extensions_map = {
+                **http.server.SimpleHTTPRequestHandler.extensions_map,
+                ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
+                ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml",
+                ".wasm": "application/wasm", ".png": "image/png", ".woff2": "font/woff2",
+            }
+
             def end_headers(self):
                 # Jamais de cache : chaque démarrage recharge vraiment la page.
                 self.send_header("Cache-Control", "no-store")
